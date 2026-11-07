@@ -1,4 +1,10 @@
 import { prisma } from '@/lib/prisma'
+import type { Prisma, Program } from '@prisma/client'
+import { createHash } from 'node:crypto'
+import { z } from 'zod'
+import { lockTransaction } from '@/lib/db/locks'
+import { cacheDeleteByPrefix } from '@/lib/cache'
+import { programFields } from './schedule'
 
 export type ProgramListItem = {
   id: string
@@ -98,35 +104,77 @@ export async function getProgramBySlug(slug: string): Promise<ProgramDetail | nu
   }
 }
 
-/** Admin catalog writes share enrollment's catalog lock; existing purchases are preserved. */
-export async function writeProgramCatalog(actorId: string, input: unknown, id?: string) {
-  const { programFields } = await import('./schedule')
-  const { lockTransaction } = await import('@/lib/db/locks')
-  const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { role: true } })
-  if (actor?.role !== 'ADMIN') throw Object.assign(new Error('Forbidden'), { status: 403 })
-  const parsed = (id ? programFields.omit({ slug: true }) : programFields).safeParse(input)
-  if (!parsed.success) throw Object.assign(new Error('Invalid program fields'), { status: 400 })
-  if (!id) return prisma.program.create({ data: programFields.parse(input) })
-  return prisma.$transaction(async tx => {
-    await lockTransaction(tx, 'program', `catalog:${id}`)
-    return tx.program.update({ where: { id }, data: parsed.data })
-  })
+export class ProgramAdminError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code: string) { super(message); this.name = 'ProgramAdminError' }
 }
 
-/** A catalog deletion archives purchased programs rather than cascading away paid enrollments. */
-export async function archiveProgramCatalog(actorId: string, id: string, expectedActive?: boolean) {
-  const { lockTransaction } = await import('@/lib/db/locks')
-  const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { role: true } })
-  if (actor?.role !== 'ADMIN') throw Object.assign(new Error('Forbidden'), { status: 403 })
-  return prisma.$transaction(async tx => {
-    await lockTransaction(tx, 'program', `catalog:${id}`)
-    const program = await tx.program.findUnique({ where: { id }, select: { isActive: true } })
-    if (!program) return null
+const versionFields = ['id', 'slug', 'title', 'description', 'pricePaise', 'totalSessions', 'sessionsPerWeek', 'durationMinutes', 'isActive', 'createdAt', 'updatedAt'] as const satisfies readonly (keyof Program)[]
+const reviewSchema = z.object({ id: z.string().min(1).max(200), version: z.string().regex(/^[a-f0-9]{64}$/) })
+
+/** Include content so same-timestamp catalog edits also invalidate an open decision. */
+export function programCatalogVersion(program: Program) {
+  return createHash('sha256').update(JSON.stringify(versionFields.map(key => program[key]))).digest('hex')
+}
+
+async function currentProgramAdmin(tx: Prisma.TransactionClient, actorId: string) {
+  const [actor] = await tx.$queryRaw<Array<{ role: string; closedAt: Date | null }>>`SELECT "role", "closedAt" FROM "User" WHERE "id" = ${actorId} FOR SHARE`
+  if (actor?.role !== 'ADMIN' || actor.closedAt) throw new ProgramAdminError('Administrator access is required.', 403, 'FORBIDDEN')
+}
+
+async function reviewedProgram(tx: Prisma.TransactionClient, actorId: string, id: string, version?: string) {
+  const parsed = reviewSchema.safeParse({ id, version })
+  if (!parsed.success) throw new ProgramAdminError('Reload and review this program before saving.', 400, 'INVALID_PROGRAM_VERSION')
+  await lockTransaction(tx, 'program', `catalog:${id}`)
+  // Also wait for the key-share lock taken by enrollment FK inserts outside the app allocator.
+  await tx.$queryRaw`SELECT "id" FROM "Program" WHERE "id" = ${id} FOR UPDATE`
+  await currentProgramAdmin(tx, actorId)
+  const program = await tx.program.findUnique({ where: { id } })
+  if (!program) throw new ProgramAdminError('This program is no longer available. Reload the list.', 404, 'PROGRAM_NOT_FOUND')
+  if (programCatalogVersion(program) !== version) throw new ProgramAdminError('This program changed. Reload and review the latest values before saving.', 409, 'PROGRAM_CHANGED')
+  return program
+}
+
+function refreshProgramCaches() {
+  cacheDeleteByPrefix('programs:'); cacheDeleteByPrefix('search:')
+}
+
+/** Validate, authorize and audit catalog writes without changing saved purchase terms. */
+export async function writeProgramCatalog(actorId: string, input: unknown, id?: string, version?: string) {
+  const parsed = (id !== undefined ? programFields.omit({ slug: true }) : programFields).safeParse(input)
+  if (!parsed.success) throw new ProgramAdminError('Check the title, description and numbers. Use a positive program price, 1–366 sessions, 1–7 sessions per week and 1–1440 minutes per session.', 400, 'INVALID_PROGRAM_FIELDS')
+  const saved = await prisma.$transaction(async tx => {
+    const current = id !== undefined ? await reviewedProgram(tx, actorId, id, version) : null
+    if (!current) await currentProgramAdmin(tx, actorId)
+    const program = current
+      ? await tx.program.update({ where: { id: current.id }, data: parsed.data })
+      : await tx.program.create({ data: programFields.parse(input) })
+    await tx.activityLog.create({ data: { userId: actorId, action: current ? 'program_updated' : 'program_created', entityType: 'program', entityId: program.id,
+      metadata: { fields: Object.keys(parsed.data), priceBefore: current?.pricePaise ?? null, priceAfter: program.pricePaise, sessionsBefore: current?.totalSessions ?? null, sessionsAfter: program.totalSessions } } })
+    return program
+  }, { maxWait: 10000, timeout: 10000 })
+  refreshProgramCaches()
+  return saved
+}
+
+/** Remove only an unused reviewed program; enrollment/payment history requires archival. */
+export async function archiveProgramCatalog(actorId: string, id: string, expectedActive?: boolean, version?: string) {
+  const saved = await prisma.$transaction(async tx => {
+    const program = await reviewedProgram(tx, actorId, id, version)
     if (expectedActive !== undefined) {
-      if (program.isActive !== expectedActive) return program
-      return tx.program.update({ where: { id }, data: { isActive: !expectedActive } })
+      if (program.isActive !== expectedActive) throw new ProgramAdminError('This program changed. Reload and review the latest values before saving.', 409, 'PROGRAM_CHANGED')
+      const updated = await tx.program.update({ where: { id }, data: { isActive: !program.isActive } })
+      await tx.activityLog.create({ data: { userId: actorId, action: updated.isActive ? 'program_activated' : 'program_deactivated', entityType: 'program', entityId: id, metadata: { from: program.isActive, to: updated.isActive } } })
+      return updated
     }
-    if (await tx.programEnrollment.count({ where: { programId: id } })) return tx.program.update({ where: { id }, data: { isActive: false } })
-    return tx.program.delete({ where: { id } })
-  })
+    const [enrollmentRecords, paymentRecords] = await Promise.all([
+      tx.programEnrollment.count({ where: { programId: id } }),
+      tx.payment.count({ where: { type: 'PROGRAM', metadata: { path: ['programId'], equals: id } } }),
+    ])
+    const archived = enrollmentRecords > 0 || paymentRecords > 0
+    const result = archived ? await tx.program.update({ where: { id }, data: { isActive: false } }) : await tx.program.delete({ where: { id } })
+    await tx.activityLog.create({ data: { userId: actorId, action: archived ? 'program_archived' : 'program_deleted', entityType: 'program', entityId: id, metadata: { enrollmentRecords: enrollmentRecords > 0, paymentRecords: paymentRecords > 0 } } })
+    return result
+  }, { maxWait: 10000, timeout: 10000 })
+  refreshProgramCaches()
+  return saved
 }

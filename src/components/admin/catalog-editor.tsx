@@ -1,17 +1,18 @@
 'use client'
 
-import { useRef, useState, useTransition, type FormEvent, type ReactNode } from 'react'
+import { useRef, useState, useTransition, type ComponentProps, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 
 type SaveResult = { error?: string; reloadRequired?: boolean }
 
-export function CatalogEditor({ action, children, item, create = false, submitLabel, compact = false }: {
+export function CatalogEditor({ action, children, item, create = false, submitLabel, compact = false, submitVariant = 'default' }: {
   action: (data: FormData) => Promise<SaveResult>
   children: ReactNode
   item: string
   create?: boolean
   submitLabel?: string
   compact?: boolean
+  submitVariant?: ComponentProps<typeof Button>['variant']
 }) {
   const [result, setResult] = useState<SaveResult | null>(null)
   const [pending, startTransition] = useTransition()
@@ -48,7 +49,7 @@ export function CatalogEditor({ action, children, item, create = false, submitLa
         {result?.reloadRequired && <div className="md:col-span-3"><Button type="button" variant="outline" onClick={() => window.location.reload()}>Discard drafts and reload</Button></div>}
         {result && !result.error && <p role="status" className="text-sm md:col-span-3">{item} {create ? 'created.' : 'saved.'}</p>}
         <div>
-          <Button type="submit" size="sm">{pending ? 'Saving…' : submitLabel ?? (create ? 'Create' : 'Save')}</Button>
+          <Button type="submit" size="sm" variant={submitVariant}>{pending ? 'Saving…' : submitLabel ?? (create ? 'Create' : 'Save')}</Button>
         </div>
       </fieldset>
     </form>
