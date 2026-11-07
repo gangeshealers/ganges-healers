@@ -196,8 +196,9 @@ and requires no provider configuration, schema migration or dependency.
 
 Healer administration also binds each profile edit, activation and verification
 decision to its reviewed saved version and the current staff account. The server
-locks the profile row, rechecks open administrator/healer accounts, and commits
-the narrow change with an audit record in one transaction. Stale decisions keep
+shares booking allocation's healer lock, locks the profile row, rechecks open
+administrator/healer accounts, and commits the narrow change with an audit record
+in one transaction. Stale decisions keep
 the draft and require an explicit discard/reload; repeat toggles cannot apply a
 second change. Audit metadata records field names and status transitions, not
 biographies, certifications, contact details or credentials. Existing bookings,

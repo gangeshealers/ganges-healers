@@ -3,6 +3,7 @@ import type { Healer, Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { healerProfileFields } from './profile-schema'
+import { lockTransaction } from '@/lib/db/locks'
 
 export class HealerAdminError extends Error {
   constructor(message: string, public readonly status: number, public readonly code: string) { super(message); this.name = 'HealerAdminError' }
@@ -39,6 +40,7 @@ export async function writeHealerCatalog(actorId: string, form: FormData, operat
   if (!input.success) throw new HealerAdminError('Reload and review this healer before saving.', 400, 'INVALID_HEALER_VERSION')
   const fields = operation === 'profile' ? profileFromForm(form) : null
   return prisma.$transaction(async tx => {
+    await lockTransaction(tx, 'healer', input.data.id)
     await tx.$queryRaw`SELECT "id" FROM "Healer" WHERE "id" = ${input.data.id} FOR UPDATE`
     const actor = await currentAccount(tx, actorId)
     if (actor?.role !== 'ADMIN' || actor.closedAt) throw new HealerAdminError('Administrator access is required.', 403, 'FORBIDDEN')

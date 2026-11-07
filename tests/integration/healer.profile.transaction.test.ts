@@ -3,6 +3,9 @@ import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { PATCH } from '@/app/api/healer/profile/route'
 import { healerCatalogVersion, writeHealerCatalog } from '@/lib/healers/admin'
+import { lockTransaction } from '@/lib/db/locks'
+import { validateBookingSlot } from '@/lib/availability'
+import { clinicSlotInstant } from '@/lib/bookings/time'
 
 let mockUser = '', mockRole = 'HEALER'
 jest.mock('@/lib/auth', () => ({ auth: async () => mockUser ? { user: { id: mockUser, role: mockRole } } : null }))
@@ -168,4 +171,41 @@ test('audit failures roll back every healer catalog mutation', async () => {
       expect(await prisma.healer.findUniqueOrThrow({ where: { id: healerId } })).toEqual(before)
     }
   } finally { await prisma.$executeRawUnsafe(`ALTER TABLE "ActivityLog" DROP CONSTRAINT "${constraint}"`) }
+})
+
+test('deactivation waits for an in-flight booking reservation and subsequent allocation sees the inactive healer', async () => {
+  const form = await reviewedForm()
+  const service = await prisma.service.create({ data: { slug: `healer-lock-${randomUUID()}`, name: 'Allocation lock fixture', description: 'Isolated fixture', category: 'Test', price: 10, duration: 60 } })
+  const monday = new Date(Date.now() + 14 * 86400000)
+  while (monday.getUTCDay() !== 1) monday.setUTCDate(monday.getUTCDate() + 1)
+  const scheduledAt = clinicSlotInstant(monday.toISOString().slice(0, 10), '09:00')
+  let acquired!: () => void, release!: () => void, bookingId = ''
+  const locked = new Promise<void>(resolve => { acquired = resolve }), unlock = new Promise<void>(resolve => { release = resolve })
+  const allocation = prisma.$transaction(async tx => {
+    await lockTransaction(tx, 'healer', healerId)
+    expect(await validateBookingSlot(healerId, service.id, scheduledAt, { client: tx, durationMin: 60 })).toMatchObject({ valid: true })
+    acquired(); await unlock
+    bookingId = (await tx.booking.create({ data: { userId, healerId, serviceId: service.id, scheduledAt, durationMin: 60, status: 'PENDING', pricePaise: 1000 } })).id
+  }, { timeout: 15000 })
+  await locked
+  const deactivation = writeHealerCatalog(adminId, form, 'active').then(value => ({ value, error: undefined })).catch((error: unknown) => ({ value: undefined, error }))
+  try {
+    try {
+      let waiting = false
+      for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+        const rows = await prisma.$queryRaw<Array<{ waiting: boolean }>>`SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND NOT granted AND classid=72102::oid AND objid=(hashtext(${healerId})::bigint & 4294967295)::oid) AS waiting`
+        waiting = rows[0].waiting
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 20))
+      }
+      expect(waiting).toBe(true)
+      expect((await prisma.healer.findUniqueOrThrow({ where: { id: healerId } })).isActive).toBe(true)
+    } finally { release(); await allocation }
+    expect((await deactivation).value).toMatchObject({ isActive: false })
+    expect(await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ userId, healerId, serviceId: service.id, scheduledAt, status: 'PENDING', pricePaise: 1000 })
+    expect(await validateBookingSlot(healerId, service.id, new Date(scheduledAt.getTime() + 3600000), { durationMin: 60 })).toMatchObject({ valid: false, error: 'Healer not found or inactive' })
+  } finally {
+    await deactivation
+    await prisma.booking.deleteMany({ where: { serviceId: service.id } })
+    await prisma.service.delete({ where: { id: service.id } })
+  }
 })
