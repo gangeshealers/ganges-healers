@@ -4,27 +4,11 @@
  * Run separately: npx tsx src/lib/queues/worker.ts
  */
 import { Worker } from 'bullmq'
-import type { EmailJobData, NotificationJobData, ActivityJobData } from './jobs'
+import { redisConnectionOptions, type EmailJobData, type NotificationJobData, type ActivityJobData } from './jobs'
 import { storeNotification } from '../notifications/delivery'
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
-
-function parseRedisUrl(url: string) {
-  try {
-    const parsed = new URL(url)
-    return {
-      host: parsed.hostname || 'localhost',
-      port: parseInt(parsed.port || '6379', 10),
-      password: parsed.password || undefined,
-      username: parsed.username || undefined,
-      maxRetriesPerRequest: null as null,
-    }
-  } catch {
-    return { host: 'localhost', port: 6379, maxRetriesPerRequest: null as null }
-  }
-}
-
-const connection = parseRedisUrl(REDIS_URL)
+const connection = redisConnectionOptions(process.env.REDIS_URL, 'worker')
+if (!connection) throw new Error('REDIS_URL is required to start queue workers.')
 
 // ─── Email Worker ──────────────────────────────────────────────
 
@@ -34,20 +18,24 @@ const emailWorker = new Worker<EmailJobData>(
     // Dynamic import to avoid loading email service on module load
     const { emailService } = await import('../email/email.service')
 
+    let result: { success: boolean; id?: string }
     switch (job.data.type) {
       case 'booking_confirmation':
-        await emailService.sendBookingConfirmation(job.data.payload)
+        result = await emailService.sendBookingConfirmation(job.data.payload)
         break
       case 'booking_cancellation':
-        await emailService.sendBookingCancellation(job.data.payload)
+        result = await emailService.sendBookingCancellation(job.data.payload)
         break
       case 'booking_reminder':
-        await emailService.sendBookingReminder(job.data.payload)
+        result = await emailService.sendBookingReminder(job.data.payload)
         break
       case 'invoice':
-        await emailService.sendInvoiceEmail(job.data.payload)
+        result = await emailService.sendInvoiceEmail(job.data.payload)
         break
+      default:
+        throw new Error('Unsupported email job type.')
     }
+    if (!result.success || !result.id?.trim()) throw new Error('Email delivery was not confirmed.')
   },
   { connection, concurrency: 5 }
 )
@@ -94,14 +82,23 @@ const activityWorker = new Worker<ActivityJobData>(
 
 // ─── Lifecycle ─────────────────────────────────────────────────
 
+let shuttingDown = false
 function gracefulShutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
   console.log('[worker] Shutting down...')
+  const deadline = setTimeout(() => process.exit(1), 10000)
   Promise.all([
     emailWorker.close(),
     notificationWorker.close(),
     activityWorker.close(),
   ]).then(() => {
+    clearTimeout(deadline)
     process.exit(0)
+  }).catch(() => {
+    clearTimeout(deadline)
+    console.error('[worker][shutdown][error]')
+    process.exit(1)
   })
 }
 
@@ -110,8 +107,9 @@ process.on('SIGINT', gracefulShutdown)
 
 for (const w of [emailWorker, notificationWorker, activityWorker]) {
   w.on('failed', (job, err) => {
-    console.error(`[worker][${w.name}] Job ${job?.id} failed:`, err.message)
+    console.error(`[worker][${w.name}] Job ${job?.id} failed:`, { type: err instanceof Error ? err.name : 'unknown' })
   })
+  w.on('error', () => console.error(`[worker][${w.name}][connection_error]`))
 }
 
 console.log('[worker] Email, Notification, and Activity workers started')

@@ -41,6 +41,14 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+      redis:
+        image: redis:8-alpine
+        ports: [ "55609:6379" ]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ganges_healers_test
       ALLOW_NET_CONNECT: 'false'
@@ -53,6 +61,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:int
+      - name: Verify isolated Redis outages and worker delivery
+        timeout-minutes: 3
+        env:
+          QUEUE_TEST_REDIS_URL: redis://127.0.0.1:55609/15
+        run: pnpm exec jest -c jest.config.ts --runInBand --testMatch '**/tests/operations/queues.redis.test.ts' --runTestsByPath tests/operations/queues.redis.test.ts
 
   ui:
     runs-on: ubuntu-latest

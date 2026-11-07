@@ -1,86 +1,137 @@
-import { Queue } from 'bullmq'
+import { Queue, type QueueOptions } from 'bullmq'
+import IORedis from 'ioredis'
+import { isIP } from 'node:net'
 
 const REDIS_URL = process.env.REDIS_URL
 
-/** Parse Redis URL into connection options for BullMQ */
-function parseRedisUrl(url: string) {
+export const QUEUE_OPERATION_TIMEOUT_MS = 5000
+
+/** Use the same validated transport/database for producers, probes and durable workers. */
+export function redisConnectionOptions(url: string | undefined, role: 'producer' | 'probe' | 'worker' = 'producer') {
+  if (!url) return null
   try {
     const parsed = new URL(url)
+    const port = Number(parsed.port || '6379'), database = Number(parsed.pathname.slice(1) || '0')
+    const host = parsed.hostname.replace(/^\[|\]$/g, '')
+    if (!['redis:', 'rediss:'].includes(parsed.protocol) || !parsed.hostname || parsed.search || parsed.hash ||
+      !/^\/\d*$/.test(parsed.pathname || '/') || !Number.isInteger(port) || port < 1 || port > 65535 ||
+      !Number.isSafeInteger(database) || database < 0 || database > 2147483647) throw new Error('Invalid configuration')
     return {
-      host: parsed.hostname || 'localhost',
-      port: parseInt(parsed.port || '6379', 10),
-      password: parsed.password || undefined,
-      username: parsed.username || undefined,
-      maxRetriesPerRequest: null as null,
+      host, port, db: database,
+      password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
+      username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
+      ...(parsed.protocol === 'rediss:' ? { tls: isIP(host) ? {} : { servername: host } } : {}),
+      connectTimeout: role === 'probe' ? 1000 : 2000,
+      ...(role === 'worker' ? { maxRetriesPerRequest: null, enableOfflineQueue: true } : {
+        maxRetriesPerRequest: role === 'probe' ? 0 : 1,
+        commandTimeout: role === 'probe' ? 1000 : 2000,
+        enableOfflineQueue: false, autoResendUnfulfilledCommands: false,
+        retryStrategy: (attempt: number) => role === 'producer' && attempt === 1 ? 100 : null,
+      }),
+      ...(role === 'probe' ? { lazyConnect: true } : {}),
     }
   } catch {
-    return { host: 'localhost', port: 6379, maxRetriesPerRequest: null as null }
+    throw new Error('Invalid REDIS_URL. Use redis:// or rediss:// with a host, optional credentials, port and database number.')
   }
 }
 
-// ─── Lazy queue singletons (only connect when REDIS_URL is set) ─
-
-let _emailQueue: Queue | null = null
-let _notificationQueue: Queue | null = null
-let _activityQueue: Queue | null = null
-
-function getRedisOpts() {
-  if (!REDIS_URL) return null
-  return parseRedisUrl(REDIS_URL)
+export class QueueOperationError extends Error {
+  readonly code = 'QUEUE_UNCONFIRMED'
+  constructor() { super('Queue operation could not be confirmed.'); this.name = 'QueueOperationError' }
 }
 
-/** Email queue — booking confirmations, cancellations, reminders, invoices */
+type QueueKind = 'email' | 'notification' | 'activity'
+// Keep BullMQ's own ioredis client and permit cancellation even before it is ready.
+class ProducerQueue extends Queue {
+  forceClose() { this.closed = true; return this.connection.close(true) }
+}
+const entries: Partial<Record<QueueKind, ProducerQueue>> = {}
+
+function openQueue(kind: QueueKind, defaultJobOptions: QueueOptions['defaultJobOptions']) {
+  if (entries[kind]) return entries[kind]
+  const options = redisConnectionOptions(REDIS_URL)
+  if (!options) return null
+  const queue = new ProducerQueue(kind, { connection: options, defaultJobOptions })
+  // Never print an endpoint, credential or payload from a connection error.
+  queue.on('error', () => console.warn('[queues][connection][error]', { queue: kind }))
+  entries[kind] = queue
+  return queue
+}
+
+function discardQueue(kind: QueueKind, queue: Queue) {
+  const entry = entries[kind]
+  if (entry === queue) {
+    delete entries[kind]
+    void entry.forceClose().catch(() => {})
+  }
+}
+
+async function queueOperation<T>(kind: QueueKind, queue: Queue, operation: () => Promise<T>) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([operation(), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new QueueOperationError()), QUEUE_OPERATION_TIMEOUT_MS)
+    })])
+  } catch {
+    discardQueue(kind, queue)
+    availability = null
+    throw new QueueOperationError()
+  } finally { if (timer) clearTimeout(timer) }
+}
+
+/** Close owned producer sockets, including half-open connections; no jobs are removed. */
+export async function closeQueues() {
+  const closing = Object.entries(entries).map(([kind, entry]) => {
+    delete entries[kind as QueueKind]
+    return entry.forceClose()
+  })
+  availability = null
+  await Promise.allSettled(closing)
+}
+
+/** Email queue — booking confirmations, cancellations, reminders, invoices. */
 export function getEmailQueue(): Queue | null {
-  if (!_emailQueue) {
-    const opts = getRedisOpts()
-    if (!opts) return null
-    _emailQueue = new Queue('email', {
-      connection: opts,
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
-        removeOnComplete: 100,
-        removeOnFail: 200,
-      },
-    })
-  }
-  return _emailQueue
+  return openQueue('email', { attempts: 3, backoff: { type: 'exponential', delay: 2000 }, removeOnComplete: 100, removeOnFail: 200 })
 }
 
-/** Notification queue — create and push notifications to users */
+/** Notification queue — create and push notifications to users. */
 export function getNotificationQueue(): Queue | null {
-  if (!_notificationQueue) {
-    const opts = getRedisOpts()
-    if (!opts) return null
-    _notificationQueue = new Queue('notification', {
-      connection: opts,
-      defaultJobOptions: {
-        attempts: 2,
-        backoff: { type: 'fixed', delay: 1000 },
-        removeOnComplete: 100,
-        removeOnFail: 200,
-      },
-    })
-  }
-  return _notificationQueue
+  return openQueue('notification', { attempts: 2, backoff: { type: 'fixed', delay: 1000 }, removeOnComplete: 100, removeOnFail: 200 })
 }
 
-/** Activity log queue — async activity logging */
+/** Activity log queue — async activity logging. */
 export function getActivityQueue(): Queue | null {
-  if (!_activityQueue) {
-    const opts = getRedisOpts()
-    if (!opts) return null
-    _activityQueue = new Queue('activity', {
-      connection: opts,
-      defaultJobOptions: {
-        attempts: 2,
-        backoff: { type: 'fixed', delay: 1000 },
-        removeOnComplete: 50,
-        removeOnFail: 100,
-      },
-    })
+  return openQueue('activity', { attempts: 2, backoff: { type: 'fixed', delay: 1000 }, removeOnComplete: 50, removeOnFail: 100 })
+}
+
+/** A fresh, bounded probe with a socket that is always disconnected. */
+export async function probeQueueRedis(): Promise<boolean> {
+  let client: IORedis | undefined
+  try {
+    const options = redisConnectionOptions(REDIS_URL, 'probe')
+    if (!options) return false
+    client = new IORedis(options)
+    client.on('error', () => {})
+    await client.connect()
+    return await client.ping() === 'PONG'
+  } catch { return false }
+  finally { client?.disconnect() }
+}
+
+/** Queue counters indicate transport/backlog status, not consumer or provider delivery. */
+export async function getQueueHealthCounts() {
+  const queues = [['email', getEmailQueue()], ['notification', getNotificationQueue()], ['activity', getActivityQueue()]] as const
+  const values = await Promise.all(queues.map(async ([kind, queue]) => {
+    if (!queue) throw new QueueOperationError()
+    return [kind, await queueOperation(kind, queue, () => queue.getJobCounts('waiting', 'active', 'failed'))] as const
+  }))
+  const counts: Record<string, number> = {}
+  for (const [kind, result] of values) {
+    counts[`${kind}Waiting`] = result.waiting ?? 0
+    counts[`${kind}Active`] = result.active ?? 0
+    counts[`${kind}Failed`] = result.failed ?? 0
   }
-  return _activityQueue
+  return counts
 }
 
 // ─── Job type definitions ───────────────────────────────────────
@@ -109,22 +160,19 @@ export interface ActivityJobData {
 
 // ─── Helper functions to enqueue jobs ───────────────────────────
 
-let redisAvailable: boolean | null = null
+let availability: { available: boolean; until: number } | null = null
+let availabilityCheck: Promise<boolean> | null = null
 
 async function isRedisAvailable(): Promise<boolean> {
   if (!REDIS_URL) return false
-  if (redisAvailable !== null) return redisAvailable
-  try {
-    const IORedis = (await import('ioredis')).default
-    const redis = new IORedis(REDIS_URL, { connectTimeout: 3000, lazyConnect: true })
-    await redis.connect()
-    await redis.ping()
-    await redis.disconnect()
-    redisAvailable = true
-  } catch {
-    redisAvailable = false
+  if (availability && Date.now() < availability.until) return availability.available
+  if (!availabilityCheck) {
+    availabilityCheck = probeQueueRedis().then(available => {
+      availability = { available, until: Date.now() + (available ? 5000 : 1000) }
+      return available
+    }).finally(() => { availabilityCheck = null })
   }
-  return redisAvailable
+  return availabilityCheck
 }
 
 /** Enqueue an email job. Returns false if Redis is unavailable (caller should send inline). */
@@ -132,7 +180,7 @@ export async function enqueueEmail(data: EmailJobData): Promise<boolean> {
   if (!(await isRedisAvailable())) return false
   const q = getEmailQueue()
   if (!q) return false
-  await q.add(data.type, data)
+  await queueOperation('email', q, () => q.add(data.type, data))
   return true
 }
 
@@ -141,7 +189,7 @@ export async function enqueueNotification(data: NotificationJobData): Promise<bo
   if (!(await isRedisAvailable())) return false
   const q = getNotificationQueue()
   if (!q) return false
-  await q.add('create', data)
+  await queueOperation('notification', q, () => q.add('create', data))
   return true
 }
 
@@ -150,6 +198,6 @@ export async function enqueueActivity(data: ActivityJobData): Promise<boolean> {
   if (!(await isRedisAvailable())) return false
   const q = getActivityQueue()
   if (!q) return false
-  await q.add('log', data)
+  await queueOperation('activity', q, () => q.add('log', data))
   return true
 }

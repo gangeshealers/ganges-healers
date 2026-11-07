@@ -112,18 +112,75 @@ Security headers (X-Frame-Options, X-Content-Type-Options, etc.) are configured 
 
 ## 5. Redis & Background Jobs (Optional)
 
-The app works without Redis — queues and caching gracefully degrade. For production workloads:
+Redis is optional. With no `REDIS_URL`, the existing notification and activity
+helpers persist inline. When queues are enabled, producers do not start workers.
+The default Next.js/Vercel build does not import the worker process.
 
-1. Create an Upstash Redis instance or any Redis-compatible service
-2. Set `REDIS_URL` in environment variables
-3. Background jobs (email, notifications, activity logging) are processed by BullMQ workers
-4. To run the worker process separately:
+1. Configure a Redis service with the BullMQ-compatible commands and persistence
+   appropriate to the deployment. Do not use a customer database for tests.
+2. Set `REDIS_URL` on both producers and the persistent worker process. Supported
+   URIs are `redis://` and `rediss://`, with an optional percent-encoded username /
+   password, port and `/database` number. TLS remains certificate-verified and
+   sends SNI for DNS hosts;
+   unsupported schemes, paths and query/hash options fail closed instead of
+   connecting to localhost. Workers require an explicit URL.
+3. Deploy the worker as a separate persistent Node process with the same
+   `DATABASE_URL` and applicable email configuration:
 
 ```bash
 pnpm worker
 ```
 
-On Vercel, background jobs run in-process. For heavier workloads, deploy a separate worker on Railway, Render, or a VPS.
+Ship the existing TypeScript/`tsx` toolchain with that worker process, or compile
+it to JavaScript before packaging. The web build does not generate a worker
+artifact or start a consumer.
+
+Request-side producers have finite connection/command retries and a five-second
+queue-operation budget. Their failed connections are discarded, and short-lived
+availability checks can recover from an outage. A confirmed unavailable probe
+returns the existing `false` result before submission, permitting inline fallback.
+Once submission starts, a timeout/error is unconfirmed and propagates; it never
+blindly invokes a second notification delivery path. Workers retain background
+reconnection and existing job retry settings. Notification retries reuse their
+producer ID and preserve read state.
+
+Queued email requires a successful result with a provider message ID; disabled or
+unconfirmed delivery remains failed/retryable rather than being marked complete.
+Existing direct email callers still use the mail service; resolved provider error
+responses or missing message IDs now report failure there too. Worker/provider logs
+record safe error types, not raw errors or recipient payloads. Shutdown waits for
+workers once and exits nonzero after ten seconds if the connections/jobs cannot
+close. Active jobs may be retried after an interrupted worker; existing retries
+are at least once. Real provider delivery and duplicate handling remain launch
+acceptance, not proof supplied by queue acceptance.
+
+`GET /api/health` preserves its existing liveness keys and database-based 200/503
+status. The additive `degraded` field reports database/optional-queue errors or
+failed queue records. Missing optional Redis is `unavailable`, not degraded.
+Database responses use a five-second budget and a generic error; concurrent
+timed-out pings share their outstanding driver query until it settles, rather
+than piling up connections. The deadline does not cancel that driver query.
+Redis probes have one-second connection/command timeouts and always disconnect;
+queue counters have five-second operation budgets. A healthy queue counter does
+not prove that a consumer is running or that a provider delivered anything.
+
+CI verifies TLS trust/SNI, transport outages, lost replies, worker delivery and graceful exit
+against disposable Redis 8 and PostgreSQL fixtures. The Redis suite is selected
+explicitly after the normal PostgreSQL integration suite; no test is skipped to
+accommodate a missing service. For local verification, start an isolated Redis on
+loopback port 55609 (database 15), prepare the guarded PostgreSQL test database,
+and run:
+
+```bash
+QUEUE_TEST_REDIS_URL=redis://127.0.0.1:55609/15 pnpm exec jest -c jest.config.ts --runInBand --testMatch '**/tests/operations/queues.redis.test.ts' --runTestsByPath tests/operations/queues.redis.test.ts
+```
+
+The test rejects remote Redis URLs, other ports/databases and credentials before
+opening a connection. It uses only synthetic jobs, suppresses email credentials
+in its worker process and removes its own records; it never flushes a database.
+The integration step times out as a failure if setup or teardown stalls. No app
+dependency, schema migration or live service provisioning is included. Revert
+this queue/health change and its CI/docs together if compatibility fails.
 
 ---
 

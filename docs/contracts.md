@@ -1209,3 +1209,28 @@ No payment, membership, invoice, existing logging namespace or test-mode rule is
 changed. Apply the additive migration before deploying the matching code; retain
 its column/rows during repair. A rollback to code without publication filtering
 would expose drafts, so repair compatibly rather than removing the gate.
+
+## Queue transport and health liveness
+
+Queue names, payloads and retry counts are unchanged. Producer connections are
+bounded, use the configured Redis database and verified TLS/SNI, and can recover
+after an outage. A confirmed unavailable probe returns `false` before submission.
+Once a job submission starts, failure/timeouts raise `QUEUE_UNCONFIRMED` and do not
+trigger a second inline notification delivery. Notification retries retain their
+producer ID and read state. Email success requires provider acceptance and a
+message ID; unresolved/disabled delivery cannot complete a queued email job.
+
+`GET /api/health` retains its existing `ok`, `ts`, `uptime`, `database`, `redis` and
+`queues` keys and database-based HTTP 200/503 status. Additive `degraded` signals
+database/optional queue errors or failed queue records; absent optional Redis is
+`unavailable`. Database failures return a generic error and a five-second response
+budget; pending driver pings are shared until they settle. Redis probes always
+disconnect, and queue operations have a five-second budget. Healthy queue counts
+do not prove worker presence, provider delivery or launch acceptance.
+
+See `docs/deployment.md` for explicit worker startup, URI validation, isolated
+Redis/TLS/outage verification, at-least-once retry limits and rollback. The
+connection roles follow the existing libraries' documented behavior:
+[BullMQ connections](https://docs.bullmq.io/guide/connections) and
+[ioredis TLS](https://github.com/redis/ioredis#tls-options). No migration or app
+dependency is required.
