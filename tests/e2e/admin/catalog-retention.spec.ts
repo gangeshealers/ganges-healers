@@ -183,7 +183,74 @@ test('healer and program editors keep rejected drafts and save corrected values'
   } finally {
     try {
       await db.program.deleteMany({ where: { slug: { in: [duplicateSlug, programSlug] } } })
+      await db.activityLog.deleteMany({ where: { user: { email: { in: [adminEmail, healerEmail] } } } })
       await db.user.deleteMany({ where: { email: { in: [adminEmail, healerEmail] } } })
+    } finally { await db.$disconnect() }
+  }
+})
+
+test('reviewed healer decisions retain stale drafts and reject changed staff accounts on mobile', async ({ page, browser, baseURL }) => {
+  test.setTimeout(180000)
+  const settings = loadTestDatabaseEnvironment(); await verifyTestDatabaseConnection(settings)
+  const db = new PrismaClient({ datasources: { db: { url: settings.environment.DATABASE_URL } } })
+  const suffix = randomUUID(), users: string[] = []
+  const email = (role: string) => `reviewed-healer-${role}-${suffix}@example.test`
+  const name = `Reviewed healer ${suffix}`
+  const practitionerContext = await browser.newContext({ baseURL, extraHTTPHeaders: { 'x-forwarded-for': '192.0.2.98' } })
+  try {
+    for (const role of ['first', 'second', 'practitioner']) users.push((await db.user.create({ data: {
+      email: email(role), role: role === 'practitioner' ? 'HEALER' : 'ADMIN', name: role === 'practitioner' ? name : 'Reviewing administrator',
+    } })).id)
+    const healer = await db.healer.create({ data: { userId: users[2], bio: 'Original practitioner biography', experienceYears: 2, specializations: ['Reiki'], isVerified: true } })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.context().setExtraHTTPHeaders({ 'x-forwarded-for': '192.0.2.97' })
+    expect((await page.request.get(`/api/test/login?${new URLSearchParams({ role: 'ADMIN', email: email('first') })}`)).status()).toBe(200)
+    await page.goto('/admin/healers')
+    const article = page.getByRole('article', { name: `Healer ${name}`, exact: true })
+    await article.getByText('Edit', { exact: true }).click()
+    await article.getByLabel('Bio', { exact: true }).fill('Staff draft pending review')
+    expect((await practitionerContext.request.get(`/api/test/login?${new URLSearchParams({ role: 'HEALER', email: email('practitioner') })}`)).status()).toBe(200)
+    expect((await practitionerContext.request.patch('/api/healer/profile', { data: { bio: 'Practitioner latest biography', experienceYears: 4 } })).status()).toBe(200)
+    await article.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(article.getByRole('alert')).toContainText('This healer profile changed.')
+    await expect(article.getByLabel('Bio', { exact: true })).toHaveValue('Staff draft pending review')
+    expect((await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).bio).toBe('Practitioner latest biography')
+    await Promise.all([page.waitForEvent('load'), article.getByRole('button', { name: 'Discard drafts and reload' }).click()])
+    await article.getByText('Edit', { exact: true }).click()
+    await expect(article.getByLabel('Bio', { exact: true })).toHaveValue('Practitioner latest biography')
+    await article.getByLabel('Bio', { exact: true }).fill('Reviewed staff biography')
+    await article.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(article.getByRole('status')).toHaveText('Healer profile saved.')
+    expect(await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).toMatchObject({ bio: 'Reviewed staff biography', experienceYears: 4, isActive: true, isVerified: true })
+    await article.getByRole('button', { name: 'Unverify', exact: true }).click()
+    await expect(article.getByRole('button', { name: 'Verify', exact: true })).toBeVisible()
+    await article.getByRole('button', { name: 'Deactivate', exact: true }).click()
+    await expect(article.getByText('(Inactive)', { exact: true })).toBeVisible()
+    expect(await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).toMatchObject({ bio: 'Reviewed staff biography', isActive: false, isVerified: false })
+    const before = await db.healer.findUniqueOrThrow({ where: { id: healer.id } })
+    await article.getByLabel('Bio', { exact: true }).fill('Draft belonging to first staff account')
+    expect((await page.request.get(`/api/test/login?${new URLSearchParams({ role: 'ADMIN', email: email('second') })}`)).status()).toBe(200)
+    await article.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(article.getByRole('alert')).toContainText('Your account changed.')
+    await expect(article.getByLabel('Bio', { exact: true })).toHaveValue('Draft belonging to first staff account')
+    expect(await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).toEqual(before)
+    await Promise.all([page.waitForEvent('load'), article.getByRole('button', { name: 'Discard drafts and reload' }).click()])
+    await expect(article.getByRole('button', { name: 'Activate', exact: true })).toBeVisible()
+    await db.user.update({ where: { id: users[1] }, data: { role: 'USER' } })
+    await article.getByRole('button', { name: 'Activate', exact: true }).click()
+    await expect(article.getByRole('alert')).toHaveText('Administrator access is required.')
+    expect(await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).toEqual(before)
+    expect(await db.activityLog.findMany({ where: { entityId: healer.id }, orderBy: { createdAt: 'asc' }, select: { action: true, userId: true } })).toEqual([
+      { action: 'healer_profile_updated', userId: users[0] }, { action: 'healer_unverified', userId: users[0] }, { action: 'healer_deactivated', userId: users[0] },
+    ])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.goto('/admin/healers')
+    await expect(page).not.toHaveURL(/\/admin\/healers/)
+  } finally {
+    await practitionerContext.close()
+    try {
+      await db.activityLog.deleteMany({ where: { userId: { in: users } } })
+      await db.user.deleteMany({ where: { id: { in: users } } })
     } finally { await db.$disconnect() }
   }
 })
