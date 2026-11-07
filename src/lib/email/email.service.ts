@@ -11,7 +11,7 @@ const resend = disabled ? null : new Resend(resendApiKey)
 
 function safeLogError(scope: string, error: unknown) {
   // Avoid throwing in production paths due to email issues; just log.
-  console.error(`[Email:${scope}]`, error)
+  console.error(`[Email:${scope}]`, { type: error instanceof Error ? error.name : 'unknown' })
 }
 
 export const emailService = {
@@ -73,7 +73,7 @@ export const emailService = {
         subject: `Booking Confirmed - ${data.serviceName} on ${data.date}`,
         react: BookingConfirmationEmailComponent(data)
       })
-      return { success: true, id: result.data?.id }
+      return { success: !result.error && Boolean(result.data?.id), id: result.data?.id }
     } catch (error) {
       safeLogError('sendBookingConfirmation', error)
       return { success: false, error }
@@ -102,7 +102,7 @@ export const emailService = {
           <p>If you didn't request this cancellation, please contact us immediately.</p>
         `
       })
-      return { success: true, id: result.data?.id }
+      return { success: !result.error && Boolean(result.data?.id), id: result.data?.id }
     } catch (error) {
       safeLogError('sendBookingCancellation', error)
       return { success: false, error }
@@ -138,7 +138,7 @@ export const emailService = {
           <p>We look forward to seeing you!</p>
         `
       })
-      return { success: true, id: result.data?.id }
+      return { success: !result.error && Boolean(result.data?.id), id: result.data?.id }
     } catch (error) {
       safeLogError('sendBookingReminder', error)
       return { success: false, error }
@@ -163,10 +163,12 @@ export const emailService = {
           <p>Thank you for your purchase.</p>
         `
       })
-      console.log('[invoice][generate][email_sent]', { invoiceNumber: data.invoiceNumber })
-      return { success: true, id: result.data?.id }
+      const success = !result.error && Boolean(result.data?.id)
+      if (success) console.log('[invoice][generate][email_sent]', { invoiceNumber: data.invoiceNumber })
+      else console.warn('[invoice][generate][email_failed]', { invoiceNumber: data.invoiceNumber, type: 'UnconfirmedDelivery' })
+      return { success, id: result.data?.id }
     } catch (error) {
-      console.warn('[invoice][generate][email_failed]', { invoiceNumber: data.invoiceNumber, error })
+      console.warn('[invoice][generate][email_failed]', { invoiceNumber: data.invoiceNumber, type: error instanceof Error ? error.name : 'unknown' })
       return { success: false, error }
     }
   },
@@ -191,7 +193,7 @@ export const emailService = {
         subject: 'Your Sacred Energy Alignment ✨',
         react: QuizAlignmentEmail({ ...data, siteUrl }),
       })
-      return { success: true, id: result.data?.id }
+      return { success: !result.error && Boolean(result.data?.id), id: result.data?.id }
     } catch (error) {
       safeLogError('sendQuizAlignment', error)
       return { success: false, error }
@@ -217,7 +219,7 @@ export const emailService = {
         subject: 'Your alignment window is still open ✨',
         react: QuizFollowUpEmail({ ...data, siteUrl }),
       })
-      return { success: true, id: result.data?.id }
+      return { success: !result.error && Boolean(result.data?.id), id: result.data?.id }
     } catch (error) {
       safeLogError('sendQuizFollowUp', error)
       return { success: false, error }
@@ -242,7 +244,7 @@ export const emailService = {
         subject: 'Your sacred tool is still waiting for you ✨',
         react: AbandonedCartEmail({ ...data, siteUrl }),
       })
-      return { success: true, id: result.data?.id }
+      return { success: !result.error && Boolean(result.data?.id), id: result.data?.id }
     } catch (error) {
       safeLogError('sendAbandonedCartRecovery', error)
       return { success: false, error }

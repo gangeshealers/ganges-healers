@@ -1,5 +1,24 @@
 # Ops Checklist (Payments, Invoices, Webhooks)
 
+## Queue and health acceptance
+
+- Configure Redis and a separately running worker together; the default web build
+  does not consume queued jobs. Use the same validated Redis URI/database on both.
+- Monitor `/api/health` HTTP status for database liveness and its additive
+  `degraded` flag / existing counters for optional transport failures and failed
+  jobs. Missing optional Redis remains supported. Healthy counters do not prove
+  consumer or provider delivery.
+- Rehearse an outage and recovery, an accepted job with a lost reply, worker
+  restart and failed email triage in an isolated environment. Unconfirmed enqueue
+  errors must not invoke a second notification fallback. Preserve producer IDs
+  and read state on notification retries.
+- Confirm real provider message IDs and duplicate/retry behavior before enabling
+  customer delivery. Queue workers now reject disabled/unconfirmed email results;
+  existing retries remain at least once. No live message is part of CI.
+- See `docs/deployment.md` for the bounded probe/queue budgets, explicit worker
+  startup, dedicated Redis test command and rollback. Connection and provider
+  errors must be redacted; the health response never includes a raw database error.
+
 ## Environments & Secrets Audit
 
 - Vercel envs: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `DATABASE_URL`, `NEXTAUTH_SECRET`, `BLOB_READ_WRITE_TOKEN`.
