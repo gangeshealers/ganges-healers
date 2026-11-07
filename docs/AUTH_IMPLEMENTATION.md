@@ -194,6 +194,18 @@ version and conditional headers are documented in `docs/contracts.md`; legacy
 JSON callers remain compatible. This changes no credentials or billing records
 and requires no provider configuration, schema migration or dependency.
 
+Healer administration also binds each profile edit, activation and verification
+decision to its reviewed saved version and the current staff account. The server
+shares booking allocation's healer lock, locks the profile row, rechecks open
+administrator/healer accounts, and commits the narrow change with an audit record
+in one transaction. Stale decisions keep
+the draft and require an explicit discard/reload; repeat toggles cannot apply a
+second change. Audit metadata records field names and status transitions, not
+biographies, certifications, contact details or credentials. Existing bookings,
+program assignments, reviews and payments remain unchanged. No migration or
+provider configuration is required. Revert the healer administration change to
+restore the previous screen and write path without rewriting customer records.
+
 Email ownership verification now uses the same configured mail service and
 trusted-origin validation, with account status/resend controls in settings and
 `/auth/verify-email` for confirmation. Links are hashed at rest, last 30 minutes,
