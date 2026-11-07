@@ -10,6 +10,12 @@ import * as Webhook from '@/app/api/payments/webhook/route'
 
 jest.setTimeout(30000)
 
+// Direct handler calls have no Next cookies() request context; financial checks stay real.
+jest.mock('@/lib/analytics/session', () => ({
+  getSessionId: async () => null,
+  getExperimentVariants: async () => ({}),
+}))
+
 jest.mock('@/lib/auth', () => ({
   auth: async () => ({ user: { id: process.env.TEST_USER_ID, role: process.env.TEST_USER_ROLE ?? 'USER', email: 'itest@example.com' } })
 }))
@@ -22,15 +28,21 @@ describe('Generic Payments Flow', () => {
   let user: any
   let orderId: string
   let paymentRowId: string
+  let storeOrderId: string
+  let productId: string
 
   beforeAll(async () => {
     user = await prisma.user.create({ data: { email: `gen_${Date.now()}@ex.com`, password: 'hashed', role: 'USER' } })
     process.env.TEST_USER_ID = user.id
     process.env.TEST_USER_ROLE = 'USER'
+    productId = (await prisma.product.create({ data: { slug: `generic-${crypto.randomUUID()}`, title: 'Generic payment fixture', pricePaise: 1000, stockCount: 3 } })).id
+    const order = await prisma.order.create({ data: { userId: user.id, totalPaise: 1000, items: { create: { productId, quantity: 1, pricePaise: 1000 } } } })
+    storeOrderId = order.id
   })
 
   afterAll(async () => {
     if (user?.id) await prisma.user.delete({ where: { id: user.id } }).catch(()=>{})
+    if (productId) await prisma.product.delete({ where: { id: productId } })
     await prisma.$disconnect()
   })
 
@@ -38,7 +50,7 @@ describe('Generic Payments Flow', () => {
     const req = makeNextRequest('http://localhost/api/payments/create-order', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'SESSION', amountPaise: 1000 })
+      body: JSON.stringify({ type: 'STORE', metadata: { orderId: storeOrderId } })
     })
     const res = await (CreateOrder as any).POST(req)
     expect(res.status).toBeLessThan(300)
@@ -94,7 +106,7 @@ describe('Generic Payments Flow', () => {
 
   test('webhook captured + failed + refund', async () => {
     expect(paymentRowId).toBeTruthy()
-    const capturedPayload = { event: 'payment.captured', payload: { payment: { entity: { id: 'pay_simulated_123', order_id: orderId, amount: 1000, currency: 'INR' } } } }
+    const capturedPayload = { event: 'payment.captured', payload: { payment: { entity: { id: 'pay_simulated_123', order_id: orderId, amount: 1000, currency: 'INR', status: 'captured' } } } }
     const rawCaptured = JSON.stringify(capturedPayload)
     const sigCaptured = crypto.createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET || '').update(rawCaptured).digest('hex')
     const reqCap = new NextRequest(new Request('http://localhost/api/payments/webhook', { method: 'POST', headers: { 'content-type': 'application/json', 'x-razorpay-signature': sigCaptured }, body: rawCaptured }) as any)
