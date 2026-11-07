@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { test, expect } from '@playwright/test'
 import { PrismaClient } from '@prisma/client'
 import { loadTestDatabaseEnvironment, verifyTestDatabaseConnection } from '../../../scripts/test-database'
+import { buildProgramSchedule } from '../../../src/lib/programs/schedule'
 
 test('deactivating a service and healer retains appointments, billing records and purchased program delivery', async ({ page, browser, baseURL }) => {
   test.setTimeout(180000)
@@ -250,6 +251,106 @@ test('reviewed healer decisions retain stale drafts and reject changed staff acc
     await practitionerContext.close()
     try {
       await db.activityLog.deleteMany({ where: { userId: { in: users } } })
+      await db.user.deleteMany({ where: { id: { in: users } } })
+    } finally { await db.$disconnect() }
+  }
+})
+
+test('reviewed program catalog saves retain mobile drafts and preserve paid access through archival', async ({ page, browser, baseURL }) => {
+  test.setTimeout(180000)
+  const settings = loadTestDatabaseEnvironment(); await verifyTestDatabaseConnection(settings)
+  const db = new PrismaClient({ datasources: { db: { url: settings.environment.DATABASE_URL } } })
+  const suffix = randomUUID(), users: string[] = [], programs: string[] = []
+  const email = (role: string) => `reviewed-program-${role}-${suffix}@example.test`
+  const title = `Reviewed program ${suffix}`
+  const otherContext = await browser.newContext({ baseURL, extraHTTPHeaders: { 'x-forwarded-for': '192.0.2.102' } })
+  const ownerContext = await browser.newContext({ baseURL, extraHTTPHeaders: { 'x-forwarded-for': '192.0.2.103' } })
+  const other = await otherContext.newPage()
+  try {
+    for (const role of ['first', 'second', 'owner']) users.push((await db.user.create({ data: { email: email(role), role: role === 'owner' ? 'USER' : 'ADMIN', name: 'Catalog fixture' } })).id)
+    const program = await db.program.create({ data: { slug: `reviewed-program-${suffix}`, title, description: 'Original catalog description', pricePaise: 9000, totalSessions: 1, sessionsPerWeek: 1, durationMinutes: 60 } }); programs.push(program.id)
+    const enrollment = await db.programEnrollment.create({ data: { userId: users[2], programId: program.id, status: 'active', pricePaise: 9000, schedule: buildProgramSchedule(1, 1, 60, new Date()).sessions } })
+    const payment = await db.payment.create({ data: { userId: users[2], type: 'PROGRAM', gateway: 'razorpay', status: 'success', statusEnum: 'SUCCESS', amountPaise: 9000, metadata: { programId: program.id, enrollmentId: enrollment.id } } })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.context().setExtraHTTPHeaders({ 'x-forwarded-for': '192.0.2.101' })
+    for (const [context, role, account] of [[page.context(), 'ADMIN', 'first'], [otherContext, 'ADMIN', 'second'], [ownerContext, 'USER', 'owner']] as const) {
+      expect((await context.request.get(`/api/test/login?${new URLSearchParams({ role, email: email(account) })}`)).status()).toBe(200)
+    }
+    await page.goto('/admin/programs')
+    const article = page.getByRole('article', { name: `Program ${title}`, exact: true })
+    await article.getByText('Edit', { exact: true }).click()
+    await article.getByLabel('Description', { exact: true }).fill('First administrator draft')
+    await article.getByLabel('Price (paise)', { exact: true }).fill('10000')
+    await other.goto('/admin/programs')
+    const remote = other.getByRole('article', { name: `Program ${title}`, exact: true })
+    await remote.getByText('Edit', { exact: true }).click()
+    await remote.getByLabel('Description', { exact: true }).fill('Second administrator saved description')
+    await remote.getByLabel('Price (paise)', { exact: true }).fill('21000')
+    await remote.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(remote.getByRole('status')).toHaveText('Program saved.')
+    await article.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(article.getByRole('alert')).toContainText('This program changed.')
+    await expect(article.getByLabel('Description', { exact: true })).toHaveValue('First administrator draft')
+    await expect(article.getByLabel('Price (paise)', { exact: true })).toHaveValue('10000')
+    expect(await db.program.findUniqueOrThrow({ where: { id: program.id } })).toMatchObject({ pricePaise: 21000, description: 'Second administrator saved description' })
+    await Promise.all([page.waitForEvent('load'), article.getByRole('button', { name: 'Discard drafts and reload' }).click()])
+    await article.getByText('Edit', { exact: true }).click()
+    await expect(article.getByLabel('Price (paise)', { exact: true })).toHaveValue('21000')
+    await article.getByLabel('Description', { exact: true }).fill('New reviewed catalog description')
+    await article.getByLabel('Price (paise)', { exact: true }).fill('22000')
+    await article.getByLabel('Total Sessions', { exact: true }).fill('3')
+    await article.getByLabel('Duration (min)', { exact: true }).fill('45')
+    await article.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(article.getByRole('status')).toHaveText('Program saved.')
+    expect(await db.programEnrollment.findUniqueOrThrow({ where: { id: enrollment.id } })).toEqual(enrollment)
+    expect(await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment)
+    const availability = article.locator('form').filter({ has: page.getByRole('button', { name: 'Deactivate', exact: true }) })
+    await availability.locator('input[name="isActive"]').evaluate(element => { (element as HTMLInputElement).value = 'invalid' })
+    await availability.getByRole('button', { name: 'Deactivate', exact: true }).click()
+    await expect(availability.getByRole('alert')).toHaveText('Reload and review this program before saving.')
+    expect((await db.program.findUniqueOrThrow({ where: { id: program.id } })).isActive).toBe(true)
+    await availability.locator('input[name="isActive"]').evaluate(element => { (element as HTMLInputElement).value = 'true' })
+    await article.getByRole('button', { name: 'Deactivate', exact: true }).click()
+    await expect(article.getByText('(Inactive)', { exact: true })).toBeVisible()
+    const archive = article.locator('form').filter({ has: page.getByRole('button', { name: 'Archive', exact: true }) })
+    await archive.getByRole('button', { name: 'Archive', exact: true }).click()
+    await expect(archive.getByRole('status')).toHaveText('Program saved.')
+    expect((await ownerContext.request.get(`/api/program-enrollments/${enrollment.id}`)).status()).toBe(200)
+    expect(await db.programEnrollment.findUniqueOrThrow({ where: { id: enrollment.id } })).toEqual(enrollment)
+    expect(await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment)
+    const create = page.locator('form').filter({ has: page.getByLabel('Slug', { exact: true }) })
+    const unusedTitle = `Unused program ${suffix}`, unusedSlug = `unused-program-${suffix}`
+    await create.getByLabel('Title', { exact: true }).fill(unusedTitle)
+    await create.getByLabel('Slug', { exact: true }).fill(unusedSlug)
+    await create.getByLabel('Price (paise)', { exact: true }).fill('1000')
+    await create.getByLabel('Description', { exact: true }).fill('Unused catalog fixture')
+    await create.getByRole('button', { name: 'Create', exact: true }).click()
+    await expect(create.getByRole('status')).toHaveText('Program created.')
+    const unused = await db.program.findUniqueOrThrow({ where: { slug: unusedSlug } }); programs.push(unused.id)
+    const unusedArticle = page.getByRole('article', { name: `Program ${unusedTitle}`, exact: true })
+    await unusedArticle.getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect(unusedArticle).toHaveCount(0)
+    expect(await db.program.findUnique({ where: { id: unused.id } })).toBeNull()
+    await create.getByLabel('Title', { exact: true }).fill('Draft from first staff account')
+    await create.getByLabel('Slug', { exact: true }).fill(unusedSlug)
+    await create.getByLabel('Price (paise)', { exact: true }).fill('1200')
+    await create.getByLabel('Description', { exact: true }).fill('Keep this rejected draft')
+    expect((await page.request.get(`/api/test/login?${new URLSearchParams({ role: 'ADMIN', email: email('second') })}`)).status()).toBe(200)
+    await create.getByRole('button', { name: 'Create', exact: true }).click()
+    await expect(create.getByRole('alert')).toContainText('Your account changed.')
+    await expect(create.getByLabel('Title', { exact: true })).toHaveValue('Draft from first staff account')
+    expect(await db.program.findUnique({ where: { slug: unusedSlug } })).toBeNull()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: test.info().outputPath('program-catalog-mobile.png'), fullPage: true })
+    expect(await db.activityLog.findMany({ where: { entityId: program.id }, orderBy: { createdAt: 'asc' }, select: { action: true } })).toEqual([
+      { action: 'program_updated' }, { action: 'program_updated' }, { action: 'program_deactivated' }, { action: 'program_archived' },
+    ])
+  } finally {
+    await otherContext.close(); await ownerContext.close()
+    try {
+      await db.activityLog.deleteMany({ where: { userId: { in: users } } })
+      await db.payment.deleteMany({ where: { userId: { in: users } } })
+      await db.program.deleteMany({ where: { id: { in: programs } } })
       await db.user.deleteMany({ where: { id: { in: users } } })
     } finally { await db.$disconnect() }
   }

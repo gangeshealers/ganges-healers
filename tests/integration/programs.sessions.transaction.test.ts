@@ -10,7 +10,9 @@ import { GET as calendar } from '@/app/api/program-enrollments/[id]/sessions/[nu
 import { GET as bookingCalendar } from '@/app/api/bookings/[id]/calendar/route'
 import { getHealerAvailability } from '@/lib/availability'
 import { buildProgramSchedule } from '@/lib/programs/schedule'
-import { archiveProgramCatalog, writeProgramCatalog } from '@/lib/programs/queries'
+import { archiveProgramCatalog, writeProgramCatalog, programCatalogVersion } from '@/lib/programs/queries'
+import { lockTransaction } from '@/lib/db/locks'
+import { GET as publicPrograms } from '@/app/api/programs/route'
 import { clinicDate, clinicSlotInstant } from '@/lib/bookings/time'
 
 let mockUserId = ''
@@ -44,6 +46,7 @@ afterAll(async () => {
     await prisma.booking.deleteMany({ where: { healerId: { in: [healerId, otherHealerId] } } })
     await prisma.service.deleteMany({ where: { id: serviceId } })
     await prisma.payment.deleteMany({ where: { userId: { in: [ownerId, adminId] } } })
+    await prisma.activityLog.deleteMany({ where: { userId: { in: [adminId, ownerId, outsiderId, staffId, otherStaffId] } } })
     await prisma.user.deleteMany({ where: { id: { in: [adminId, ownerId, outsiderId, staffId, otherStaffId] } } })
   } finally { await prisma.$disconnect() }
 })
@@ -186,9 +189,183 @@ test('catalog edits after checkout cannot alter purchased session count or durat
 })
 test('catalog deletion archives purchased programs, preserves their sessions and requires an actual admin', async () => {
   const row = await fixture()
-  await expect(archiveProgramCatalog(ownerId, row.programId)).rejects.toMatchObject({ status: 403 })
+  const version = programCatalogVersion(row.program)
+  await expect(archiveProgramCatalog(ownerId, row.programId, undefined, version)).rejects.toMatchObject({ status: 403 })
   await expect(writeProgramCatalog(adminId, { title: 'Bad', description: 'Bad', totalSessions: 10000000 }, row.programId)).rejects.toMatchObject({ status: 400 })
-  await archiveProgramCatalog(adminId, row.programId)
+  await archiveProgramCatalog(adminId, row.programId, undefined, version)
   expect((await prisma.program.findUniqueOrThrow({ where: { id: row.programId } })).isActive).toBe(false)
   expect(await prisma.programEnrollment.findUnique({ where: { id: row.id } })).not.toBeNull()
+})
+
+function catalogFields(change: Record<string, unknown> = {}) {
+  return { title: 'Reviewed program', slug: `reviewed-${randomUUID()}`, description: 'Professional program description', pricePaise: 19000, totalSessions: 3, sessionsPerWeek: 1, durationMinutes: 45, ...change }
+}
+async function unusedProgram() {
+  const program = await prisma.program.create({ data: catalogFields() })
+  programIds.push(program.id)
+  return program
+}
+const catalogVersion = async (id: string) => programCatalogVersion(await prisma.program.findUniqueOrThrow({ where: { id } }))
+async function waitingOnProgram(id: string, advisory = false) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const rows = advisory
+      ? await prisma.$queryRaw<Array<{ waiting: boolean }>>`SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND NOT granted AND classid=72103::oid AND objid=(hashtext(${'catalog:' + id})::bigint & 4294967295)::oid) AS waiting`
+      : await prisma.$queryRaw<Array<{ waiting: boolean }>>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity a JOIN pg_locks l ON l.pid=a.pid WHERE a.datname=current_database() AND NOT l.granted AND a.query LIKE ${'%FROM "Program"%FOR UPDATE%'}) AS waiting`
+    if (rows[0].waiting) return true
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  return false
+}
+
+test('reviewed program edits preserve purchased prices, schedules, reservations and payment records', async () => {
+  const row = await fixture()
+  await prisma.programSession.create({ data: { enrollmentId: row.id, healerId, sessionNumber: 1, durationMin: 60, scheduledAt: at(), status: 'SCHEDULED' } })
+  const before = await prisma.programEnrollment.findUniqueOrThrow({ where: { id: row.id }, include: { sessions: true } })
+  const payment = await prisma.payment.create({ data: { userId: ownerId, type: 'PROGRAM', gateway: 'razorpay', status: 'success', statusEnum: 'SUCCESS', amountPaise: 25000, metadata: { programId: row.programId, enrollmentId: row.id } } })
+  const saved = await writeProgramCatalog(adminId, catalogFields(), row.programId, programCatalogVersion(row.program))
+  expect(saved).toMatchObject({ title: 'Reviewed program', slug: row.program.slug, pricePaise: 19000, totalSessions: 3, durationMinutes: 45 })
+  expect(await prisma.programEnrollment.findUniqueOrThrow({ where: { id: row.id }, include: { sessions: true } })).toEqual(before)
+  expect(await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment)
+  const audit = await prisma.activityLog.findFirstOrThrow({ where: { entityId: row.programId, action: 'program_updated' } })
+  expect(audit).toMatchObject({ userId: adminId, entityType: 'program', metadata: { priceBefore: 25000, priceAfter: 19000, sessionsBefore: 2, sessionsAfter: 3 } })
+  expect(JSON.stringify(audit.metadata)).not.toContain('Professional program description')
+})
+
+test('creating and deleting an unused program produces atomic audits and rejects repeated deletion', async () => {
+  const created = await writeProgramCatalog(adminId, catalogFields()); programIds.push(created.id)
+  expect(await prisma.activityLog.count({ where: { entityId: created.id, action: 'program_created', userId: adminId } })).toBe(1)
+  await archiveProgramCatalog(adminId, created.id, undefined, programCatalogVersion(created))
+  expect(await prisma.program.findUnique({ where: { id: created.id } })).toBeNull()
+  expect(await prisma.activityLog.count({ where: { entityId: created.id, action: 'program_deleted' } })).toBe(1)
+  await expect(archiveProgramCatalog(adminId, created.id, undefined, programCatalogVersion(created))).rejects.toMatchObject({ code: 'PROGRAM_NOT_FOUND' })
+})
+
+test.each(['pending_payment', 'active', 'paused', 'completed', 'cancelled'] as const)('any %s enrollment requires archival and remains unchanged', async status => {
+  const program = await unusedProgram()
+  const enrollment = await prisma.programEnrollment.create({ data: { userId: ownerId, programId: program.id, status, pricePaise: 15000, schedule: buildProgramSchedule(2, 1, 60, at()).sessions } })
+  expect(await archiveProgramCatalog(adminId, program.id, undefined, programCatalogVersion(program))).toMatchObject({ isActive: false })
+  expect(await prisma.programEnrollment.findUniqueOrThrow({ where: { id: enrollment.id } })).toEqual(enrollment)
+  expect(await prisma.activityLog.findFirstOrThrow({ where: { entityId: program.id } })).toMatchObject({ action: 'program_archived', metadata: { enrollmentRecords: true, paymentRecords: false } })
+})
+
+test('a program with only legacy payment metadata is archived rather than erased', async () => {
+  const program = await unusedProgram()
+  const payment = await prisma.payment.create({ data: { userId: ownerId, type: 'PROGRAM', gateway: 'razorpay', status: 'failed', statusEnum: 'FAILED', amountPaise: 19000, metadata: { programId: program.id } } })
+  expect(await archiveProgramCatalog(adminId, program.id, undefined, programCatalogVersion(program))).toMatchObject({ isActive: false })
+  expect(await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment)
+  expect(await prisma.activityLog.findFirstOrThrow({ where: { entityId: program.id } })).toMatchObject({ action: 'program_archived', metadata: { enrollmentRecords: false, paymentRecords: true } })
+})
+
+test('same-timestamp edits invalidate old edit, toggle and deletion decisions', async () => {
+  const program = await unusedProgram(), version = programCatalogVersion(program)
+  const current = await prisma.program.update({ where: { id: program.id }, data: { description: 'Another reviewed description', updatedAt: program.updatedAt } })
+  await expect(writeProgramCatalog(adminId, catalogFields(), program.id, version)).rejects.toMatchObject({ code: 'PROGRAM_CHANGED' })
+  await expect(archiveProgramCatalog(adminId, program.id, true, version)).rejects.toMatchObject({ code: 'PROGRAM_CHANGED' })
+  await expect(archiveProgramCatalog(adminId, program.id, undefined, version)).rejects.toMatchObject({ code: 'PROGRAM_CHANGED' })
+  expect(await prisma.program.findUniqueOrThrow({ where: { id: program.id } })).toEqual(current)
+  expect(await prisma.activityLog.count({ where: { entityId: program.id } })).toBe(0)
+})
+
+test('competing reviewed catalog saves commit only one change and one audit', async () => {
+  const program = await unusedProgram(), version = programCatalogVersion(program)
+  const results = await Promise.allSettled([writeProgramCatalog(adminId, catalogFields(), program.id, version), archiveProgramCatalog(adminId, program.id, true, version)])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.filter(result => result.status === 'rejected')).toEqual([expect.objectContaining({ reason: expect.objectContaining({ code: 'PROGRAM_CHANGED' }) })])
+  expect(await prisma.activityLog.count({ where: { entityId: program.id } })).toBe(1)
+})
+
+test('toggles require the reviewed active state and reject repeats or forged state flags', async () => {
+  const program = await unusedProgram(), version = programCatalogVersion(program)
+  await expect(archiveProgramCatalog(adminId, program.id, false, version)).rejects.toMatchObject({ code: 'PROGRAM_CHANGED' })
+  expect(await archiveProgramCatalog(adminId, program.id, true, version)).toMatchObject({ isActive: false })
+  await expect(archiveProgramCatalog(adminId, program.id, true, version)).rejects.toMatchObject({ code: 'PROGRAM_CHANGED' })
+  expect(await archiveProgramCatalog(adminId, program.id, false, await catalogVersion(program.id))).toMatchObject({ isActive: true })
+  expect(await prisma.activityLog.count({ where: { entityId: program.id } })).toBe(2)
+})
+
+test('missing or malformed review versions never edit, toggle or remove a program', async () => {
+  const program = await unusedProgram()
+  for (const version of [undefined, '', 'not-a-version']) {
+    await expect(writeProgramCatalog(adminId, catalogFields(), program.id, version)).rejects.toMatchObject({ code: 'INVALID_PROGRAM_VERSION' })
+    await expect(archiveProgramCatalog(adminId, program.id, true, version)).rejects.toMatchObject({ code: 'INVALID_PROGRAM_VERSION' })
+    await expect(archiveProgramCatalog(adminId, program.id, undefined, version)).rejects.toMatchObject({ code: 'INVALID_PROGRAM_VERSION' })
+  }
+  expect(await prisma.program.findUniqueOrThrow({ where: { id: program.id } })).toEqual(program)
+})
+
+test('ordinary, revoked and closed administrator accounts cannot create or change catalog entries', async () => {
+  const program = await unusedProgram(), version = programCatalogVersion(program)
+  const rejectActor = async (actorId: string) => {
+    await expect(writeProgramCatalog(actorId, catalogFields())).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(writeProgramCatalog(actorId, catalogFields(), program.id, version)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(archiveProgramCatalog(actorId, program.id, true, version)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(archiveProgramCatalog(actorId, program.id, undefined, version)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  }
+  await rejectActor(ownerId); await rejectActor(randomUUID())
+  try {
+    await prisma.user.update({ where: { id: adminId }, data: { role: 'USER' } }); await rejectActor(adminId)
+    await prisma.user.update({ where: { id: adminId }, data: { role: 'ADMIN', closedAt: new Date() } }); await rejectActor(adminId)
+  } finally { await prisma.user.update({ where: { id: adminId }, data: { role: 'ADMIN', closedAt: null } }) }
+  expect(await prisma.program.findUniqueOrThrow({ where: { id: program.id } })).toEqual(program)
+})
+
+test('access revoked while waiting for enrollment catalog serialization is checked after the lock', async () => {
+  const program = await unusedProgram()
+  let acquired!: () => void, release!: () => void
+  const locked = new Promise<void>(resolve => { acquired = resolve }), unlock = new Promise<void>(resolve => { release = resolve })
+  const blocker = prisma.$transaction(async tx => {
+    await lockTransaction(tx, 'program', `catalog:${program.id}`); acquired(); await unlock
+    await tx.user.update({ where: { id: adminId }, data: { role: 'USER' } })
+  }, { timeout: 15000 })
+  await locked
+  const editing = writeProgramCatalog(adminId, catalogFields(), program.id, programCatalogVersion(program)).then(() => null).catch((error: unknown) => error)
+  try { expect(await waitingOnProgram(program.id, true)).toBe(true) }
+  finally { release(); await blocker; await editing; await prisma.user.update({ where: { id: adminId }, data: { role: 'ADMIN' } }) }
+  expect(await editing).toMatchObject({ code: 'FORBIDDEN' })
+  expect(await prisma.program.findUniqueOrThrow({ where: { id: program.id } })).toEqual(program)
+})
+
+test('an enrollment holding only its foreign-key lock commits before removal checks for purchases', async () => {
+  const program = await unusedProgram()
+  let acquired!: () => void, release!: () => void, enrollmentId = ''
+  const locked = new Promise<void>(resolve => { acquired = resolve }), unlock = new Promise<void>(resolve => { release = resolve })
+  const purchase = prisma.$transaction(async tx => {
+    enrollmentId = (await tx.programEnrollment.create({ data: { userId: ownerId, programId: program.id, pricePaise: 19000, status: 'pending_payment' } })).id
+    acquired(); await unlock
+  }, { timeout: 15000 })
+  await locked
+  const removing = archiveProgramCatalog(adminId, program.id, undefined, programCatalogVersion(program)).then(value => ({ value, error: undefined })).catch((error: unknown) => ({ value: undefined, error }))
+  try { expect(await waitingOnProgram(program.id)).toBe(true) }
+  finally { release(); await purchase; await removing }
+  expect((await removing).value).toMatchObject({ id: program.id, isActive: false })
+  expect(await prisma.programEnrollment.findUniqueOrThrow({ where: { id: enrollmentId } })).toMatchObject({ pricePaise: 19000, status: 'pending_payment', programId: program.id })
+})
+
+test('audit failure rolls back creation, edits, toggles and deletion', async () => {
+  const program = await unusedProgram(), version = programCatalogVersion(program), fields = catalogFields()
+  const constraint = `qa_program_${randomUUID().replaceAll('-', '')}`
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ActivityLog" ADD CONSTRAINT "${constraint}" CHECK ("entityType" <> 'program' OR "userId" <> '${adminId}') NOT VALID`)
+  try {
+    await expect(writeProgramCatalog(adminId, fields)).rejects.toThrow()
+    expect(await prisma.program.count({ where: { slug: fields.slug } })).toBe(0)
+    for (const saving of [() => writeProgramCatalog(adminId, fields, program.id, version), () => archiveProgramCatalog(adminId, program.id, true, version), () => archiveProgramCatalog(adminId, program.id, undefined, version)]) {
+      await expect(saving()).rejects.toThrow()
+      expect(await prisma.program.findUniqueOrThrow({ where: { id: program.id } })).toEqual(program)
+    }
+  } finally { await prisma.$executeRawUnsafe(`ALTER TABLE "ActivityLog" DROP CONSTRAINT "${constraint}"`) }
+})
+
+test('duplicate slugs roll back a second creation and return the existing uniqueness code', async () => {
+  const fields = catalogFields(), program = await writeProgramCatalog(adminId, fields); programIds.push(program.id)
+  await expect(writeProgramCatalog(adminId, fields)).rejects.toMatchObject({ code: 'P2002' })
+  expect(await prisma.program.count({ where: { slug: fields.slug } })).toBe(1)
+  expect(await prisma.activityLog.count({ where: { entityId: program.id } })).toBe(1)
+})
+
+test('successful catalog saves clear the local public-list cache so changed titles are discoverable', async () => {
+  const title = `Catalog ${randomUUID()}`, program = await writeProgramCatalog(adminId, catalogFields({ title })); programIds.push(program.id)
+  const lookup = () => publicPrograms(new NextRequest(`http://localhost/api/programs?${new URLSearchParams({ q: title })}`))
+  expect((await (await lookup()).json()).items).toEqual(expect.arrayContaining([expect.objectContaining({ id: program.id })]))
+  await writeProgramCatalog(adminId, catalogFields({ title: 'A different program title' }), program.id, programCatalogVersion(program))
+  expect((await (await lookup()).json()).items).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: program.id })]))
 })

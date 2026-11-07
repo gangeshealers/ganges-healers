@@ -785,10 +785,24 @@ cancelled or completed first. Calendar/meeting links describe confirmed rows onl
 optional meeting links must use HTTPS. No remote meeting is fabricated.
 
 The admin catalog validates positive paid prices, bounded session counts (1–366),
-frequency (1–7 per week) and duration (1–1440 minutes). Catalog deletion archives
-programs with any enrollment. Catalog writes/deletion and new allocations share a
-catalog lock so a concurrent purchase cannot be cascaded away. Existing active
-access survives archival. Existing paid enrollment response fields are unchanged.
+frequency (1–7 per week) and duration (1–1440 minutes). Staff forms bind the current
+administrator account and reviewed catalog version; stale edits, toggles and
+deletions preserve the draft and require an explicit discard/reload. Same-timestamp
+content changes invalidate an older version. Current open administrator access is
+checked after acquiring the catalog and program row locks and held through the
+atomic write/audit. Audits record field names and numeric/status transitions,
+without titles or description text.
+
+Catalog deletion archives programs with any enrollment state or program-bound
+payment metadata. Only unused programs can be removed. Catalog writes/deletion
+and new allocations share a catalog lock; the row lock also waits for enrollment
+foreign-key inserts that bypass the allocator. Existing active access, prices,
+schedules, assignments, reservations and payment records survive catalog changes
+and archival. Existing paid enrollment response fields are unchanged. Successful
+saves clear local program/search caches; other instances retain their existing
+60-second cache bound. No migration or provider configuration is required. Revert
+the reviewed catalog change to restore the prior staff screen and write path
+without rewriting customer purchases.
 
 Migration `20261105200000_program_session_reservations` adds the reservation table,
 status enum, assignment column, foreign keys, indexes and duration/number checks.
