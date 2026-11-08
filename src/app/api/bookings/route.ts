@@ -9,6 +9,7 @@ import { BookingError } from '@/lib/bookings/transactions'
 import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
 import { logActivity } from '@/lib/activity-log'
 import { emailService } from '@/lib/email/email.service'
+import { runSideEffect } from '@/lib/runSideEffect'
 import { CreateBookingBody } from './types'
 
 export async function GET(request: NextRequest) {
@@ -149,12 +150,12 @@ export async function POST(request: NextRequest) {
       })
     }, { maxWait: 10000, timeout: 10000, isolationLevel: 'ReadCommitted' })
 
-    // Fire and forget confirmation email
+    // Optional email remains attached to the request after the response.
     if (booking && emailService.isEnabled()) {
       const serviceName = booking.service?.name || 'Service'
       const healerName = booking.healer?.user?.name || 'Healer'
       const scheduled = new Date(booking.scheduledAt)
-      emailService.sendBookingConfirmation({
+      await runSideEffect(emailService.sendBookingConfirmation({
         // Assuming email exists on session.user; if not present in type, cast minimally
         to: (session?.user as { email?: string } | undefined)?.email || '',
         userName: session?.user?.name || 'User',
@@ -163,10 +164,10 @@ export async function POST(request: NextRequest) {
         date: new Intl.DateTimeFormat('en-US', { timeZone: BOOKING_TIME_ZONE, month: 'long', day: 'numeric', year: 'numeric' }).format(scheduled),
         time: `${new Intl.DateTimeFormat('en-US', { timeZone: BOOKING_TIME_ZONE, hour: 'numeric', minute: '2-digit', hour12: true }).format(scheduled)} IST`,
         bookingId: booking.id
-      }).catch(err => console.error('Async email error:', err))
+      }).catch(err => console.error('Async email error:', { errorType: err instanceof Error ? 'Error' : typeof err })))
     }
 
-    logActivity({ userId: session?.user?.id, action: 'booking_created', entityType: 'booking', entityId: booking.id, metadata: { serviceId: booking.serviceId, healerId: booking.healerId } })
+    await logActivity({ userId: session?.user?.id, action: 'booking_created', entityType: 'booking', entityId: booking.id, metadata: { serviceId: booking.serviceId, healerId: booking.healerId } })
     return NextResponse.json({
       success: true,
       data: booking,
