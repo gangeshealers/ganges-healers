@@ -1234,3 +1234,19 @@ connection roles follow the existing libraries' documented behavior:
 [BullMQ connections](https://docs.bullmq.io/guide/connections) and
 [ioredis TLS](https://github.com/redis/ioredis#tls-options). No migration or app
 dependency is required.
+
+### Optional work and request lifetime
+
+`runSideEffect` registers already-started optional promises with Next.js `after`.
+Payment verification's invoice generation, activity and purchase analytics, booking
+email, invoice email and shared activity logging remain attached after response.
+Public endpoint JSON/status/error contracts and transactional fulfillment/audit
+writes are unchanged. Test mode and `RUN_SYNC_SIDE_EFFECTS=1` retain synchronous
+results/errors. Without a request scope the same handled promise is awaited;
+registration failure never starts a second attempt. Optional activity failures
+remain contained, including ambiguous queue submission without inline fallback.
+
+This is bounded by invocation duration and does not provide crash recovery,
+durable email delivery or a running queue consumer. See `docs/deployment.md` for
+HTTP/unit coverage, configuration and rollback. The mechanism follows the
+[Next.js after API](https://nextjs.org/docs/app/api-reference/functions/after).

@@ -110,6 +110,32 @@ Security headers (X-Frame-Options, X-Content-Type-Options, etc.) are configured 
 
 ---
 
+## Request lifetime for optional work
+
+Payment verification registers invoice generation, activity and purchase analytics
+with Next.js `after` using their already-started promises. Booking email, invoice
+email and the shared activity logger use the same `runSideEffect` helper. Optional
+work remains attached to the request after the response, within the hosting
+platform's invocation duration; payment/stock/enrollment transactions still commit
+before the response. The helper never resubmits work if registration fails.
+
+`NODE_ENV=test` or the existing `RUN_SYNC_SIDE_EFFECTS=1` flag awaits the original
+promise and preserves its result/error. Without a request scope (scripts/workers),
+the helper awaits the same promise and contains/logs asynchronous failure. The
+shared activity helper contains its own failures in every mode. Keep critical
+transactional audit writes awaited inside their transaction; they do not use this
+optional helper. Generic background errors record safe types, never raw payloads.
+
+This extends invocation lifetime, not durable delivery or provider retries. A
+process crash/platform timeout can still interrupt work; invoice recovery and the
+separate queue worker remain necessary. No live email delivery is established by
+the tests. The HTTP lifecycle test blocks optional activity writes while confirming
+payment, then checks activity/invoice/analytics persistence and retry behavior.
+Browser tests must exercise the default asynchronous mode (leave
+`RUN_SYNC_SIDE_EFFECTS` unset or `0`). Unit tests cover registration, fallback,
+rejection and synchronous mode. No dependency/schema/config change is required;
+revert the lifecycle patch and its tests/docs together to roll back.
+
 ## 5. Redis & Background Jobs (Optional)
 
 Redis is optional. With no `REDIS_URL`, the existing notification and activity

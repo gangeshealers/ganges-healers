@@ -3,6 +3,7 @@ import { generateInvoicePDF } from './pdf'
 import { uploadInvoicePDF } from './storage'
 import crypto from 'crypto'
 import { emailService } from '@/lib/email/email.service'
+import { runSideEffect } from '@/lib/runSideEffect'
 
 interface GenerateArgs {
   paymentId: string
@@ -147,12 +148,12 @@ export async function generateInvoiceForPayment(args: GenerateArgs) {
   }
 
   if (sendEmail && pdfUrl) {
-    emailService.sendInvoiceEmail({
+    await runSideEffect(emailService.sendInvoiceEmail({
       to: billToEmail,
       invoiceNumber: invoiceRecord.invoiceNumber,
       amountPaise: totalPaise,
       link: pdfUrl
-    }).catch(e => console.warn('[invoice][generate][email_async_failed]', { paymentId, error: (e as Error).message }))
+    }).catch(e => console.warn('[invoice][generate][email_async_failed]', { paymentId, errorType: e instanceof Error ? 'Error' : typeof e })))
   }
 
   console.log('[invoice][generate][created]', { paymentId, invoiceNumber: invoiceRecord.invoiceNumber, pdf: !!pdfUrl })
