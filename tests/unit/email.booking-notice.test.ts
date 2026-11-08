@@ -23,6 +23,13 @@ test('the installed SDK sends the frozen message and stable key with an abort si
   expect(options.signal).toBeInstanceOf(AbortSignal)
 })
 
+test('a JSONB-style key reorder produces the same provider request bytes on retry', async () => {
+  await email.sendBookingNotice(message, 'booking-email/event-id')
+  await email.sendBookingNotice({ html: message.html, subject: message.subject, to: message.to, from: message.from }, 'booking-email/event-id')
+  expect(fetchMock.mock.calls[1][1].body).toBe(fetchMock.mock.calls[0][1].body)
+  expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Idempotency-Key')).toBe('booking-email/event-id')
+})
+
 test.each([{ error: { message: 'private payload' } }, {}, { id: '' }])('unconfirmed provider response cannot report delivery (%j)', async response => {
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 'error' in response ? 500 : 200 }))
   expect((await email.sendBookingNotice(message, 'booking-email/event-id')).success).toBe(false)

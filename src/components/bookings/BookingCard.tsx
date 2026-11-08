@@ -77,7 +77,7 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
   currentOwner.current = session?.user?.id
   const permitted = status === 'authenticated' && session?.user?.id === ownerId
   const storageKey = `ganges-booking-confirmation:${ownerId}:${booking.id}`
-  const creditEligible = session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0
+  const creditEligible = booking.status === 'PENDING' && session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 

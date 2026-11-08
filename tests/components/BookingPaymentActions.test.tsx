@@ -90,3 +90,9 @@ test('a pending gateway payment does not offer credit replacement', () => {
   expect(screen.getByRole('button', { name: 'Continue payment' })).toBeEnabled()
   expect(screen.queryByRole('button', { name: 'Use session credit' })).not.toBeInTheDocument()
 })
+
+test('an unpaid rescheduled appointment offers payment while keeping the pending-only credit rule', () => {
+  render(<BookingCard booking={{ ...saved, status: 'RESCHEDULED' }} ownerId="owner" onConfirmed={confirmed} onCancel={jest.fn()} onReschedule={jest.fn()} />)
+  expect(screen.getByRole('button', { name: 'Continue payment' })).toBeEnabled()
+  expect(screen.queryByRole('button', { name: 'Use session credit' })).not.toBeInTheDocument()
+})
