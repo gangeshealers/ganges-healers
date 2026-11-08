@@ -136,7 +136,10 @@ export function MobileNav({
           </div>
 
           <div className="flex flex-col gap-3">
-            <BookSessionButton href={ctaHref} {...ctaProps}>
+            <BookSessionButton href={ctaHref} {...ctaProps} onClick={() => {
+              onOpenChange?.(false);
+              ctaProps?.onClick?.();
+            }}>
               {ctaLabel}
             </BookSessionButton>
           </div>

@@ -136,6 +136,81 @@ Browser tests must exercise the default asynchronous mode (leave
 rejection and synchronous mode. No dependency/schema/config change is required;
 revert the lifecycle patch and its tests/docs together to roll back.
 
+## Booking email outbox
+
+Apply `20261108010000_booking_email_outbox` before the matching application/worker
+code. It only adds two enums, `BookingEmail`, indexes and a cascading booking
+foreign key; it does not backfill or change historical bookings/payments. Run the
+tracked migration with a direct database connection and record its exact checksum
+in the migration ledger. Rehearse against populated legacy rows first. Confirm
+existing row counts/fingerprints before and after the controlled Preview upgrade.
+Production still requires the separately reviewed dataset/cutover procedure.
+
+Creation records REQUESTED; cash or credit confirmation records CONFIRMED in the
+same transaction as the appointment decision. Provider work starts after commit
+through the request-lifetime helper. The existing persistent worker also checks
+due events on startup and every minute, with at most five per batch and no overlap.
+Its existing ten-second shutdown deadline includes active outbox work; an
+interrupted attempt retains its lease/payload for recovery. Keep the web app,
+worker and schema on compatible versions.
+
+The worker needs the existing database/email credentials and a trusted canonical
+origin (`AUTH_URL`, `NEXTAUTH_URL` or `NEXT_PUBLIC_SITE_URL`; Vercel URL is the
+existing fallback). Missing email/origin configuration leaves events pending and
+recovery reports `disabled: true`. Redis is required to start the existing worker;
+the outbox recovery endpoint itself uses PostgreSQL independently of Redis.
+An external scheduler can call `GET /api/cron/booking-emails` with the existing
+CRON_SECRET Bearer header every minute. The route handles three due events and
+returns aggregate counts. This patch does not create a hosted schedule or change
+live credentials; verify a running worker or authenticated scheduler before launch.
+
+Monitor delivery state without exposing recipient payloads:
+
+```sql
+SELECT kind, status, "lastError", count(*)
+FROM "BookingEmail"
+GROUP BY kind, status, "lastError";
+```
+
+PENDING is a durable intent, not proof of delivery. SENT requires provider
+acceptance and a message ID. Delays increase from one minute to one hour; eight
+attempts or a 23-hour window from the first attempt lead to REVIEW. A crashed
+claim becomes available after two minutes. Payload, sender, recipient, subject,
+HTML and provider key stay fixed across retries, including a lost database
+acknowledgement after acceptance. The installed SDK forwards an AbortSignal and
+the service bounds provider response waits to ten seconds. The retry window stays
+inside [Resend's documented 24-hour retention](https://resend.com/docs/dashboard/emails/idempotency-keys).
+
+Do not reset REVIEW/SENT, delete an unresolved event, or rotate its key just to
+clear a failure. Reconcile the saved first-attempt time, frozen payload and stable
+event key against authorized provider records. If accepted, record the verified
+message ID/outcome; if unresolved or expired, leave REVIEW for a deliberate staff
+follow-up. A changed recipient/time/service/healer after an ambiguous attempt
+requires review, rather than a different message under the same key. The dispatcher
+suppresses stale pending requests, cancelled/completed/past bookings and closed
+accounts before claiming. A state change after a provider request starts cannot
+retract that in-flight message. Real delivery/bounce checks remain launch acceptance.
+
+The outbox contains recipient data and rendered mail needed for retries. Restrict
+database access and include it in the existing retention/account data procedures;
+neither recovery responses nor logs expose this payload. Physical booking deletion
+cascades its events. Legacy settled appointments are not automatically mailed by
+a callback replay, and existing appointments are not mass-backfilled by migration.
+
+Verification includes real-renderer/PostgreSQL concurrency, rollback, stale lease,
+lost acknowledgement, finite retry and migration-preservation tests; installed-SDK
+transport tests exercise idempotency headers and abort; browser tests cover mobile
+credit confirmation and saved-price cash recovery after a failed response/refresh.
+No test sends live email or charges a provider. Integration scripts use
+`--experimental-vm-modules` for the email renderer's dynamic React server import;
+application build/start behavior and pure unit/UI scripts are unchanged.
+
+For rollback, pause outbox recovery and retain its table, events, keys and migration
+ledger while reverting application/worker code together. Older code ignores these
+records. Reconcile unresolved sends before any later worker resumes; do not drop
+the table or automatically replay records with new keys. Keep live booking email
+disabled while running the earlier pending/confirmed mail implementation.
+
 ## 5. Redis & Background Jobs (Optional)
 
 Redis is optional. With no `REDIS_URL`, the existing notification and activity

@@ -18,6 +18,8 @@ interface BookingConfirmationEmailProps {
   date: string
   time: string
   bookingId: string
+  status?: 'PENDING' | 'CONFIRMED'
+  dashboardUrl?: string
 }
 
 export function BookingConfirmationEmail({
@@ -26,20 +28,25 @@ export function BookingConfirmationEmail({
   healerName,
   date,
   time,
-  bookingId
+  bookingId,
+  status = 'CONFIRMED',
+  dashboardUrl,
 }: BookingConfirmationEmailProps) {
+  const pending = status === 'PENDING'
   return (
     <Html>
       <Head />
-      <Preview>Your {serviceName} session is confirmed for {date} at {time}</Preview>
+      <Preview>{pending ? `Your ${serviceName} booking request needs confirmation` : `Your ${serviceName} session is confirmed for ${date} at ${time}`}</Preview>
       <Body style={main}>
         <Container style={container}>
-          <Heading style={h1}>Booking Confirmed! ✨</Heading>
+          <Heading style={h1}>{pending ? 'Booking Request Received' : 'Booking Confirmed! ✨'}</Heading>
 
           <Text style={text}>Hi {userName},</Text>
 
           <Text style={text}>
-            Your {serviceName} session with {healerName} has been confirmed.
+            {pending
+              ? `We received your request for a ${serviceName} session with ${healerName}. Complete payment or use an eligible session credit from your bookings page to confirm your appointment.`
+              : `Your ${serviceName} session with ${healerName} has been confirmed.`}
           </Text>
 
           <Section style={boxStyle}>
@@ -49,12 +56,12 @@ export function BookingConfirmationEmail({
             <Text style={boldText}>🎫 Booking ID: {bookingId}</Text>
           </Section>
 
-          <Link href={`${process.env.NEXT_PUBLIC_APP_URL}/dashboard`} style={button}>
+          <Link href={dashboardUrl || `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/bookings`} style={button}>
             View Your Bookings
           </Link>
 
           <Text style={footer}>
-            Need to reschedule? You can manage your booking from your dashboard up to 24 hours before the session.
+            Manage your appointment from your bookings page. Changes follow the booking policy.
           </Text>
         </Container>
       </Body>

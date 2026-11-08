@@ -6,6 +6,7 @@
 import { Worker } from 'bullmq'
 import { redisConnectionOptions, type EmailJobData, type NotificationJobData, type ActivityJobData } from './jobs'
 import { storeNotification } from '../notifications/delivery'
+import { drainBookingEmails } from '../bookings/email'
 
 const connection = redisConnectionOptions(process.env.REDIS_URL, 'worker')
 if (!connection) throw new Error('REDIS_URL is required to start queue workers.')
@@ -83,15 +84,28 @@ const activityWorker = new Worker<ActivityJobData>(
 // ─── Lifecycle ─────────────────────────────────────────────────
 
 let shuttingDown = false
+let bookingEmailRun: Promise<unknown> | null = null
+function recoverBookingEmails() {
+  if (shuttingDown || bookingEmailRun) return
+  bookingEmailRun = drainBookingEmails({ limit: 5 })
+    .catch(() => console.error('[worker][booking-email][error]'))
+    .finally(() => { bookingEmailRun = null })
+}
+const bookingEmailTimer = setInterval(recoverBookingEmails, 60000)
+bookingEmailTimer.unref()
+recoverBookingEmails()
+
 function gracefulShutdown() {
   if (shuttingDown) return
   shuttingDown = true
+  clearInterval(bookingEmailTimer)
   console.log('[worker] Shutting down...')
   const deadline = setTimeout(() => process.exit(1), 10000)
   Promise.all([
     emailWorker.close(),
     notificationWorker.close(),
     activityWorker.close(),
+    bookingEmailRun,
   ]).then(() => {
     clearTimeout(deadline)
     process.exit(0)
