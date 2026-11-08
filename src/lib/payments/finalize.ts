@@ -3,6 +3,7 @@ import { activateProgramEnrollment } from './activateProgramEnrollment'
 import { activateCourseEnrollment } from './activateCourseEnrollment'
 import { activateStoreOrder } from './activateStoreOrder'
 import { PaymentResourceError, lockPaymentResource, paymentResourceKey, resolvePaymentResource } from './resource'
+import { recordBookingEmail, dispatchBookingEmails } from '@/lib/bookings/email'
 
 type FinalizeInput = { orderId: string; paymentId: string; userId: string } & (
   { signature: string; captured?: never } | { signature?: never; captured: { amountPaise: number; currency: string } }
@@ -10,7 +11,7 @@ type FinalizeInput = { orderId: string; paymentId: string; userId: string } & (
 
 /** Commit verified payment and purchase fulfillment together; safe for callback retries. */
 export async function finalizePayment(input: FinalizeInput) {
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     let payment = await tx.payment.findFirst({ where: { gatewayOrderId: input.orderId } })
     if (!payment) throw new PaymentResourceError('Payment not found', 404)
     if (payment.userId && payment.userId !== input.userId) throw new PaymentResourceError('Forbidden', 403)
@@ -36,6 +37,7 @@ export async function finalizePayment(input: FinalizeInput) {
       throw new PaymentResourceError('Amount does not match resource price', 400)
     }
     if (idempotent && !resource.requiresFulfillment) {
+      // Existing outbox work is retried after commit; legacy settled bookings are not backfilled.
       return { payment, idempotent, activation: null, storeActivation: null, courseActivation: null }
     }
     const updated = idempotent ? payment : await tx.payment.update({
@@ -61,6 +63,9 @@ export async function finalizePayment(input: FinalizeInput) {
       })
       if (confirmed.count !== 1) throw new PaymentResourceError('Booking changed before confirmation', 409)
     }
+    if (type === 'SESSION' && payment.bookingId) await recordBookingEmail(tx, payment.bookingId, 'CONFIRMED')
     return { payment: updated, idempotent, activation, storeActivation, courseActivation }
   }, { maxWait: 10000, timeout: 10000 })
+  if (result.payment.bookingId) await dispatchBookingEmails(result.payment.bookingId)
+  return result
 }

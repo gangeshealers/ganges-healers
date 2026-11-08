@@ -40,6 +40,8 @@ export type NormalizedBooking = {
   healerId: string
   serviceId: string
   amountPaise: number
+  needsConfirmation?: boolean
+  hasPaymentInProgress?: boolean
   meetingLink?: string | null
   canReview?: boolean
   review?: BookingReview | null
@@ -52,6 +54,7 @@ export default function MyBookingsPage() {
   const [itemsOwner, setItemsOwner] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reloadVersion, setReloadVersion] = useState(0)
 
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
   const [cancelId, setCancelId] = useState<string | null>(null)
@@ -91,6 +94,8 @@ export default function MyBookingsPage() {
             healerId: b.healerId,
             serviceId: b.serviceId,
             amountPaise: Number.isFinite(b.payment?.amountPaise) ? (b.payment?.amountPaise || 0) : (b.pricePaise || 0),
+            needsConfirmation: ['PENDING', 'SCHEDULED', 'RESCHEDULED'].includes(status) && !['success', 'SUCCESS', 'refunded', 'REFUNDED'].includes(b.payment?.status || ''),
+            hasPaymentInProgress: Boolean(b.payment),
             canReview: status === 'COMPLETED' && start.getTime() + (b.durationMin ?? 60) * 60000 <= now && b.userId !== b.healer?.userId,
             review: b.review ?? null,
           }
@@ -103,7 +108,7 @@ export default function MyBookingsPage() {
       }
     })()
     return () => { mounted = false }
-  }, [userId, authStatus])
+  }, [userId, authStatus, reloadVersion])
 
   const { upcoming, past } = useMemo(() => {
     const now = Date.now()
@@ -147,7 +152,7 @@ export default function MyBookingsPage() {
             {upcoming.length === 0 ? (
               <Card className="p-6 text-muted-foreground">No upcoming bookings.</Card>
             ) : upcoming.map((b) => (
-              <BookingCard key={b.id} booking={b} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
+              <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={() => setReloadVersion(v => v + 1)} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
             ))}
           </TabsContent>
           <TabsContent value="past" className="mt-4 space-y-3">

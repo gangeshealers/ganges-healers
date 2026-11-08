@@ -18,6 +18,7 @@ jest.mock('@/lib/payments/activateCourseEnrollment', () => ({ activateCourseEnro
 jest.mock('@/lib/payments/activateStoreOrder', () => ({ activateStoreOrder: jest.fn() }))
 jest.mock('@/lib/invoices/generate', () => ({ generateInvoiceForPayment: jest.fn() }))
 jest.mock('@/lib/activity-log', () => ({ logActivity: jest.fn() }))
+jest.mock('@/lib/bookings/email', () => ({ recordBookingEmail: jest.fn(), dispatchBookingEmails: jest.fn() }))
 jest.mock('@/lib/analytics/track-event', () => ({ trackEvent: jest.fn() }))
 jest.mock('@/lib/analytics/session', () => ({ getSessionId: jest.fn(), getExperimentVariants: jest.fn() }))
 

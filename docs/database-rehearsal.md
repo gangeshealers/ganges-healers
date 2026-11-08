@@ -105,3 +105,30 @@ order/item/payment fingerprints guarded the change. Independent verification
 confirmed 29 applied migrations, the exact checksum, nullable column and unique
 index. This is additive Preview preparation; production application remains part
 of the fresh cutover procedure above.
+## Booking email outbox follow-up
+
+The additive `20261108010000_booking_email_outbox` migration was first rehearsed
+against populated legacy booking/payment rows in an isolated PostgreSQL schema.
+The real renderer/outbox tests also verify uniqueness, rollback, concurrent paid
+and credit confirmation, lost delivery acknowledgements and stale lease fencing.
+
+It was then applied only to project `holy-block-51695227`, non-primary branch
+`br-winter-sun-ado4pted`, database `ganges_live_rehearsal_20261104`. Preflight
+verified all 29 existing migration records, including the eight documented
+CRLF/LF checksum variants. No historical checksum or migration entry was changed.
+The exact new SQL SHA-256 is
+`a5d7d9ab86e3d1b722575d58fefcb1b389bfce86a4427186870234fc398c0f40`.
+
+A single transaction used explicit database identity/history/object checks,
+five-second lock and thirty-second statement limits, and table locks. Row counts
+and sorted JSON fingerprints of all 47 existing public application tables matched
+before and after, and all original migration-row fields were preserved. The
+committed result has 30 complete migration records and an empty `BookingEmail`
+table with 15 columns, three indexes and one cascading booking foreign key.
+Independent post-commit checks confirmed the checksum, schema counts and unchanged
+original fingerprints. No historical email intent was backfilled or sent.
+
+The production database, connection settings, provider credentials and hosting
+schedules were not changed. Retain the additive table/history during code rollback
+and reconcile unresolved provider attempts before resuming delivery. Production
+still needs a fresh synchronized cutover; this Preview upgrade is not that cutover.

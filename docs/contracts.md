@@ -1250,3 +1250,55 @@ This is bounded by invocation duration and does not provide crash recovery,
 durable email delivery or a running queue consumer. See `docs/deployment.md` for
 HTTP/unit coverage, configuration and rollback. The mechanism follows the
 [Next.js after API](https://nextjs.org/docs/app/api-reference/functions/after).
+
+### Booking confirmation and recoverable email
+
+Booking creation still returns HTTP 201 with the same PENDING booking JSON. It
+atomically records one REQUESTED `BookingEmail`. Paid SESSION fulfillment and
+credit confirmation atomically record one CONFIRMED event with their existing
+payment/credit/booking changes. Unique `(bookingId, kind)` prevents callback and
+worker races from creating duplicate intents. A failed outbox insert rolls the
+business transaction back; no provider call occurs inside that transaction.
+Settled legacy booking replays do not backfill emails. Existing queued legacy
+email contracts remain available to their worker.
+
+The request template says **Booking Request Received** and explains payment or
+eligible-credit confirmation. The confirmed template is used only for a committed
+confirmation. The dispatcher checks current appointment state, account closure
+and future time before claiming work. Superseded requests and inactive/past
+appointments are SKIPPED. Mail uses IST and a bookings URL from trusted server
+configuration, never the incoming Host header. User content is React-escaped.
+
+My Bookings offers payment continuation for unpaid future appointments and credit
+confirmation for eligible pending appointments without an existing payment.
+Quotes use the saved booking price. The browser retains a signed payment proof
+in owner/booking-scoped session storage until verification succeeds, including
+after refresh; verification retries never reopen checkout. Account changes and
+unmounts stop stale setup from opening a gateway. The page refetches owned
+bookings after confirmation. Provider-side payment recovery is still required
+when browser storage/proof is unavailable.
+
+Credit confirmation takes the same healer lock as payment setup/fulfillment before
+the membership lock, and refuses to replace a non-credit payment using the
+existing HTTP 400 `INVALID_STATE` contract. This preserves a gateway attempt that
+may already have been charged; customers can continue it or use the existing
+cancellation/reconciliation flow. Successful financial API response shapes and
+other error codes remain unchanged.
+
+Outbox delivery freezes the complete provider message before sending and reuses
+`booking-email/<event-id>` across attempts. A two-minute lease and token-fenced
+updates coordinate request, worker and recovery callers. Only provider acceptance
+with a nonempty message ID records SENT. A ten-second abort/response budget keeps
+an unconfirmed attempt retryable. At most eight attempts use increasing delays;
+automatic sends stop after 23 hours from the first attempt, within the provider's
+24-hour idempotency retention. Unresolved/changed frozen payloads become REVIEW
+and are never automatically given a new key. SENT means provider acceptance,
+not inbox delivery. See the [Resend idempotency contract](https://resend.com/docs/dashboard/emails/idempotency-keys).
+
+The existing persistent worker polls due events without overlapping batches.
+`GET /api/cron/booking-emails` independently recovers at most three due events;
+it requires the existing nonblank `CRON_SECRET` Bearer credential and returns
+counts only with no-store caching. No new hosted schedule or provider setting
+is enabled by this patch. See `docs/deployment.md` for migration, monitoring,
+reconciliation and rollback. Integration tests exercise the real email renderer;
+their existing scripts enable Node's VM-module support for its dynamic import.

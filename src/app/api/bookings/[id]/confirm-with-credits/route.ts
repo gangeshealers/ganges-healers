@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client'
 import { hasVipAccess } from '@/lib/memberships/access'
 import { lockTransaction } from '@/lib/db/locks'
 import { auth } from '@/lib/auth'
+import { recordBookingEmail, dispatchBookingEmails } from '@/lib/bookings/email'
 
 export async function POST(
   req: Request,
@@ -18,15 +19,20 @@ export async function POST(
 
   try {
   const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Match paid confirmation/order creation's healer lock before the membership lock.
+      const candidate = await tx.booking.findUnique({ where: { id }, select: { healerId: true } })
+      if (candidate) await lockTransaction(tx, 'healer', candidate.healerId)
       await lockTransaction(tx, 'membership', session.user.id)
       const user = await tx.user.findUnique({ where: { id: session.user.id } })
       if (!user) throw new Error('USER_NOT_FOUND')
       if ((user.freeSessionCredits ?? 0) <= 0 || !await hasVipAccess(user.id, tx)) throw new Error('NO_CREDITS')
 
-      const booking = await tx.booking.findUnique({ where: { id } })
+      const booking = await tx.booking.findUnique({ where: { id }, include: { payment: true } })
       if (!booking) throw new Error('BOOKING_NOT_FOUND')
       if (booking.userId !== user.id) throw new Error('FORBIDDEN')
       if (booking.status !== 'PENDING') throw new Error('INVALID_STATE')
+      // Never replace a gateway payment that may already have been charged.
+      if (booking.payment && booking.payment.gateway !== 'vip_credit') throw new Error('INVALID_STATE')
 
       const confirmed = await tx.booking.updateMany({
         where: { id, userId: user.id, status: 'PENDING' },
@@ -44,10 +50,12 @@ export async function POST(
         update: { gateway: 'vip_credit', status: 'success', amountPaise: 0 },
         create: { bookingId: id, gateway: 'vip_credit', status: 'success', amountPaise: 0 },
       })
+      await recordBookingEmail(tx, id, 'CONFIRMED')
 
       return true
     })
 
+    await dispatchBookingEmails(id)
     return NextResponse.json({ ok: result })
   } catch (e: unknown) {
     const code = e instanceof Error ? e.message : 'UNKNOWN'

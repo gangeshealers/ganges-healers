@@ -19,6 +19,29 @@ export const emailService = {
     return !disabled
   },
 
+  /** Send the outbox's frozen payload with its stable provider key and a finite wait. */
+  async sendBookingNotice(message: { from: string; to: string; subject: string; html: string }, idempotencyKey: string) {
+    if (disabled || !resend) return { success: false, disabled: true }
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      // The installed SDK forwards request options to fetch, including signal.
+      const options = { idempotencyKey, signal: controller.signal }
+      const timeout = new Promise<{ success: false }>(resolve => {
+        timer = setTimeout(() => { controller.abort(); resolve({ success: false }) }, 10000)
+      })
+      return await Promise.race([
+        resend.emails.send(message, options).then(result => ({ success: !result.error && Boolean(result.data?.id?.trim()), id: result.data?.id })),
+        timeout,
+      ])
+    } catch {
+      console.error('[bookings][email][provider_error]')
+      return { success: false }
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  },
+
   async sendEmailVerification(data: { to: string; link: string }) {
     if (disabled || !resend) return { success: false, disabled: true }
     try {

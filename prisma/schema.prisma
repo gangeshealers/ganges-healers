@@ -147,11 +147,46 @@ model Booking {
   user        User          @relation("UserBookings", fields: [userId], references: [id], onDelete: Cascade)
   payment     Payment?
   review      Review?
+  emails      BookingEmail[]
 
   @@index([userId, scheduledAt(sort: Desc)])
   @@index([healerId, scheduledAt, status])
   @@index([scheduledAt])
   @@index([userId, scheduledAt(sort: Desc)], map: "Booking_userId_scheduledAt_desc_idx")
+}
+
+enum BookingEmailKind {
+  REQUESTED
+  CONFIRMED
+}
+
+enum BookingEmailStatus {
+  PENDING
+  SENT
+  SKIPPED
+  REVIEW
+}
+
+model BookingEmail {
+  id                String             @id @default(cuid())
+  bookingId         String
+  kind              BookingEmailKind
+  status            BookingEmailStatus @default(PENDING)
+  payload           Json?
+  attempts          Int                @default(0)
+  firstAttemptAt    DateTime?
+  nextAttemptAt     DateTime           @default(now())
+  leaseUntil        DateTime?
+  claimToken        String?
+  lastError         String?
+  providerMessageId String?
+  sentAt            DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  booking           Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, kind])
+  @@index([status, nextAttemptAt])
 }
 
 model Payment {

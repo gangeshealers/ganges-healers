@@ -8,6 +8,7 @@ jest.mock('bullmq', () => ({ Queue: class {}, Worker: class {
   constructor(public name: string, public processor: Processor, public options: unknown) { mockWorkers.push(this) }
 } }))
 jest.mock('@/lib/email/email.service', () => ({ emailService: mockEmail }))
+jest.mock('@/lib/bookings/email', () => ({ drainBookingEmails: jest.fn().mockResolvedValue({ processed: 0 }) }))
 jest.mock('@/lib/notifications/delivery', () => ({ storeNotification: jest.fn() }))
 const originalRedis = process.env.REDIS_URL
 let on: jest.SpyInstance, exit: jest.SpyInstance, log: jest.SpyInstance, error: jest.SpyInstance
@@ -67,4 +68,35 @@ test('a disconnected worker cannot block process shutdown indefinitely', async (
   const shutdown = on.mock.calls.find(([signal]) => signal === 'SIGTERM')![1] as () => void
   shutdown(); await jest.advanceTimersByTimeAsync(10001)
   expect(exit).toHaveBeenCalledWith(1)
+})
+
+test('outbox polling never overlaps and graceful shutdown includes its active batch', async () => {
+  start()
+  const drain = jest.requireMock<{ drainBookingEmails: jest.Mock }>('@/lib/bookings/email').drainBookingEmails
+  await jest.advanceTimersByTimeAsync(1)
+  expect(drain).toHaveBeenCalledTimes(1)
+  let finish!: () => void
+  drain.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+  await jest.advanceTimersByTimeAsync(60000)
+  await jest.advanceTimersByTimeAsync(180000)
+  expect(drain).toHaveBeenCalledTimes(2)
+  const shutdown = on.mock.calls.find(([signal]) => signal === 'SIGTERM')![1] as () => void
+  shutdown()
+  await jest.advanceTimersByTimeAsync(1)
+  expect(exit).not.toHaveBeenCalled()
+  finish()
+  await jest.advanceTimersByTimeAsync(1)
+  expect(exit).toHaveBeenCalledWith(0)
+  expect(jest.getTimerCount()).toBe(0)
+})
+
+test('outbox polling recovers after a failed batch without logging its payload', async () => {
+  const drain = jest.requireMock<{ drainBookingEmails: jest.Mock }>('@/lib/bookings/email').drainBookingEmails
+  drain.mockRejectedValueOnce(new Error('private provider payload'))
+  start()
+  await jest.advanceTimersByTimeAsync(1)
+  expect(error).toHaveBeenCalledWith('[worker][booking-email][error]')
+  expect(JSON.stringify(error.mock.calls)).not.toMatch(/private|provider payload/)
+  await jest.advanceTimersByTimeAsync(60000)
+  expect(drain).toHaveBeenCalledTimes(2)
 })
