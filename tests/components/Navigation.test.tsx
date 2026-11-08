@@ -7,6 +7,7 @@ import { CartProvider, useCart } from '@/components/store/CartProvider'
 import CartDrawer from '@/components/store/CartDrawer'
 import SearchPageClient from '@/app/search/SearchPageClient'
 import SearchBar from '@/components/search/SearchBar'
+import { MobileNav } from '@/components/navigation/MobileNav'
 
 jest.mock('next-auth/react', () => ({ useSession: jest.fn(), signOut: jest.fn() }))
 jest.mock('next/navigation', () => ({ usePathname: jest.fn(), useRouter: jest.fn(), useSearchParams: jest.fn() }))
@@ -271,6 +272,28 @@ test('mobile menu account actions are real links and avoid a guest profile place
   expect(within(menu).getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/auth/signin')
   expect(within(menu).getByRole('link', { name: 'Create account' })).toHaveAttribute('href', '/register')
   expect(within(menu).queryByRole('button', { name: 'Profile' })).not.toBeInTheDocument()
+})
+
+test('the mobile booking link closes immediately without waiting for a pathname change', async () => {
+  navigation.usePathname.mockReturnValue('/store/practice-beads')
+  render(tree())
+  await userEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+  const menu = screen.getByRole('dialog', { name: 'Mobile navigation' })
+  const link = within(menu).getByRole('link', { name: 'Book a Session' })
+  expect(link).toHaveAttribute('href', '/services')
+  fireEvent.click(link)
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Mobile navigation' })).not.toBeInTheDocument())
+  expect(navigation.usePathname()).toBe('/store/practice-beads')
+})
+
+test('mobile booking selection retains the supplied callback and destination', () => {
+  const selected = jest.fn(), changed = jest.fn()
+  render(<MobileNav open onOpenChange={changed} ctaHref="/services" ctaProps={{ onClick: selected }} />)
+  const link = within(screen.getByRole('dialog', { name: 'Mobile navigation' })).getByRole('link', { name: 'Book a Session' })
+  expect(link).toHaveAttribute('href', '/services')
+  fireEvent.click(link)
+  expect(changed).toHaveBeenCalledWith(false)
+  expect(selected).toHaveBeenCalledTimes(1)
 })
 
 test('full results errors remain recoverable instead of showing zero matches', async () => {
