@@ -1,5 +1,6 @@
 import { Prisma, type BookingEmailStatus, type BookingEmailKind, type BookingStatus } from '@prisma/client'
 import { z } from 'zod'
+import { bookingEmailReviewVersionSql } from '@/lib/bookings/email-review'
 import { prisma } from '@/lib/prisma'
 
 export const bookingEmailReasons = new Map([
@@ -28,7 +29,7 @@ export async function loadBookingEmailReview(id: string, db: Pick<Prisma.Transac
   const rows = await db.$queryRaw<ReviewedEmail[]>(Prisma.sql`
     SELECT e.id, e."bookingId", e.kind::text AS kind, e.status::text AS status, e.attempts,
       e."firstAttemptAt", e."nextAttemptAt", e."leaseUntil", e."providerMessageId", e."sentAt",
-      encode(sha256(convert_to(to_jsonb(e)::text, 'UTF8')), 'hex') AS version,
+      ${bookingEmailReviewVersionSql} AS version,
       (e.payload IS NOT NULL AND e.payload <> 'null'::jsonb) AS "hasPayload",
       CASE WHEN length(e.payload #>> '{message,to}') <= 254
         AND (e.payload #>> '{message,to}') ~ '^[A-Za-z0-9.!#$%&''*+/=?^_\x60{|}~-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}$'

@@ -11,6 +11,7 @@ jest.mock('@/lib/prisma', () => ({ prisma: {
 jest.mock('next/navigation', () => ({ redirect: (path: string) => { throw new Error(`REDIRECT:${path}`) }, notFound: () => { throw new Error('NOT_FOUND') } }))
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }))
 jest.mock('next/link', () => 'a')
+jest.mock('@/components/admin/catalog-editor', () => ({ CatalogEditor: 'form' }))
 jest.mock('@/components/admin/booking-email-review-form', () => ({ BookingEmailReviewForm: jest.fn(() => null) }))
 const auth = jest.requireMock<{ auth: jest.Mock }>('@/lib/auth').auth
 const actor = jest.requireMock<{ requireCurrentAdmin: jest.Mock }>('@/lib/admin/auth').requireCurrentAdmin

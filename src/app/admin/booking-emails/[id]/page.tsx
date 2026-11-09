@@ -3,6 +3,8 @@ import { notFound, redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { auth } from '@/lib/auth'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
+import { BOOKING_EMAIL_REVIEW_ACTION, bookingEmailReviewOutcomes } from '@/lib/bookings/email-review'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { BookingEmailReviewError, bookingEmailReasons, bookingEmailReviewRecord, loadBookingEmailReview, reconcileBookingEmail, type BookingEmailDecisionInput, type BookingEmailDecisionResult } from '@/lib/admin/booking-emails'
 import { BookingEmailReviewForm } from '@/components/admin/booking-email-review-form'
@@ -57,13 +59,13 @@ export default async function BookingEmailDetailPage({ params }: { params: Promi
   if (!id || id.length > 200) notFound()
   const row = await loadBookingEmailReview(id)
   if (!row) notFound()
-  const audit = await prisma.$queryRaw<{ id: string; action: string; createdAt: Date; reason: string | null; staffName: string | null }[]>`
-    SELECT a.id, a.action, a."createdAt", left(a.metadata ->> 'reason', 300) AS reason, u.name AS "staffName"
+  const audit = await prisma.$queryRaw<{ id: string; action: string; createdAt: Date; reason: string | null; outcome: string | null; staffName: string | null }[]>(Prisma.sql`
+    SELECT a.id, a.action, a."createdAt", CASE WHEN a.metadata ->> 'outcome' IN (${Prisma.join(bookingEmailReviewOutcomes.map(item => item.value))}) THEN a.metadata ->> 'outcome' END AS outcome, left(a.metadata ->> 'reason', 300) AS reason, u.name AS "staffName"
     FROM "ActivityLog" a LEFT JOIN "User" u ON u.id = a."userId"
     WHERE a."entityType" = 'booking_email' AND a."entityId" = ${row.id}
-      AND a.action IN ('booking_email_acceptance_recorded', 'booking_email_retries_stopped')
+      AND a.action IN ('booking_email_acceptance_recorded', 'booking_email_retries_stopped', ${BOOKING_EMAIL_REVIEW_ACTION})
     ORDER BY a."createdAt" DESC, a.id DESC LIMIT 10
-  `
+  `)
   const record = bookingEmailReviewRecord(row)
   return <div className="container mx-auto max-w-4xl space-y-6 px-4 py-8">
     <Link href="/admin/booking-emails" className="text-sm underline">Back to booking emails</Link>
@@ -88,7 +90,7 @@ export default async function BookingEmailDetailPage({ params }: { params: Promi
     <Card className="gap-4 p-5"><h2 className="text-lg font-medium">Reconcile outcome</h2><BookingEmailReviewForm actorId={session.user.id} record={record} onSave={recordOutcome} onReload={reloadOutcome.bind(null, session.user.id, row.id)} /></Card>
     <Card className="gap-4 p-5"><h2 className="text-lg font-medium">Staff review history</h2>
       {audit.length ? <ol className="space-y-4">{audit.map(item => {
-        return <li key={item.id} className="border-t pt-3 text-sm"><p>{item.action === 'booking_email_acceptance_recorded' ? 'Provider acceptance recorded' : 'Automatic retries stopped'} · {item.staffName || 'Administrator'}</p><p className="text-muted-foreground">{date(item.createdAt)}</p>{item.reason ? <p className="mt-1 break-words">{item.reason}</p> : null}</li>
+        return <li key={item.id} className="border-t pt-3 text-sm"><p>{item.action === BOOKING_EMAIL_REVIEW_ACTION ? bookingEmailReviewOutcomes.find(option => option.value === item.outcome)?.label ?? 'Staff follow-up recorded' : item.action === 'booking_email_acceptance_recorded' ? 'Provider acceptance recorded' : 'Automatic retries stopped'} · {item.staffName || 'Administrator'}</p><p className="text-muted-foreground">{date(item.createdAt)}</p>{item.reason ? <p className="mt-1 break-words">{item.reason}</p> : null}</li>
       })}</ol> : <p className="text-sm text-muted-foreground">No staff decisions recorded.</p>}
     </Card>
   </div>

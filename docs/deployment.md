@@ -206,9 +206,11 @@ Administrators can open **Booking Emails** from the admin dashboard or account
 menu. The queue defaults to notices that need review and supports lookup by
 booking reference. It shows the stable delivery reference, retry eligibility,
 and safe failure descriptions. Use that reference to find the corresponding
-provider record. The queue only reads delivery activity and omits recipient
-addresses, message bodies, provider receipts, and lease tokens. Open a private
-detail view for the reviewed reconciliation actions described above. Both views
+provider record. After investigating and handling follow-up, record an outcome
+to move the notice to **Reviewed**. The audit keeps the reviewer, notice version,
+time and chosen outcome without changing delivery state or retry data. The queue
+omits recipients, bodies, provider receipts and lease tokens. Open a private detail
+view for the receipt-based reconciliation actions described above. Both views
 project safe reason codes in SQL; raw provider errors are never rendered.
 
 Do not reset REVIEW/SENT, delete an unresolved event, or rotate its key just to

@@ -1318,7 +1318,7 @@ their existing scripts enable Node's VM-module support for its dynamic import.
 `/admin/booking-emails` and its message detail pages require a signed-in, current,
 active administrator before reading delivery data. Queues are filtered by status
 and exact booking ID, with at most 25 visible rows per page and bounded offsets.
-List projections omit recipient/payload data. Authorized detail views show the
+List projections omit recipient/payload data. Recorded follow-up outcomes move an unchanged REVIEW notice into the Reviewed queue using its full saved-row version; concurrent identical reviews share one audit. Follow-up reviews do not change delivery status or retry data. Authorized detail views show the
 saved recipient and provider request key needed for reconciliation, while frozen
 HTML and claim tokens never enter the rendered page or client form props.
 
