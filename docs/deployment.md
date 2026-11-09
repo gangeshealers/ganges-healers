@@ -166,6 +166,27 @@ live credentials; verify a running worker or authenticated scheduler before laun
 
 Monitor delivery state without exposing recipient payloads:
 
+Administrators can use `/admin/booking-emails` from the admin workspace or account
+menu. Filter by delivery state or exact booking ID and open the message to inspect
+its saved recipient, attempt times, provider key and staff review history. Frozen
+HTML and claim tokens are excluded from the page/client props. Current active
+administrator checks protect both views, explicit reload and reviewed writes.
+
+After matching the message to authorized provider records, choose **Record
+provider acceptance**, enter the verified provider message ID and a reason, and
+review the confirmation. **Stop automatic retries** closes unresolved PENDING or
+REVIEW work without resubmission. An active lease blocks changes. A verified late
+acceptance may reconcile an attempted SKIPPED message; known SENT records cannot
+be overwritten. These operations retain payloads, event IDs, financial records
+and atomic audits, and fence late worker replies. They do not send another email.
+On a stale/unknown result, use **Reload message** and review the returned snapshot
+before deciding again. Background refreshes preserve active drafts/dialogs.
+
+No hosted schedule, credential or schema change accompanies this workspace.
+Rollback its UI/actions together if needed; retain recorded outcomes and audits.
+Existing workers already recognize SENT/SKIPPED and will not replay these events.
+Live provider acceptance and appropriate staff access still require launch checks.
+
 ```sql
 SELECT kind, status, "lastError", count(*)
 FROM "BookingEmail"
@@ -185,8 +206,12 @@ Administrators can open **Booking Emails** from the admin dashboard or account
 menu. The queue defaults to notices that need review and supports lookup by
 booking reference. It shows the stable delivery reference, retry eligibility,
 and safe failure descriptions. Use that reference to find the corresponding
-provider record. The page only reads delivery activity and omits recipient
-addresses, message bodies, provider receipts, and lease tokens.
+provider record. After investigating and handling follow-up, record an outcome
+to move the notice to **Reviewed**. The audit keeps the reviewer, notice version,
+time and chosen outcome without changing delivery state or retry data. The queue
+omits recipients, bodies, provider receipts and lease tokens. Open a private detail
+view for the receipt-based reconciliation actions described above. Both views
+project safe reason codes in SQL; raw provider errors are never rendered.
 
 Do not reset REVIEW/SENT, delete an unresolved event, or rotate its key just to
 clear a failure. Reconcile the saved first-attempt time, frozen payload and stable

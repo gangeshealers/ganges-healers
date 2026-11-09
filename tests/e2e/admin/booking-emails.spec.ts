@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 import { PrismaClient } from '@prisma/client'
 import { loadTestDatabaseEnvironment, verifyTestDatabaseConnection } from '../../../scripts/test-database'
 
-test('administrators can triage booking notices without exposing or changing stored messages', async ({ page }) => {
+test('administrators can record booking email reviews without exposing or changing stored messages', async ({ page }) => {
   test.setTimeout(120_000)
   const settings = loadTestDatabaseEnvironment()
   await verifyTestDatabaseConnection(settings)
@@ -97,14 +97,33 @@ test('administrators can triage booking notices without exposing or changing sto
     await page.goto(`${path}?booking=one&booking=two`)
     await expect(page.getByRole('alert')).toHaveText('Enter one valid booking reference.')
     await expect(activity).toHaveCount(0)
+
+    await page.goto(`${path}?booking=${bookingIds[0]}`)
+    await activity.getByLabel('Review outcome').selectOption('FOLLOW_UP_COMPLETE')
+    await activity.getByRole('button', { name: 'Record review', exact: true }).click()
+    await expect(page.getByText('No booking emails match this queue and filter.')).toBeVisible()
+    await page.getByRole('link', { name: 'Reviewed', exact: true }).click()
+    await expect(activity.getByText(/Customer follow-up completed/)).toBeVisible()
+    await expect(activity.getByRole('button', { name: 'Record review', exact: true })).toHaveCount(0)
+    await expectPrivateResponse(recipient, privatePayload, privateError)
+    const reviews = { action: 'booking_email_reviewed', entityType: 'booking_email' }
+    expect(await db.activityLog.findMany({ where: { ...reviews, entityId: reviewId(0) } })).toEqual([
+      expect.objectContaining({ userId: admin.id, metadata: { version: expect.any(String), outcome: 'FOLLOW_UP_COMPLETE' } }),
+    ])
     expect(await readFixtures()).toEqual(before)
 
+    await page.goto(`${path}?booking=${bookingIds[1]}`)
+    await activity.getByLabel('Review outcome').selectOption('NO_FOLLOW_UP')
     await db.user.update({ where: { id: admin.id }, data: { role: 'USER' } })
+    await activity.getByRole('button', { name: 'Record review', exact: true }).click()
+    await expect(activity.getByRole('alert')).toHaveText('Administrator access is required.')
+    expect(await db.activityLog.count({ where: { ...reviews, entityId: reviewId(1) } })).toBe(0)
     const denied = await page.request.get(path, { maxRedirects: 0 })
     expect(denied.status()).toBe(307)
     expect(await denied.text()).not.toContain(reviewId(0))
   } finally {
     try {
+      await db.activityLog.deleteMany({ where: { action: 'booking_email_reviewed', entityId: { in: bookingIds.map((_, index) => reviewId(index)) } } })
       await db.user.deleteMany({ where: { id: { in: users } } })
       if (serviceId) await db.service.delete({ where: { id: serviceId } })
     } finally { await db.$disconnect() }

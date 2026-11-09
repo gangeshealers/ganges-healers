@@ -1,9 +1,13 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { Prisma, type BookingEmailKind } from '@prisma/client'
+import { bookingEmailReasons as reasons } from '@/lib/admin/booking-emails'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
+import { BOOKING_EMAIL_REVIEW_ACTION, BOOKING_EMAIL_REVIEW_ENTITY, BookingEmailReviewError, bookingEmailReviewOutcomes, bookingEmailReviewVersionSql, reviewBookingEmail } from '@/lib/bookings/email-review'
+import { CatalogEditor } from '@/components/admin/catalog-editor'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -16,19 +20,11 @@ const pageSize = 25
 const maxPage = 1000
 const queues = [
   { status: 'REVIEW', label: 'Needs review' },
+  { status: 'REVIEWED', label: 'Reviewed' },
   { status: 'PENDING', label: 'Pending' },
   { status: 'SENT', label: 'Provider accepted' },
   { status: 'SKIPPED', label: 'Skipped' },
 ] as const
-const reasons = new Map([
-  ['ATTEMPTS_EXHAUSTED', 'The automatic attempt limit was reached.'],
-  ['BOOKING_CHANGED', 'The booking or recipient changed after the message was prepared.'],
-  ['BOOKING_INACTIVE', 'The booking is no longer eligible for this message.'],
-  ['PAYLOAD_INVALID', 'The saved message could not be validated.'],
-  ['PROVIDER_UNCONFIRMED', 'The provider did not confirm acceptance.'],
-  ['RECIPIENT_INVALID', 'The saved recipient address needs review.'],
-  ['RETRY_WINDOW_EXPIRED', 'The automatic retry window ended.'],
-])
 const dateTime = new Intl.DateTimeFormat('en-IN', {
   timeZone: BOOKING_TIME_ZONE,
   day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
@@ -36,6 +32,7 @@ const dateTime = new Intl.DateTimeFormat('en-IN', {
 
 type DeliveryRow = {
   id: string
+  version: string
   bookingId: string
   kind: BookingEmailKind
   attempts: number
@@ -46,9 +43,28 @@ type DeliveryRow = {
   sentAt: Date | null
   scheduledAt: Date
   serviceName: string
+  reviewedAt: Date | null
+  reviewOutcome: string | null
 }
 
-/** Staff can inspect recorded delivery outcomes without reading message bodies or sending email. */
+async function markReviewed(form: FormData) {
+  'use server'
+  try {
+    const session = await auth()
+    if (!session?.user?.id || session.user.role !== 'ADMIN') return { error: 'Administrator access is required.' }
+    await reviewBookingEmail(session.user.id, {
+      ownerId: form.get('ownerId'), id: form.get('id'), version: form.get('version'), outcome: form.get('outcome'),
+    })
+    revalidatePath(path)
+    return {}
+  } catch (error) {
+    if (error instanceof BookingEmailReviewError) return { error: error.message, reloadRequired: error.reloadRequired }
+    console.error('[bookings][email][admin_review_save_failed]')
+    return { error: 'The review could not be saved. Try again.' }
+  }
+}
+
+/** Inspect delivery activity and record staff reviews through the existing audit log. */
 export default async function AdminBookingEmailsPage({ searchParams }: {
   searchParams: Promise<{ status?: string | string[]; booking?: string | string[]; page?: string | string[] }>
 }) {
@@ -56,21 +72,28 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
   if (!session?.user?.id) redirect('/auth/signin')
   if (session.user.role !== 'ADMIN') redirect('/')
 
+  const actor = await prisma.user.findUnique({ where: { id: session.user.id, closedAt: null }, select: { role: true } })
+  if (actor?.role !== 'ADMIN') redirect('/')
+
   const query = await searchParams
   const queue = queues.find(item => item.status === query.status) ?? queues[0]
   const reference = typeof query.booking === 'string' ? query.booking.trim() : ''
   const invalidReference = Array.isArray(query.booking) || Boolean(reference && !/^[a-zA-Z0-9_-]{1,128}$/.test(reference))
   const requestedPage = typeof query.page === 'string' && /^\d+$/.test(query.page) ? Number(query.page) : 1
   const page = Math.min(Math.max(requestedPage, 1), maxPage)
+  const outboxStatus = queue.status === 'REVIEWED' ? 'REVIEW' : queue.status
   const order = queue.status === 'PENDING'
     ? Prisma.sql`e."nextAttemptAt" ASC, e.id ASC`
     : queue.status === 'REVIEW'
       ? Prisma.sql`e."createdAt" ASC, e.id ASC`
-      : Prisma.sql`e."createdAt" DESC, e.id DESC`
+      : queue.status === 'REVIEWED'
+        ? Prisma.sql`review_log."reviewedAt" DESC, e.id DESC`
+        : Prisma.sql`e."createdAt" DESC, e.id DESC`
   // React development responses can serialize awaited data. Project safe reason codes in SQL.
   const rows = invalidReference ? [] : await prisma.$queryRaw<DeliveryRow[]>(Prisma.sql`
-    SELECT e.id, e."bookingId", e.kind::text AS kind, e.attempts, e."updatedAt",
+    SELECT e.id, ${bookingEmailReviewVersionSql} AS version, e."bookingId", e.kind::text AS kind, e.attempts, e."updatedAt",
       e."nextAttemptAt", e."leaseUntil", e."sentAt", b."scheduledAt", s.name AS "serviceName",
+      review_log."reviewedAt", review_log."reviewOutcome",
       CASE
         WHEN e."lastError" IN (${Prisma.join([...reasons.keys()])}) THEN e."lastError"
         WHEN e."lastError" IS NOT NULL THEN 'OTHER'
@@ -78,8 +101,20 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
     FROM "BookingEmail" e
     JOIN "Booking" b ON b.id = e."bookingId"
     JOIN "Service" s ON s.id = b."serviceId"
-    WHERE e.status = ${queue.status}::"BookingEmailStatus"
+    LEFT JOIN LATERAL (
+      SELECT a."createdAt" AS "reviewedAt", a.metadata->>'outcome' AS "reviewOutcome"
+      FROM "ActivityLog" a
+      WHERE e.status = 'REVIEW' AND a."entityId" = e.id
+        AND a.action = ${BOOKING_EMAIL_REVIEW_ACTION} AND a."entityType" = ${BOOKING_EMAIL_REVIEW_ENTITY}
+        AND a.metadata->>'version' = ${bookingEmailReviewVersionSql}
+        AND a.metadata->>'outcome' IN (${Prisma.join(bookingEmailReviewOutcomes.map(option => option.value))})
+      ORDER BY a."createdAt" ASC, a.id ASC
+      LIMIT 1
+    ) review_log ON true
+    WHERE e.status = ${outboxStatus}::"BookingEmailStatus"
       ${reference ? Prisma.sql`AND e."bookingId" = ${reference}` : Prisma.empty}
+      ${queue.status === 'REVIEW' ? Prisma.sql`AND review_log."reviewedAt" IS NULL` : Prisma.empty}
+      ${queue.status === 'REVIEWED' ? Prisma.sql`AND review_log."reviewedAt" IS NOT NULL` : Prisma.empty}
     ORDER BY ${order}
     LIMIT ${pageSize + 1} OFFSET ${(page - 1) * pageSize}
   `).catch(() => {
@@ -120,7 +155,10 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
         )}
       </form>
       {queue.status === 'REVIEW' && (
-        <p className="text-sm text-muted-foreground">Automatic retries have stopped for these notices. Check provider records before contacting the customer again.</p>
+        <p className="text-sm text-muted-foreground">Automatic retries have stopped for these notices. Check provider records and handle any follow-up before recording your review.</p>
+      )}
+      {queue.status === 'REVIEWED' && (
+        <p className="text-sm text-muted-foreground">This queue shows staff review outcomes. Provider acknowledgments appear in Provider accepted.</p>
       )}
       {queue.status === 'SENT' && (
         <p className="text-sm text-muted-foreground">These notices have a provider acknowledgment. Check provider records for delivery or bounce status.</p>
@@ -133,11 +171,12 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
         <ul aria-label="Booking email activity" className="space-y-3">
           {rows.slice(0, pageSize).map(row => {
             const eligibleAt = row.leaseUntil && row.leaseUntil > row.nextAttemptAt ? row.leaseUntil : row.nextAttemptAt
+            const outcome = bookingEmailReviewOutcomes.find(option => option.value === row.reviewOutcome)
             return (
               <li key={row.id}>
                 <Card className="gap-3 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium">{row.kind === 'REQUESTED' ? 'Booking request' : 'Booking confirmation'}</p>
+                    <Link href={`${path}/${encodeURIComponent(row.id)}`} prefetch={false} className="font-medium underline underline-offset-4">{row.kind === 'REQUESTED' ? 'Booking request' : 'Booking confirmation'}</Link>
                     <Badge variant={queue.status === 'REVIEW' ? 'destructive' : 'secondary'}>{queue.label}</Badge>
                   </div>
                   <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
@@ -148,8 +187,23 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
                     <div><dt className="text-muted-foreground">Last updated</dt><dd>{dateTime.format(row.updatedAt)}</dd></div>
                     {queue.status === 'PENDING' && <div><dt className="text-muted-foreground">Eligible after</dt><dd>{dateTime.format(eligibleAt)}</dd></div>}
                     {queue.status === 'SENT' && row.sentAt && <div><dt className="text-muted-foreground">Accepted at</dt><dd>{dateTime.format(row.sentAt)}</dd></div>}
+                    {outcome && row.reviewedAt && <div><dt className="text-muted-foreground">Recorded review</dt><dd>{outcome.label} · {dateTime.format(row.reviewedAt)}</dd></div>}
                   </dl>
                   {row.reason && <p className="text-sm">{reasons.get(row.reason) ?? 'Review this notice using its delivery reference.'}</p>}
+                  {queue.status === 'REVIEW' && (
+                    <CatalogEditor action={markReviewed} item="Review" submitLabel="Record review" compact submitVariant="outline">
+                      <input type="hidden" name="ownerId" value={session.user.id} />
+                      <input type="hidden" name="id" value={row.id} />
+                      <input type="hidden" name="version" value={row.version} />
+                      <label className="grid gap-1 text-sm">
+                        Review outcome
+                        <select name="outcome" required defaultValue="" className="rounded-md border bg-background px-2 py-1.5 text-sm">
+                          <option value="" disabled>Choose an outcome</option>
+                          {bookingEmailReviewOutcomes.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </label>
+                    </CatalogEditor>
+                  )}
                 </Card>
               </li>
             )
