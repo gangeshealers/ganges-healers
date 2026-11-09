@@ -57,6 +57,7 @@ export function UserMenu({
       { label: 'Manage audio', href: '/admin/audio' },
       { label: 'Manage products', href: '/admin/products' },
       { label: 'Manage orders', href: '/admin/orders' },
+      { label: 'Booking emails', href: '/admin/booking-emails' },
       { label: 'Manage programs', href: '/admin/programs' },
       { label: 'Program enrollments', href: '/admin/program-enrollments' },
       { label: 'Community moderation', href: '/admin/community' },
