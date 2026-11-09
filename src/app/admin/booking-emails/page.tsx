@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { Prisma, type BookingEmailKind } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
@@ -33,6 +34,20 @@ const dateTime = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
 })
 
+type DeliveryRow = {
+  id: string
+  bookingId: string
+  kind: BookingEmailKind
+  attempts: number
+  reason: string | null
+  updatedAt: Date
+  nextAttemptAt: Date
+  leaseUntil: Date | null
+  sentAt: Date | null
+  scheduledAt: Date
+  serviceName: string
+}
+
 /** Staff can inspect recorded delivery outcomes without reading message bodies or sending email. */
 export default async function AdminBookingEmailsPage({ searchParams }: {
   searchParams: Promise<{ status?: string | string[]; booking?: string | string[]; page?: string | string[] }>
@@ -47,18 +62,27 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
   const invalidReference = Array.isArray(query.booking) || Boolean(reference && !/^[a-zA-Z0-9_-]{1,128}$/.test(reference))
   const requestedPage = typeof query.page === 'string' && /^\d+$/.test(query.page) ? Number(query.page) : 1
   const page = Math.min(Math.max(requestedPage, 1), maxPage)
-  const order = queue.status === 'REVIEW' || queue.status === 'PENDING' ? 'asc' : 'desc'
-  const rows = invalidReference ? [] : await prisma.bookingEmail.findMany({
-    where: { status: queue.status, ...(reference ? { bookingId: reference } : {}) },
-    orderBy: [queue.status === 'PENDING' ? { nextAttemptAt: 'asc' } : { createdAt: order }, { id: order }],
-    skip: (page - 1) * pageSize,
-    take: pageSize + 1,
-    select: {
-      id: true, bookingId: true, kind: true, attempts: true, lastError: true, updatedAt: true,
-      nextAttemptAt: true, leaseUntil: true, sentAt: true,
-      booking: { select: { scheduledAt: true, service: { select: { name: true } } } },
-    },
-  }).catch(() => {
+  const order = queue.status === 'PENDING'
+    ? Prisma.sql`e."nextAttemptAt" ASC, e.id ASC`
+    : queue.status === 'REVIEW'
+      ? Prisma.sql`e."createdAt" ASC, e.id ASC`
+      : Prisma.sql`e."createdAt" DESC, e.id DESC`
+  // React development responses can serialize awaited data. Project safe reason codes in SQL.
+  const rows = invalidReference ? [] : await prisma.$queryRaw<DeliveryRow[]>(Prisma.sql`
+    SELECT e.id, e."bookingId", e.kind::text AS kind, e.attempts, e."updatedAt",
+      e."nextAttemptAt", e."leaseUntil", e."sentAt", b."scheduledAt", s.name AS "serviceName",
+      CASE
+        WHEN e."lastError" IN (${Prisma.join([...reasons.keys()])}) THEN e."lastError"
+        WHEN e."lastError" IS NOT NULL THEN 'OTHER'
+      END AS reason
+    FROM "BookingEmail" e
+    JOIN "Booking" b ON b.id = e."bookingId"
+    JOIN "Service" s ON s.id = b."serviceId"
+    WHERE e.status = ${queue.status}::"BookingEmailStatus"
+      ${reference ? Prisma.sql`AND e."bookingId" = ${reference}` : Prisma.empty}
+    ORDER BY ${order}
+    LIMIT ${pageSize + 1} OFFSET ${(page - 1) * pageSize}
+  `).catch(() => {
     console.error('[bookings][email][admin_review_failed]')
     return null
   })
@@ -118,14 +142,14 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
                   </div>
                   <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
                     <div><dt className="text-muted-foreground">Booking reference</dt><dd className="break-all">{row.bookingId}</dd></div>
-                    <div><dt className="text-muted-foreground">Scheduled session</dt><dd>{row.booking.service.name} · {dateTime.format(row.booking.scheduledAt)}</dd></div>
+                    <div><dt className="text-muted-foreground">Scheduled session</dt><dd>{row.serviceName} · {dateTime.format(row.scheduledAt)}</dd></div>
                     <div><dt className="text-muted-foreground">Delivery reference</dt><dd className="break-all">booking-email/{row.id}</dd></div>
                     <div><dt className="text-muted-foreground">Attempts</dt><dd>{row.attempts}</dd></div>
                     <div><dt className="text-muted-foreground">Last updated</dt><dd>{dateTime.format(row.updatedAt)}</dd></div>
                     {queue.status === 'PENDING' && <div><dt className="text-muted-foreground">Eligible after</dt><dd>{dateTime.format(eligibleAt)}</dd></div>}
                     {queue.status === 'SENT' && row.sentAt && <div><dt className="text-muted-foreground">Accepted at</dt><dd>{dateTime.format(row.sentAt)}</dd></div>}
                   </dl>
-                  {row.lastError && <p className="text-sm">{reasons.get(row.lastError) ?? 'Review this notice using its delivery reference.'}</p>}
+                  {row.reason && <p className="text-sm">{reasons.get(row.reason) ?? 'Review this notice using its delivery reference.'}</p>}
                 </Card>
               </li>
             )

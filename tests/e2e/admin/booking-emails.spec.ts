@@ -27,7 +27,9 @@ test('administrators can triage booking notices without exposing or changing sto
     const response = await page.request.get(page.url())
     expect(response.ok()).toBe(true)
     const html = await response.text()
-    for (const value of privateValues) expect(html).not.toContain(value)
+    for (const value of privateValues) {
+      expect(html.includes(value), 'The server response must omit private fixture data').toBe(false)
+    }
   }
 
   try {
