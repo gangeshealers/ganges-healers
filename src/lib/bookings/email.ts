@@ -7,6 +7,7 @@ import { emailService } from '@/lib/email/email.service'
 import { BookingConfirmationEmail } from '@/lib/email/templates/booking-confirmation'
 import { trustedAuthEmailOrigin } from '@/lib/auth/email-links'
 import { runSideEffect } from '@/lib/runSideEffect'
+import { recordBookingNotifications } from './notifications'
 import { BOOKING_TIME_ZONE } from './time'
 
 const RETRY_WINDOW_MS = 23 * 60 * 60 * 1000 // Stay inside Resend's 24-hour idempotency window.
@@ -19,7 +20,8 @@ type Outcome = 'sent' | 'pending' | 'skipped' | 'review' | 'busy'
 
 /** Save exactly one event per booking/kind in the caller's business transaction. */
 export async function recordBookingEmail(client: Prisma.TransactionClient, bookingId: string, kind: BookingEmailKind) {
-  await client.bookingEmail.createMany({ data: [{ bookingId, kind }], skipDuplicates: true })
+  const created = await client.bookingEmail.createMany({ data: [{ bookingId, kind }], skipDuplicates: true })
+  if (created.count) await recordBookingNotifications(client, bookingId, kind, `${bookingId}:${kind}`)
 }
 
 async function claim(id: string, origin: string) {

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { NotificationItem, NotificationList } from '@/lib/notifications/types'
+import { bookingNotificationDestination, type NotificationItem, type NotificationList } from '@/lib/notifications/types'
 import { useNotifications } from './NotificationProvider'
 
 /** Paginated account history; summary refreshes never silently discard already loaded pages. */
@@ -81,15 +81,15 @@ export default function NotificationInbox() {
     <p className="text-sm text-muted-foreground">Mark all as read applies to your whole account, including notifications outside these filters.</p>
     <div className="flex flex-wrap gap-3">
       <label className="text-sm">Read status<select className="ml-2 rounded border bg-background p-2" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All</option><option value="unread">Unread</option><option value="read">Read</option></select></label>
-      <label className="text-sm">Activity type<select className="ml-2 rounded border bg-background p-2" value={type} onChange={event => setType(event.target.value)}><option value="all">All activity</option><option value="community_comment">Comments</option><option value="community_like">Likes</option><option value="other">Other</option></select></label>
+      <label className="text-sm">Activity type<select className="ml-2 rounded border bg-background p-2" value={type} onChange={event => setType(event.target.value)}><option value="all">All activity</option><option value="community_comment">Comments</option><option value="community_like">Likes</option><option value="booking">Bookings</option><option value="other">Other</option></select></label>
       <form className="flex flex-1 gap-2" onSubmit={event => { event.preventDefault(); setQuery(search.trim()) }}><Input aria-label="Search notifications" placeholder="Search notifications" value={search} maxLength={200} onChange={event => setSearch(event.target.value)} /><Button type="submit" variant="outline">Search</Button></form>
     </div>
     {latestActivity && <div className="flex items-center justify-between gap-3 rounded border bg-muted p-4"><p>New activity is available.</p><Button variant="outline" onClick={showLatest}>Show latest</Button></div>}
     {actionError && <p role="alert" className="text-destructive">{actionError}</p>}
     {error && <div role="alert" className="space-y-2 rounded border p-4"><p>{error}</p><Button variant="outline" onClick={() => cursor && rows.length ? void loadMore() : setRevision(value => value + 1)}>Try again</Button></div>}
-    {loading || sessionLoading ? <p role="status">Loading notifications…</p> : unauthorized ? <p><Link href="/auth/signin?callbackUrl=%2Fdashboard%2Fnotifications" className="underline">Sign in to view your notifications</Link></p> : rows.length ? <div className="space-y-3">{rows.map(item => <article key={item.id} aria-label={item.title} className={`rounded-lg border p-4 ${item.read ? '' : 'bg-primary/5'}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">{item.title}</h2><p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.message}</p><p className="mt-2 text-xs text-muted-foreground"><time dateTime={item.createdAt}>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</time> · {item.read ? 'Read' : 'Unread'}</p></div><Button size="sm" variant="outline" disabled={markingAll || pendingIds.has(item.id)} onClick={() => void markRead(item.id, !item.read)}>{pendingIds.has(item.id) ? 'Saving…' : item.read ? 'Mark as unread' : 'Mark as read'}</Button></div>
-    </article>)}</div> : !error ? <p className="rounded border p-6">No notifications match these filters.</p> : null}
+    {loading || sessionLoading ? <p role="status">Loading notifications…</p> : unauthorized ? <p><Link href="/auth/signin?callbackUrl=%2Fdashboard%2Fnotifications" className="underline">Sign in to view your notifications</Link></p> : rows.length ? <div className="space-y-3">{rows.map(item => { const destination = bookingNotificationDestination(item.type); return <article key={item.id} aria-label={item.title} className={`rounded-lg border p-4 ${item.read ? '' : 'bg-primary/5'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">{item.title}</h2><p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.message}</p>{destination ? <p className="mt-2 text-sm"><Link prefetch={false} href={destination.href} className="underline focus-ring">{destination.label}</Link></p> : null}<p className="mt-2 text-xs text-muted-foreground"><time dateTime={item.createdAt}>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</time> · {item.read ? 'Read' : 'Unread'}</p></div><Button size="sm" variant="outline" disabled={markingAll || pendingIds.has(item.id)} onClick={() => void markRead(item.id, !item.read)}>{pendingIds.has(item.id) ? 'Saving…' : item.read ? 'Mark as unread' : 'Mark as read'}</Button></div>
+    </article> })}</div> : !error ? <p className="rounded border p-6">No notifications match these filters.</p> : null}
     {!unauthorized && cursor && rows.length > 0 && <Button variant="outline" disabled={loadingMore || loading} onClick={() => void loadMore()}>{loadingMore ? 'Loading more…' : 'Load more'}</Button>}
   </main>
 }

@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client'
+import { recordBookingNotifications } from '@/lib/bookings/notifications'
 import { deliverNotification, storeNotification } from '@/lib/notifications/delivery'
 
 jest.mock('@/lib/prisma', () => ({ prisma: { notification: { create: jest.fn(), upsert: jest.fn() } } }))
@@ -57,4 +59,19 @@ test('failed persistence never emits and unavailable sockets do not undo persist
   emit.mockImplementation(() => { throw new Error('Socket unavailable') })
   const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
   try { expect(await storeNotification({ ...input, notificationId: row.id })).toEqual(row) } finally { warn.mockRestore() }
+})
+
+
+test('booking notice persistence failures remain opaque in both diagnostics and the thrown error', async () => {
+  const privateText = 'private-customer@example.test private database detail'
+  const client = {
+    booking: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'booking', userId: 'customer', status: 'PENDING', scheduledAt: new Date('2099-01-01'), user: { closedAt: null }, service: { name: 'Private session name' }, healer: { userId: 'practitioner', user: { closedAt: null, role: 'HEALER' } } }) },
+    notification: { createMany: jest.fn().mockRejectedValue(new Error(privateText)) },
+  }
+  const logger = jest.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(recordBookingNotifications(client as unknown as Prisma.TransactionClient, 'booking', 'REQUESTED', 'event')).rejects.toThrow('Booking notifications could not be recorded')
+    expect(logger).toHaveBeenCalledWith('[bookings][notifications][record_failed]', { kind: 'REQUESTED', errorType: 'Error' })
+    expect(JSON.stringify(logger.mock.calls)).not.toMatch(/private-customer|database detail|Private session name/)
+  } finally { logger.mockRestore() }
 })

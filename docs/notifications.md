@@ -48,9 +48,46 @@ Socket delivery is optional. The custom server (`pnpm start:custom`) verifies ac
 
 Standard Next.js/serverless deployments do not host this custom Socket.IO server. A worker in a separate process also cannot emit through another process's in-memory socket singleton. Polling/focus refresh remains active in both cases, so saved rows remain discoverable. Sign-out/account change disconnects the browser socket; like the application's stateless JWT sessions, server-side token revocation before expiry is not added here.
 
+## Service booking activity
+
+Customers and their assigned practitioners receive in-app notices for new service
+requests, committed confirmations, reschedules and cancellations. Request wording
+still says confirmation is pending. Cancellation wording links customers to the
+saved refund outcome and never claims that a refund was paid. Practitioner free
+confirmation and unpaid cancellation actions use the same recorder. A practitioner confirmation also saves the existing CONFIRMED email intent, including free appointments; the existing worker/recovery endpoint can deliver it after commit. This route adds no provider call. These notices
+are independent of outbound email/provider configuration.
+
+A booking-specific recorder saves at most two rows in the existing business
+transaction. Failure rolls the booking/payment/credit/outbox or practitioner audit
+back with the notice. Only a newly inserted request/confirmation email intent
+records that notice, so repeated callbacks and settled legacy payments do not
+backfill activity. Customer cancellation retries and rejected practitioner actions
+create no extra notice. An unchanged time creates no reschedule notice. Resubmitting an already-rescheduled time preserves the
+saved row and notice rather than moving its timestamp again. A later actual move
+has a separate transition identity.
+
+Notice IDs include the transition and recipient. Retrying a recorded transition
+preserves its original message/read state. Closed recipient snapshots and
+practitioners without the current HEALER role are excluded. A self-booking creates
+one customer notice. Messages contain the service and India-time appointment,
+without email addresses, meeting URLs, payment details or provider receipts.
+Recorder diagnostics include only event kind and error type.
+
+The inbox adds a **Bookings** activity filter. Explicit customer/practitioner
+notice types link to `/dashboard/bookings` or `/healer/bookings`; they do not
+extract links or resource IDs from message text. Other continues to cover
+unrecognized legacy activity. Existing read-state, ownership, paging and account
+switch protections apply. Persistence needs no Redis or socket worker. The shared
+refresh/focus/polling behavior discovers committed rows; this change does not add
+an immediate cross-process socket delivery promise.
+
+No migration, dependency, provider call or secret change is included. Roll back the
+booking producers and filter/link additions together while retaining inbox rows
+and read history. Legacy all/other views can still display those rows.
+
 ## Scope and verification
 
-No schema, migration, dependency, or environment-secret changes are required. The existing notification model stores no target-resource URL/ID, so the inbox does not guess deep links from message text. “My discussions” provides access to the member's posts; resource-specific notification links can be added with explicit metadata in a later change.
+No schema, migration, dependency, or environment-secret changes are required. The existing notification model stores no target-resource URL/ID, so the inbox does not guess deep links from message text. Known booking audience types provide workspace links as described above. “My discussions” provides access to the member's posts; resource-specific notification links can be added with explicit metadata in a later change.
 
 Coverage includes API ownership/validation, confirmed fallback and uncertain enqueue behavior, retry identity, a real local Socket.IO/Auth.js cryptography test, account switching and shared UI state, PostgreSQL pagination/concurrent reads/delivery, and a two-account browser lifecycle. Integration/browser tests use the existing guarded, isolated PostgreSQL CI setup. No live gateway is involved.
 

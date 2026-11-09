@@ -1,10 +1,11 @@
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
+import { bookingNotificationTypes } from './types'
 import { prisma } from '@/lib/prisma'
 
 export const notificationQuerySchema = z.object({
   status: z.enum(['all', 'unread', 'read']).default('all'),
-  type: z.enum(['all', 'community_comment', 'community_like', 'other']).default('all'),
+  type: z.enum(['all', 'community_comment', 'community_like', 'booking', 'other']).default('all'),
   q: z.string().trim().max(200).default(''),
   limit: z.coerce.number().int().min(1).max(100).default(30),
   cursor: z.string().min(1).max(200).optional(),
@@ -20,7 +21,7 @@ export async function listNotifications(userId: string, query: z.infer<typeof no
   const where: Prisma.NotificationWhereInput = {
     userId,
     ...(query.status !== 'all' ? { read: query.status === 'read' } : {}),
-    ...(query.type === 'other' ? { type: { notIn: ['community_comment', 'community_like'] } } : query.type !== 'all' ? { type: query.type } : {}),
+    ...(query.type === 'booking' ? { type: { in: bookingNotificationTypes } } : query.type === 'other' ? { type: { notIn: ['community_comment', 'community_like', ...bookingNotificationTypes] } } : query.type !== 'all' ? { type: query.type } : {}),
     ...(query.q ? { OR: [{ title: { contains: query.q, mode: 'insensitive' } }, { message: { contains: query.q, mode: 'insensitive' } }] } : {}),
   }
   const [rows, unreadCount] = await Promise.all([
