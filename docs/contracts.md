@@ -1312,3 +1312,34 @@ counts only with no-store caching. No new hosted schedule or provider setting
 is enabled by this patch. See `docs/deployment.md` for migration, monitoring,
 reconciliation and rollback. Integration tests exercise the real email renderer;
 their existing scripts enable Node's VM-module support for its dynamic import.
+
+### Staff booking-email reconciliation
+
+`/admin/booking-emails` and its message detail pages require a signed-in, current,
+active administrator before reading delivery data. Queues are filtered by status
+and exact booking ID, with at most 25 visible rows per page and bounded offsets.
+List projections omit recipient/payload data. Authorized detail views show the
+saved recipient and provider request key needed for reconciliation, while frozen
+HTML and claim tokens never enter the rendered page or client form props.
+
+Staff can record externally verified provider acceptance with a bounded message
+ID and reason, or stop future automatic retries. These actions send no message,
+rotate no key and change no appointment/payment. Active delivery leases block
+both actions. Acceptance requires a previously attempted, unresolved message;
+an attempted SKIPPED message can record a verified late acceptance. SENT records
+cannot be overwritten, and only PENDING/REVIEW intents can be stopped.
+
+Decisions bind the current actor and a SHA-256 version of all saved delivery
+fields, including same-timestamp changes. A transaction locks/rechecks the actor
+and message, clears the old claim token, and commits the delivery outcome with
+its audit. Late dispatcher writes cannot overwrite reconciliation. Audits retain
+actor, reason, prior/new state, provider references and reviewed version without
+copying recipients or rendered content. Stale, revoked, active and unknown outcomes
+require a fresh review rather than blind replay.
+
+Explicit reload is an authenticated server action returning a fresh minimal
+snapshot. Background page refreshes preserve drafts and open review dialogs.
+Navigation links expose the workspace through the admin dashboard/account menu.
+Existing delivery/provider endpoints, retry windows and financial contracts are
+unchanged. No migration or provider configuration is required. Reverting the
+workspace retains delivery outcomes and audits; it never resets or resends them.

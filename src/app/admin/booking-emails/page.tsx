@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Prisma, type BookingEmailKind } from '@prisma/client'
+import { bookingEmailReasons as reasons } from '@/lib/admin/booking-emails'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
@@ -20,15 +21,6 @@ const queues = [
   { status: 'SENT', label: 'Provider accepted' },
   { status: 'SKIPPED', label: 'Skipped' },
 ] as const
-const reasons = new Map([
-  ['ATTEMPTS_EXHAUSTED', 'The automatic attempt limit was reached.'],
-  ['BOOKING_CHANGED', 'The booking or recipient changed after the message was prepared.'],
-  ['BOOKING_INACTIVE', 'The booking is no longer eligible for this message.'],
-  ['PAYLOAD_INVALID', 'The saved message could not be validated.'],
-  ['PROVIDER_UNCONFIRMED', 'The provider did not confirm acceptance.'],
-  ['RECIPIENT_INVALID', 'The saved recipient address needs review.'],
-  ['RETRY_WINDOW_EXPIRED', 'The automatic retry window ended.'],
-])
 const dateTime = new Intl.DateTimeFormat('en-IN', {
   timeZone: BOOKING_TIME_ZONE,
   day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
@@ -55,6 +47,9 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
   const session = await auth()
   if (!session?.user?.id) redirect('/auth/signin')
   if (session.user.role !== 'ADMIN') redirect('/')
+
+  const actor = await prisma.user.findUnique({ where: { id: session.user.id, closedAt: null }, select: { role: true } })
+  if (actor?.role !== 'ADMIN') redirect('/')
 
   const query = await searchParams
   const queue = queues.find(item => item.status === query.status) ?? queues[0]
@@ -137,7 +132,7 @@ export default async function AdminBookingEmailsPage({ searchParams }: {
               <li key={row.id}>
                 <Card className="gap-3 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium">{row.kind === 'REQUESTED' ? 'Booking request' : 'Booking confirmation'}</p>
+                    <Link href={`${path}/${encodeURIComponent(row.id)}`} prefetch={false} className="font-medium underline underline-offset-4">{row.kind === 'REQUESTED' ? 'Booking request' : 'Booking confirmation'}</Link>
                     <Badge variant={queue.status === 'REVIEW' ? 'destructive' : 'secondary'}>{queue.label}</Badge>
                   </div>
                   <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
