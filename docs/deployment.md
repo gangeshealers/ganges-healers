@@ -181,6 +181,13 @@ acknowledgement after acceptance. The installed SDK forwards an AbortSignal and
 the service bounds provider response waits to ten seconds. The retry window stays
 inside [Resend's documented 24-hour retention](https://resend.com/docs/dashboard/emails/idempotency-keys).
 
+Administrators can open **Booking Emails** from the admin dashboard or account
+menu. The queue defaults to notices that need review and supports lookup by
+booking reference. It shows the stable delivery reference, retry eligibility,
+and safe failure descriptions. Use that reference to find the corresponding
+provider record. The page only reads delivery activity and omits recipient
+addresses, message bodies, provider receipts, and lease tokens.
+
 Do not reset REVIEW/SENT, delete an unresolved event, or rotate its key just to
 clear a failure. Reconcile the saved first-attempt time, frozen payload and stable
 event key against authorized provider records. If accepted, record the verified
