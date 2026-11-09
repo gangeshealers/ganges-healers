@@ -1262,6 +1262,14 @@ business transaction back; no provider call occurs inside that transaction.
 Settled legacy booking replays do not backfill emails. Existing queued legacy
 email contracts remain available to their worker.
 
+Payment checkout for a saved appointment requires a future start time. The
+current order endpoint returns HTTP 409 at or after the cutoff, including for a
+saved gateway order. The legacy route returns HTTP 400. Both check the cutoff
+again after creating a gateway order. Credit confirmation keeps HTTP 400 with
+`INVALID_STATE` and checks the future start time in its guarded booking update.
+Existing payment verification and captured callbacks continue to reconcile an
+order issued earlier, including when the notification arrives after start time.
+
 The request template says **Booking Request Received** and explains payment or
 eligible-credit confirmation. The confirmed template is used only for a committed
 confirmation. The dispatcher checks current appointment state, account closure

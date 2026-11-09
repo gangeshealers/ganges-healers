@@ -18,6 +18,7 @@ interface ResourceInput {
   // A verified replay still checks ownership, but must not reprice a past purchase.
   settled?: boolean
   client?: Prisma.TransactionClient
+  // Only checkout may establish a new quote. Confirmation can reconcile an existing charge later.
   freezeQuote?: boolean
 }
 
@@ -90,6 +91,9 @@ export async function resolvePaymentResource(input: ResourceInput): Promise<Paym
     if (!settled && (booking.status === 'CANCELLED' || booking.status === 'COMPLETED'
       || booking.payment?.statusEnum === 'SUCCESS' || booking.payment?.status === 'success')) {
       throw new PaymentResourceError('Booking is not awaiting payment', 409)
+    }
+    if (freezeQuote && booking.scheduledAt.getTime() <= Date.now()) {
+      throw new PaymentResourceError('The appointment start time has passed', 409)
     }
     return pricedResource(type, booking.pricePaise, { bookingId }, ['PENDING', 'SCHEDULED', 'RESCHEDULED'].includes(booking.status))
   }

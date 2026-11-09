@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { POST as createOrder } from '@/app/api/payments/create-order/route'
+import { POST as createLegacyOrder } from '@/app/api/payments/razorpay/order/route'
 import { POST as verifyPayment } from '@/app/api/payments/verify/route'
 
 jest.mock('@/lib/auth', () => ({ auth: jest.fn() }))
@@ -73,7 +74,10 @@ beforeEach(() => {
   db.payment.upsert.mockResolvedValue({ ...payment, type: 'SESSION' })
   db.payment.findFirst.mockResolvedValue(payment)
   db.payment.update.mockImplementation(async ({ data }) => ({ ...payment, ...data }))
-  db.booking.findUnique.mockResolvedValue({ id: bookingId, healerId: 'healer', userId: 'buyer', pricePaise: 25000, status: 'PENDING', payment: null })
+  db.booking.findUnique.mockResolvedValue({
+    id: bookingId, healerId: 'healer', userId: 'buyer', pricePaise: 25000, status: 'PENDING',
+    scheduledAt: new Date(Date.now() + 60_000), payment: null,
+  })
   db.booking.updateMany.mockResolvedValue({ count: 1 })
   db.order.findUnique.mockResolvedValue({ id: 'owned-order', userId: 'buyer', totalPaise: 25000, status: 'pending_payment' })
   db.orderItem.findMany.mockResolvedValue([{ productId: 'product', quantity: 1, product: { isActive: true, stockStatus: 'IN_STOCK', stockCount: 3 } }])
@@ -206,6 +210,52 @@ describe('server-priced order creation', () => {
     expect((await createOrder(request({ bookingId }))).status).toBe(409)
     expect(db.payment.upsert).not.toHaveBeenCalled()
     expect(gatewayCreate).not.toHaveBeenCalled()
+  })
+
+  test.each(['new', 'saved'] as const)('does not offer %s checkout at the appointment start time', async kind => {
+    const start = Date.now()
+    jest.spyOn(Date, 'now').mockReturnValue(start)
+    const saved = kind === 'saved' ? { ...payment, type: 'SESSION', bookingId } : null
+    db.booking.findUnique.mockResolvedValue({
+      id: bookingId, healerId: 'healer', userId: 'buyer', status: 'PENDING', pricePaise: 25000,
+      scheduledAt: new Date(start), payment: saved,
+    })
+    db.payment.findFirst.mockResolvedValue(saved)
+    const response = await createOrder(request({ bookingId }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'The appointment start time has passed' })
+    expect(mockGateway).not.toHaveBeenCalled()
+    expect(db.payment.upsert).not.toHaveBeenCalled()
+  })
+
+  test.each([[createOrder, 409, 'current'], [createLegacyOrder, 400, 'legacy']] as const)(
+    'rejects an order that crosses the cutoff during gateway I/O (%#)', async (handler, status, mode) => {
+      if (mode === 'legacy') process.env.ENABLE_LEGACY_RAZORPAY_ORDER = '1'
+      let now = Date.now()
+      const start = now + 10_000
+      jest.spyOn(Date, 'now').mockImplementation(() => now)
+      db.booking.findUnique.mockResolvedValue({
+        id: bookingId, healerId: 'healer', serviceId: 'service', userId: 'buyer', status: 'PENDING',
+        pricePaise: 25000, scheduledAt: new Date(start), payment: null,
+      })
+      gatewayCreate.mockImplementation(async () => {
+        now = start
+        return { id: payment.gatewayOrderId }
+      })
+      const response = await handler(request({ bookingId }))
+      expect(gatewayCreate).toHaveBeenCalledTimes(1)
+      expect(response.status).toBe(status)
+      expect(await response.json()).toEqual({ error: 'The appointment start time has passed' })
+      expect(db.payment.upsert).not.toHaveBeenCalled()
+    },
+  )
+
+  test('rejects a past appointment at the enabled legacy endpoint before reaching the gateway', async () => {
+    process.env.ENABLE_LEGACY_RAZORPAY_ORDER = '1'
+    db.booking.findUnique.mockResolvedValue({ userId: 'buyer', status: 'PENDING', scheduledAt: new Date(0) })
+    expect((await createLegacyOrder(request({ bookingId }))).status).toBe(400)
+    expect(mockGateway).not.toHaveBeenCalled()
+    expect(db.payment.upsert).not.toHaveBeenCalled()
   })
 
   test.each(['active', 'cancelled'])('does not charge a %s enrollment', async status => {

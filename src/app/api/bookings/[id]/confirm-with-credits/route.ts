@@ -34,8 +34,10 @@ export async function POST(
       // Never replace a gateway payment that may already have been charged.
       if (booking.payment && booking.payment.gateway !== 'vip_credit') throw new Error('INVALID_STATE')
 
+      const confirmationTime = new Date()
+      if (booking.scheduledAt <= confirmationTime) throw new Error('INVALID_STATE')
       const confirmed = await tx.booking.updateMany({
-        where: { id, userId: user.id, status: 'PENDING' },
+        where: { id, userId: user.id, status: 'PENDING', scheduledAt: { gt: confirmationTime } },
         data: { status: 'CONFIRMED' },
       })
       if (confirmed.count !== 1) throw new Error('INVALID_STATE')
