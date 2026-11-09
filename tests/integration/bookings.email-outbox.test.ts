@@ -18,8 +18,8 @@ let offset = 0
 const day = () => clinicDate(new Date(Date.now() + (40 + offset++) * 86400000))
 const future = () => clinicSlotInstant(day(), '10:00')
 
-async function booking(status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' = 'PENDING') {
-  return prisma.booking.create({ data: { userId, healerId, serviceId, scheduledAt: future(), durationMin: 60, pricePaise: 10000, status } })
+async function booking(status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' = 'PENDING', scheduledAt = future()) {
+  return prisma.booking.create({ data: { userId, healerId, serviceId, scheduledAt, durationMin: 60, pricePaise: 10000, status } })
 }
 async function record(bookingId: string, kind: 'REQUESTED' | 'CONFIRMED') {
   await prisma.$transaction(tx => recordBookingEmail(tx, bookingId, kind))
@@ -106,6 +106,35 @@ test('credit confirmation records one event, supersedes an unsent request and sp
   expect((await confirm()).status).toBe(400)
   await drainBookingEmails({ bookingId: saved.id })
   expect(email.sendBookingNotice).toHaveBeenCalledTimes(1)
+})
+
+test('credit confirmation after start time keeps the balance, booking and outbox intact', async () => {
+  const saved = await booking('PENDING', new Date(Date.now() - 60_000))
+  const before = (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).freeSessionCredits
+  const response = await confirmCredits(new Request('http://localhost/confirm', { method: 'POST' }), { params: Promise.resolve({ id: saved.id }) })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({ error: 'INVALID_STATE' })
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).freeSessionCredits).toBe(before)
+  expect(await prisma.booking.findUniqueOrThrow({ where: { id: saved.id } })).toEqual(saved)
+  expect(await prisma.payment.count({ where: { bookingId: saved.id } })).toBe(0)
+  expect(await prisma.bookingEmail.count({ where: { bookingId: saved.id } })).toBe(0)
+  expect(email.sendBookingNotice).not.toHaveBeenCalled()
+})
+
+test('a captured payment for an earlier order still reconciles after the appointment starts', async () => {
+  const saved = await booking('PENDING', new Date(Date.now() - 60_000))
+  const payment = await prisma.payment.create({ data: {
+    userId, bookingId: saved.id, type: 'SESSION', gateway: 'razorpay', gatewayOrderId: `order_${randomUUID()}`,
+    amountPaise: 10000, status: 'pending', statusEnum: 'PENDING',
+  } })
+  const input = { orderId: payment.gatewayOrderId!, paymentId: `pay_${randomUUID()}`, userId, captured: { amountPaise: 10000, currency: 'INR' } }
+  expect((await finalizePayment(input)).payment.statusEnum).toBe('SUCCESS')
+  expect((await finalizePayment(input)).idempotent).toBe(true)
+  expect((await prisma.booking.findUniqueOrThrow({ where: { id: saved.id } })).status).toBe('CONFIRMED')
+  expect(await prisma.bookingEmail.findMany({ where: { bookingId: saved.id, kind: 'CONFIRMED' } })).toEqual([
+    expect.objectContaining({ status: 'SKIPPED', lastError: 'BOOKING_INACTIVE' }),
+  ])
+  expect(email.sendBookingNotice).not.toHaveBeenCalled()
 })
 
 test('replaying a legacy settled appointment does not create a new unsolicited confirmation', async () => {
