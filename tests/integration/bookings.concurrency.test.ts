@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import { clinicDate, clinicSlotInstant } from '@/lib/bookings/time'
 import { makeNextRequest } from '../helpers/next-handler'
-import { POST } from '@/app/api/bookings/route'
-import { PUT } from '@/app/api/bookings/[id]/route'
+import { POST, GET as listBookings } from '@/app/api/bookings/route'
+import { PUT, DELETE, GET as getBooking } from '@/app/api/bookings/[id]/route'
 import { POST as confirmWithCredits } from '@/app/api/bookings/[id]/confirm-with-credits/route'
 import { GET as getAvailability } from '@/app/api/availability/route'
 
@@ -31,9 +31,9 @@ function create(offset: number, time: string) {
     body: JSON.stringify({ healerId, serviceId, scheduledAt: slot(offset, time) }),
   }))
 }
-function reschedule(id: string, offset: number, time: string) {
+function reschedule(id: string, offset: number, time: string, version?: string) {
   return PUT(makeNextRequest(`http://localhost/api/bookings/${id}`, {
-    method: 'PUT', headers: { 'content-type': 'application/json' },
+    method: 'PUT', headers: { 'content-type': 'application/json', ...(version ? { 'if-match': `"${version}"` } : {}) },
     body: JSON.stringify({ scheduledAt: slot(offset, time) }),
   }), { params: Promise.resolve({ id }) })
 }
@@ -159,4 +159,62 @@ test('owned rescheduling previews its original duration and does not expose anot
   } finally {
     process.env.BOOKING_RACE_USER_ID = userId
   }
+})
+
+
+async function current(id: string) {
+  return getBooking(makeNextRequest(`http://localhost/api/bookings/${id}`), { params: Promise.resolve({ id }) })
+}
+function reviewedCancel(id: string, version: string) {
+  return DELETE(makeNextRequest(`http://localhost/api/bookings/${id}`, { method: 'DELETE', headers: { 'if-match': `"${version}"` } }), { params: Promise.resolve({ id }) })
+}
+
+test('owned reads agree on a private version and same-timestamp changes reject both reviewed mutations', async () => {
+  const id = await created(40, '10:00')
+  const detail = await current(id)
+  const saved = (await detail.json()).data
+  expect(saved.reviewVersion).toMatch(/^[a-f0-9]{64}$/)
+  expect(detail.headers.get('etag')).toBe(`"${saved.reviewVersion}"`)
+  expect(detail.headers.get('cache-control')).toContain('no-store')
+  const list = await listBookings(makeNextRequest('http://localhost/api/bookings'))
+  expect((await list.json()).data.find((row: { id: string }) => row.id === id).reviewVersion).toBe(saved.reviewVersion)
+  const before = await prisma.booking.findUniqueOrThrow({ where: { id } })
+  await prisma.booking.update({ where: { id }, data: { meetingLink: 'https://meet.google.com/review-changed', updatedAt: before.updatedAt } })
+  expect((await reschedule(id, 40, '14:00', saved.reviewVersion)).status).toBe(409)
+  expect((await reviewedCancel(id, saved.reviewVersion)).status).toBe(409)
+  const after = await prisma.booking.findUniqueOrThrow({ where: { id } })
+  expect(after.scheduledAt).toEqual(before.scheduledAt)
+  expect(after.status).toBe(before.status)
+  const fresh = (await (await current(id)).json()).data
+  const changed = await reschedule(id, 40, '14:00', fresh.reviewVersion)
+  expect(changed.status).toBe(200)
+  expect((await changed.json()).data.reviewVersion).not.toBe(fresh.reviewVersion)
+})
+
+test('two reviewed changes to the same appointment commit only one chosen time', async () => {
+  const id = await created(41, '10:00')
+  const version = (await (await current(id)).json()).data.reviewVersion
+  const replies = await Promise.all([reschedule(id, 41, '13:00', version), reschedule(id, 41, '16:00', version)])
+  expect(replies.map(reply => reply.status).sort()).toEqual([200, 409])
+  expect([slot(41, '13:00'), slot(41, '16:00')]).toContain((await prisma.booking.findUniqueOrThrow({ where: { id } })).scheduledAt.toISOString())
+})
+
+test('a reviewed cancellation and reschedule cannot both act on an old appointment', async () => {
+  const id = await created(42, '10:00')
+  const version = (await (await current(id)).json()).data.reviewVersion
+  const replies = await Promise.all([reschedule(id, 42, '13:00', version), reviewedCancel(id, version)])
+  expect(replies.map(reply => reply.status).sort()).toEqual([200, 409])
+  expect(['RESCHEDULED', 'CANCELLED']).toContain((await prisma.booking.findUniqueOrThrow({ where: { id } })).status)
+  expect(await prisma.refund.count({ where: { payment: { bookingId: id } } })).toBe(0)
+})
+
+test('malformed versions do not write, and an owned review token grants no access to another account', async () => {
+  const id = await created(43, '10:00')
+  const version = (await (await current(id)).json()).data.reviewVersion
+  const malformed = await DELETE(makeNextRequest(`http://localhost/api/bookings/${id}`, { method: 'DELETE', headers: { 'if-match': '*' } }), { params: Promise.resolve({ id }) })
+  expect(malformed.status).toBe(400)
+  process.env.BOOKING_RACE_USER_ID = healerUserId
+  try { expect((await reviewedCancel(id, version)).status).toBe(404) }
+  finally { process.env.BOOKING_RACE_USER_ID = userId }
+  expect((await prisma.booking.findUniqueOrThrow({ where: { id } })).status).toBe('PENDING')
 })
