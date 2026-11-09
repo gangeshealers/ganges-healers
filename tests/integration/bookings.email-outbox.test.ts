@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { prisma } from '@/lib/prisma'
 import { drainBookingEmails, recordBookingEmail } from '@/lib/bookings/email'
+import { BOOKING_EMAIL_REVIEW_ACTION, BOOKING_EMAIL_REVIEW_ENTITY, reviewBookingEmail } from '@/lib/bookings/email-review'
 import { finalizePayment } from '@/lib/payments/finalize'
 import { POST as createBooking } from '@/app/api/bookings/route'
 import { POST as confirmCredits } from '@/app/api/bookings/[id]/confirm-with-credits/route'
@@ -12,7 +13,7 @@ jest.mock('@/lib/auth', () => ({ auth: async () => ({ user: { id: process.env.BO
 jest.mock('@/lib/activity-log', () => ({ logActivity: jest.fn() }))
 jest.mock('@/lib/email/email.service', () => ({ emailService: { isEnabled: jest.fn(), sendBookingNotice: jest.fn() } }))
 const email = jest.requireMock<{ emailService: { isEnabled: jest.Mock; sendBookingNotice: jest.Mock } }>('@/lib/email/email.service').emailService
-let userId: string, healerId: string, healerUserId: string, serviceId: string
+let userId: string, healerId: string, healerUserId: string, serviceId: string, reviewerId: string
 const originalOrigin = process.env.NEXTAUTH_URL
 let offset = 0
 const day = () => clinicDate(new Date(Date.now() + (40 + offset++) * 86400000))
@@ -31,6 +32,7 @@ async function due(id: string) {
 
 beforeAll(async () => {
   userId = (await prisma.user.create({ data: { email: `outbox-${randomUUID()}@example.test`, vip: true, freeSessionCredits: 5 } })).id
+  reviewerId = (await prisma.user.create({ data: { email: `outbox-review-${randomUUID()}@example.test`, role: 'ADMIN' } })).id
   healerUserId = (await prisma.user.create({ data: { email: `outbox-healer-${randomUUID()}@example.test`, role: 'HEALER' } })).id
   const availability = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(d => [d, { start: '09:00', end: '20:00' }]))
   healerId = (await prisma.healer.create({ data: { userId: healerUserId, availability } })).id
@@ -49,6 +51,10 @@ afterAll(async () => {
   delete process.env.BOOKING_EMAIL_USER_ID
   if (originalOrigin === undefined) delete process.env.NEXTAUTH_URL; else process.env.NEXTAUTH_URL = originalOrigin
   try {
+    if (reviewerId) {
+      await prisma.activityLog.deleteMany({ where: { userId: reviewerId, action: BOOKING_EMAIL_REVIEW_ACTION } })
+      await prisma.user.delete({ where: { id: reviewerId } })
+    }
     if (userId) await prisma.user.delete({ where: { id: userId } })
     if (healerUserId) await prisma.user.delete({ where: { id: healerUserId } })
     if (serviceId) await prisma.service.delete({ where: { id: serviceId } })
@@ -72,6 +78,39 @@ test('booking creation sends request wording, escaped names, IST time and a trus
   expect(message.html).toContain('10:00 AM IST')
   expect(message.html).toContain('http://localhost:3010/dashboard/bookings')
   expect(message.html).not.toMatch(/<script>|untrusted\.invalid|has been confirmed/)
+})
+
+test('concurrent identical reviews produce one audit and a different outcome cannot replace it', async () => {
+  const saved = await booking()
+  const event = await record(saved.id, 'REQUESTED')
+  const held = await prisma.bookingEmail.update({ where: { id: event.id }, data: {
+    status: 'REVIEW', attempts: 8, lastError: 'ATTEMPTS_EXHAUSTED', payload: { fixture: 'stored notice' },
+  } })
+  const input = { id: held.id, ownerId: reviewerId, version: String(held.updatedAt.getTime()), outcome: 'FOLLOW_UP_COMPLETE' }
+  const results = await Promise.all([reviewBookingEmail(reviewerId, input), reviewBookingEmail(reviewerId, input)])
+  expect(results.map(result => result.recorded).sort()).toEqual([false, true])
+  await expect(reviewBookingEmail(reviewerId, { ...input, outcome: 'NO_FOLLOW_UP' })).rejects.toThrow('A different review is already saved')
+  expect(await prisma.activityLog.findMany({ where: { action: BOOKING_EMAIL_REVIEW_ACTION, entityType: BOOKING_EMAIL_REVIEW_ENTITY, entityId: event.id } })).toEqual([
+    expect.objectContaining({ userId: reviewerId, metadata: { version: input.version, outcome: input.outcome } }),
+  ])
+  expect(await prisma.bookingEmail.findUniqueOrThrow({ where: { id: held.id } })).toEqual(held)
+  expect(email.sendBookingNotice).not.toHaveBeenCalled()
+})
+
+test('reviews require the current administrator, a current version and a notice in REVIEW', async () => {
+  const saved = await booking()
+  const event = await record(saved.id, 'REQUESTED')
+  const input = { id: event.id, ownerId: reviewerId, version: String(event.updatedAt.getTime()), outcome: 'NO_FOLLOW_UP' }
+  await expect(reviewBookingEmail(userId, input)).rejects.toThrow('Your account changed')
+  await expect(reviewBookingEmail(userId, { ...input, ownerId: userId })).rejects.toThrow('Administrator access is required')
+  await expect(reviewBookingEmail(reviewerId, input)).rejects.toThrow('This notice changed')
+  await expect(reviewBookingEmail(reviewerId, { ...input, outcome: 'untrusted free text' })).rejects.toThrow('Select a review outcome')
+  const revised = await prisma.bookingEmail.update({ where: { id: event.id }, data: {
+    status: 'REVIEW', updatedAt: new Date(event.updatedAt.getTime() + 1000),
+  } })
+  await expect(reviewBookingEmail(reviewerId, input)).rejects.toThrow('This notice changed')
+  expect(await prisma.activityLog.count({ where: { action: BOOKING_EMAIL_REVIEW_ACTION, entityId: event.id } })).toBe(0)
+  expect(await reviewBookingEmail(reviewerId, { ...input, version: String(revised.updatedAt.getTime()) })).toEqual({ recorded: true })
 })
 
 test('concurrent browser and captured-payment confirmations persist one confirmed event and send once', async () => {

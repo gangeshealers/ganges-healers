@@ -185,8 +185,10 @@ Administrators can open **Booking Emails** from the admin dashboard or account
 menu. The queue defaults to notices that need review and supports lookup by
 booking reference. It shows the stable delivery reference, retry eligibility,
 and safe failure descriptions. Use that reference to find the corresponding
-provider record. The page only reads delivery activity and omits recipient
-addresses, message bodies, provider receipts, and lease tokens.
+provider record. After investigating and handling follow-up, record an outcome
+to move the notice to **Reviewed**. The audit keeps the reviewer, notice version,
+time and chosen outcome. It leaves the delivery state and retry data intact.
+The page omits recipient addresses, message bodies, provider receipts and lease tokens.
 
 Do not reset REVIEW/SENT, delete an unresolved event, or rotate its key just to
 clear a failure. Reconcile the saved first-attempt time, frozen payload and stable
