@@ -140,11 +140,27 @@ test('active attempts and revoked staff are blocked, then an expired intent can 
     await expect(page.getByRole('button', { name: 'Stop automatic retries', exact: true })).toBeEnabled()
     await page.getByLabel('Reason for decision', { exact: true }).fill('Reviewed the expired fixture delivery')
     await page.getByRole('button', { name: 'Stop automatic retries', exact: true }).click()
-    await db.user.update({ where: { id: actorId }, data: { role: 'USER' } })
-    const deniedResponse = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === path)
+    // Revoke after submission starts: an outstanding reload may otherwise refresh the
+    // client session and correctly hide the form before the server action is exercised.
+    let revokeOnSubmit = true
+    let receiveDenial!: (body: string) => void
+    const deniedResult = new Promise<string>(resolve => { receiveDenial = resolve })
+    await page.route(`**/admin/booking-emails/${eventId}*`, async route => {
+      if (route.request().method() === 'POST' && revokeOnSubmit) {
+        revokeOnSubmit = false
+        await db.user.update({ where: { id: actorId }, data: { role: 'USER' } })
+        const response = await route.fetch()
+        const body = await response.text()
+        await route.fulfill({ response })
+        receiveDenial(body)
+        return
+      }
+      await route.continue()
+    })
     await page.getByRole('button', { name: 'Confirm stop', exact: true }).click()
-    await deniedResponse
-    await expect(page.getByRole('region', { name: 'Review delivery outcome' }).getByRole('alert')).toContainText('Administrator access is required')
+    expect(await deniedResult).toContain('Administrator access is required')
+    const denialAlert = page.getByRole('region', { name: 'Review delivery outcome' }).getByRole('alert')
+    await expect.poll(async () => await denialAlert.isVisible() || await page.getByRole('button', { name: 'Stop automatic retries', exact: true }).count() === 0).toBe(true)
     expect((await db.bookingEmail.findUniqueOrThrow({ where: { id: eventId } })).status).toBe('PENDING')
     expect(await db.activityLog.count({ where: { entityId: eventId } })).toBe(0)
     await db.user.update({ where: { id: actorId }, data: { role: 'ADMIN' } })
