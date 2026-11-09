@@ -323,6 +323,41 @@ This living document pins the repo’s public API contracts, HTTP headers, loggi
   support review because the previous implementation cannot prove whether the
   gateway was called.
 
+### Reviewed booking changes and recovery
+
+Owned booking list/detail reads add an opaque `reviewVersion`. Single-booking
+reads also return the matching strong `ETag`; both are private/no-store. Modern
+booking dialogs send one quoted version in `If-Match` on PUT/DELETE. Legacy PATCH
+cancellation honors the same optional header. Existing callers may omit it;
+existing response keys, status codes, refund submission rules and debug gates
+remain. A malformed supplied version returns 400; a changed appointment returns
+409 before a mutation/refund intent. Reviewed requests take the existing healer
+lock, then hold the booking row while checking the full saved-row version and
+writing. Same-timestamp changes are detected; an old review cannot cancel a
+rescheduled appointment or overwrite a different selected time.
+
+Dialogs bind the current account and keep their reviewed appointment/version
+across background updates. Duplicate clicks send one request. Failed, malformed
+or lost acknowledgments disable further writes until **Reload bookings** closes
+the dialog and refetches the owned list. Late replies after account/message
+changes do not update the current workspace. Reloading does not replay a write.
+The current and requested starts still require the existing 24-hour window.
+Cancelled/completed appointments never offer checkout or credit confirmation
+from stale local flags.
+
+Cancelled rows add `cancellationRefund`, a read-only view of the saved policy,
+payment and refund records. It distinguishes confirmed, pending, failed,
+unavailable and unknown outcomes; simulations and missing provider receipts never establish success. Unknown
+or missing legacy records stay reviewable. Reads never call a provider, create
+an intent, retry a refund or expose gateway payment/refund references. My Bookings
+keeps this outcome visible in Past after reload, including a lost cancellation
+reply. The existing cancellation result messages/policy are shared with this
+view; no new refund or credit-return policy is introduced.
+
+Rollback the UI, optional preconditions and read projections together. Existing
+booking, payment and refund rows stay intact; no migration or provider setting
+change accompanies this work.
+
 ### Product headline experiment
 - Server rendering reads existing `ghx_product_headline` assignments and selects
   a variant without writing response cookies. The browser persists the rendered

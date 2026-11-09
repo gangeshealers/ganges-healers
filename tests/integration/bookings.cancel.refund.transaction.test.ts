@@ -1,8 +1,9 @@
 import { randomUUID, createHmac } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { DELETE, PATCH } from '@/app/api/bookings/[id]/route'
+import { DELETE, PATCH, GET as getBooking } from '@/app/api/bookings/[id]/route'
 import { POST as webhook } from '@/app/api/payments/webhook/route'
+import { bookingReviewVersion } from '@/lib/bookings/transactions'
 import { recordRefundOutcome } from '@/lib/payments/refunds'
 
 jest.mock('@/lib/invoices', () => ({ createAndStoreInvoicePdf: jest.fn() }))
@@ -296,4 +297,34 @@ describe('booking cancellation refund transactions', () => {
     expect(await prisma.refund.count({ where: { paymentId: payment.id } })).toBe(1)
     expect((await prisma.refund.findFirstOrThrow({ where: { paymentId: payment.id } })).status).toBe('UNKNOWN')
   })
+})
+
+
+test('a stale reviewed paid cancellation creates no refund and does not call Razorpay', async () => {
+  const { booking, payment } = await createPaidBooking()
+  await prisma.booking.update({ where: { id: booking.id }, data: { scheduledAt: new Date(booking.scheduledAt.getTime() + 86400000), updatedAt: booking.updatedAt } })
+  const reply = await DELETE(new NextRequest(`http://localhost/api/bookings/${booking.id}`, { method: 'DELETE', headers: { 'if-match': `"${bookingReviewVersion(booking)}"` } }), { params: Promise.resolve({ id: booking.id }) })
+  expect(reply.status).toBe(409)
+  expect((await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).status).toBe('CONFIRMED')
+  expect(await prisma.refund.count({ where: { paymentId: payment.id } })).toBe(0)
+  expect(mockRefundPayment).not.toHaveBeenCalled()
+})
+
+test('reading a saved cancellation recovers its recorded refund without a provider call or private references', async () => {
+  const { booking, payment } = await createPaidBooking()
+  const reply = await cancel('DELETE', booking.id)
+  expect(reply.status).toBe(200)
+  const record = await prisma.refund.findFirstOrThrow({ where: { paymentId: payment.id } })
+  const calls = mockRefundPayment.mock.calls.length
+  const response = await getBooking(new NextRequest(`http://localhost/api/bookings/${booking.id}`), { params: Promise.resolve({ id: booking.id }) })
+  const body = await response.json()
+  expect(body.data.cancellationRefund).toMatchObject({ status: 'SUCCESS', refundPaise: booking.pricePaise })
+  expect(JSON.stringify(body)).not.toContain(payment.gatewayPaymentId)
+  expect(JSON.stringify(body)).not.toContain(record.gatewayRefundId)
+  expect(mockRefundPayment).toHaveBeenCalledTimes(calls)
+  expect(mockFetchRefundStatus).not.toHaveBeenCalled()
+  await prisma.refund.update({ where: { id: record.id }, data: { status: 'UNKNOWN', gatewayRefundId: null } })
+  const uncertain = await getBooking(new NextRequest(`http://localhost/api/bookings/${booking.id}`), { params: Promise.resolve({ id: booking.id }) })
+  expect((await uncertain.json()).data.cancellationRefund.status).toBe('UNKNOWN')
+  expect(mockFetchRefundStatus).not.toHaveBeenCalled()
 })

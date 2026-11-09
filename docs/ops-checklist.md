@@ -58,6 +58,21 @@
 
 ## Refunds & Cancellations
 
+- My Bookings → Past shows recorded cancellation/refund outcomes after refresh.
+  A lost cancel/reschedule response requires **Reload bookings**, which reads
+  current owned data without repeating the mutation or contacting a gateway.
+- Review a fresh appointment before another change. The customer UI sends its
+  saved version through `If-Match`; a stale version returns 409 and creates no
+  cancellation/refund intent. Existing headerless operational clients keep their
+  existing contracts and must still apply the documented ownership/policy rules.
+- PENDING requires provider follow-up; UNKNOWN, FAILED, UNAVAILABLE and legacy
+  cancellations need deliberate reconciliation. A stored simulated result is
+  never proof of a real refund. Reads cannot resolve a provider's uncertain
+  outcome or authorize a second refund. Preserve saved payment/refund identifiers
+  and follow the existing reconciliation workflow before making a new decision.
+- This change adds no provider configuration or schema. Roll back the UI/read
+  projections/preconditions together while retaining all financial records.
+
 
 ## On-call Runbook (tiny)
 

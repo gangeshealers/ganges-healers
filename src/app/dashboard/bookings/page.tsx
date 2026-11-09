@@ -10,10 +10,13 @@ import CancelDialog from '../../../components/bookings/CancelDialog'
 import { track } from '@/lib/analytics/client'
 import { toast } from 'sonner'
 import type { BookingReview } from '@/components/bookings/BookingReviewForm'
+import { isCancellationRefund, type CancellationRefund } from '@/lib/bookings/refund-policy'
 import { safeMeetingLink } from '@/lib/bookings/session-delivery'
 
 type ApiBooking = {
   id: string
+  reviewVersion?: string
+  cancellationRefund?: unknown
   userId: string
   healerId: string
   serviceId: string
@@ -30,6 +33,8 @@ type ApiBooking = {
 
 export type NormalizedBooking = {
   id: string
+  reviewVersion?: string
+  cancellationRefund?: CancellationRefund
   serviceSlug: string
   serviceName: string
   healerName: string
@@ -84,6 +89,8 @@ export default function MyBookingsPage() {
           const active = status !== 'CANCELLED' && status !== 'COMPLETED'
           return {
             id: b.id,
+            reviewVersion: typeof b.reviewVersion === 'string' && /^[a-f0-9]{64}$/.test(b.reviewVersion) ? b.reviewVersion : undefined,
+            cancellationRefund: isCancellationRefund(b.cancellationRefund) ? b.cancellationRefund : undefined,
             serviceSlug: b.service?.slug || '',
             serviceName: b.service?.name || 'Service',
             healerName: b.healer?.user?.name || 'Healer',
@@ -128,11 +135,16 @@ export default function MyBookingsPage() {
     track('booking_cancel_open', { bookingId: b.id, serviceSlug: b.serviceSlug, path: '/dashboard/bookings', ts: Date.now() })
   }
 
+  function reloadBookings() {
+    setRescheduleId(null); setCancelId(null); setItems([]); setItemsOwner(''); setLoading(true)
+    setReloadVersion(v => v + 1)
+  }
+
   function applyUpdate(updated: NormalizedBooking) {
     setItems((prev) => prev.map(i => i.id === updated.id ? updated : i))
   }
-  function applyCancel(id: string) {
-    setItems((prev) => prev.map(i => i.id === id ? { ...i, status: 'CANCELLED', isCancelable: false, isReschedulable: false } : i))
+  function applyCancel(id: string, cancellationRefund: CancellationRefund) {
+    setItems((prev) => prev.map(i => i.id === id ? { ...i, status: 'CANCELLED', cancellationRefund, needsConfirmation: false, isCancelable: false, isReschedulable: false } : i))
   }
 
   return (
@@ -153,14 +165,14 @@ export default function MyBookingsPage() {
             {upcoming.length === 0 ? (
               <Card className="p-6 text-muted-foreground">No upcoming bookings.</Card>
             ) : upcoming.map((b) => (
-              <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={() => setReloadVersion(v => v + 1)} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
+              <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={reloadBookings} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
             ))}
           </TabsContent>
           <TabsContent value="past" className="mt-4 space-y-3">
             {past.length === 0 ? (
               <Card className="p-6 text-muted-foreground">No past bookings.</Card>
             ) : past.map((b) => (
-              <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={() => setReloadVersion(v => v + 1)} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
+              <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={reloadBookings} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
             ))}
           </TabsContent>
         </Tabs>
@@ -171,6 +183,8 @@ export default function MyBookingsPage() {
         <RescheduleModal
           open={!!selectedForReschedule}
           onOpenChange={(open: boolean) => { if (!open) setRescheduleId(null) }}
+          ownerId={userId}
+          onReload={reloadBookings}
           booking={selectedForReschedule}
           onSuccess={(updated: NormalizedBooking) => {
             applyUpdate(updated)
@@ -184,9 +198,11 @@ export default function MyBookingsPage() {
         <CancelDialog
           open={!!selectedForCancel}
           onOpenChange={(open: boolean) => { if (!open) setCancelId(null) }}
+          ownerId={userId}
+          onReload={reloadBookings}
           booking={selectedForCancel}
           onSuccess={(result) => {
-            applyCancel(selectedForCancel.id)
+            applyCancel(selectedForCancel.id, result)
             setCancelId(null)
             if (result.status === 'SUCCESS' || result.status === 'NOT_REQUIRED') {
               toast.success(result.message)

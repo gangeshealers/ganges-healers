@@ -159,3 +159,17 @@ test('an unpaid rescheduled appointment offers payment while keeping the pending
   expect(screen.getByRole('button', { name: 'Continue payment' })).toBeEnabled()
   expect(screen.queryByRole('button', { name: 'Use session credit' })).not.toBeInTheDocument()
 })
+
+test.each(['CANCELLED', 'COMPLETED'] as const)('a %s appointment never offers checkout, credits or proof verification from stale client flags', status => {
+  sessionStorage.setItem(storageKey, JSON.stringify(proof))
+  render(card({ ...saved, status }))
+  expect(screen.queryByRole('button', { name: /Continue payment|Confirm payment|Use session credit/ })).not.toBeInTheDocument()
+  expect(fetchMock).not.toHaveBeenCalled()
+  expect(gateway).not.toHaveBeenCalled()
+})
+
+test('the saved cancellation outcome remains readable without a payment or refund request', () => {
+  render(card({ ...saved, status: 'CANCELLED', cancellationRefund: { band: 'FULL', refundPaise: 10000, status: 'PENDING', message: 'Booking cancelled. The refund is pending Razorpay confirmation.' } }))
+  expect(screen.getByRole('region', { name: 'Cancellation outcome' })).toHaveTextContent('pending Razorpay confirmation')
+  expect(fetchMock).not.toHaveBeenCalled()
+})

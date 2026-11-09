@@ -1,27 +1,21 @@
+import type { Booking } from '@prisma/client'
 import { isTestMode } from '@/lib/test-mode'
 // app/api/bookings/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { validateBookingSlot } from '@/lib/availability'
-import { BookingError, lockOwnedBooking } from '@/lib/bookings/transactions'
+import { BookingError, lockOwnedBooking, bookingReviewVersion, assertBookingReview } from '@/lib/bookings/transactions'
 import { RescheduleBody } from '../types'
-import { computeRefund } from '@/lib/bookings/refund-policy'
+import { computeRefund, refundStatusFromStored, cancellationRefundMessage, storedCancellationRefund, type CancellationRefund, type CancellationRefundStatus } from '@/lib/bookings/refund-policy'
 import { fetchRefundStatus, hasRazorpayRefundCredentials, refundPayment } from '@/lib/payments/razorpay-refunds'
 import { recordRefundOutcome as updateRefundOutcome } from '@/lib/payments/refunds'
 
 const CANCELLABLE_BOOKING_STATUSES = ['PENDING', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED'] as const
 const REFUND_IN_FLIGHT_STATUSES = new Set(['PENDING', 'UNKNOWN'])
 
-type CancellationRefundStatus = 'NOT_REQUIRED' | 'UNAVAILABLE' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'UNKNOWN'
-type CancellationRefund = {
-  band: 'FULL' | 'HALF' | 'NONE'
-  refundPaise: number
-  status: CancellationRefundStatus
-  message: string
-}
 type PreparedCancellation = {
-  booking: { id: string; status: string; updatedAt: Date; [key: string]: unknown }
+  booking: Booking
   alreadyCancelled: boolean
   refund: CancellationRefund
   refundId?: string
@@ -37,40 +31,6 @@ function paymentWasCaptured(payment: { status: string; statusEnum: string | null
   return payment.statusEnum
     ? payment.statusEnum === 'SUCCESS'
     : payment.status.toLowerCase() === 'success'
-}
-
-function refundStatusFromStored(value: string | null | undefined): CancellationRefundStatus {
-  switch ((value || '').toUpperCase()) {
-    case 'SUCCESS':
-    case 'PROCESSED':
-      return 'SUCCESS'
-    case 'PENDING':
-      return 'PENDING'
-    case 'FAILED':
-      return 'FAILED'
-    case 'SIMULATED':
-    case 'UNAVAILABLE':
-      return 'UNAVAILABLE'
-    default:
-      return 'UNKNOWN'
-  }
-}
-
-function cancellationRefundMessage(status: CancellationRefundStatus) {
-  switch (status) {
-    case 'SUCCESS':
-      return 'Booking cancelled. Razorpay confirmed the refund.'
-    case 'PENDING':
-      return 'Booking cancelled. The refund is pending Razorpay confirmation.'
-    case 'FAILED':
-      return 'Booking cancelled, but Razorpay reported that the refund failed. Contact support.'
-    case 'UNKNOWN':
-      return 'Booking cancelled, but the refund status could not be confirmed. Contact support; do not submit another refund.'
-    case 'UNAVAILABLE':
-      return 'Booking cancelled, but an automatic refund is unavailable. Contact support for review.'
-    case 'NOT_REQUIRED':
-      return 'Booking cancelled. No cash refund is due for this booking.'
-  }
 }
 
 function refundRequiresReview(refund: Pick<CancellationRefund, 'band' | 'refundPaise'>): CancellationRefund {
@@ -195,9 +155,9 @@ async function finishCancellationRefund(prepared: {
   }
 }
 
-async function cancelOwnedBooking(id: string, userId: string) {
+async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | null) {
   const prepared = await prisma.$transaction<PreparedCancellation>(async tx => {
-    await lockOwnedBooking(tx, id, userId)
+    await lockOwnedBooking(tx, id, userId, ifMatch !== null)
     const booking = await tx.booking.findFirst({
       where: { id, userId },
       include: {
@@ -214,6 +174,7 @@ async function cancelOwnedBooking(id: string, userId: string) {
       },
     })
     if (!booking) throw new BookingError('Booking not found', 404)
+    assertBookingReview(ifMatch, booking)
 
     const alreadyCancelled = booking.status === 'CANCELLED'
     const now = new Date()
@@ -228,7 +189,7 @@ async function cancelOwnedBooking(id: string, userId: string) {
         throw new BookingError('Cannot cancel booking less than 24 hours before scheduled time', 403)
       }
       const changed = await tx.booking.updateMany({
-        where: { id, userId, status: booking.status },
+        where: { id, userId, status: booking.status, scheduledAt: booking.scheduledAt, updatedAt: booking.updatedAt },
         data: { status: 'CANCELLED', updatedAt: now },
       })
       if (changed.count !== 1) throw new BookingError('Booking changed; please try again', 409)
@@ -591,8 +552,8 @@ export async function GET(
         },
         payment: {
           select: {
-            status: true,
-            amountPaise: true
+            status: true, amountPaise: true, statusEnum: true, gateway: true, gatewayPaymentId: true,
+            refunds: { select: { amountPaise: true, status: true, gatewayRefundId: true, reason: true } }
           }
         }
       }
@@ -607,8 +568,8 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: booking
-    })
+      data: { ...booking, payment: booking.payment ? { status: booking.payment.status, amountPaise: booking.payment.amountPaise } : null, reviewVersion: bookingReviewVersion(booking), cancellationRefund: storedCancellationRefund(booking) }
+    }, { headers: { 'Cache-Control': 'private, no-store', ETag: `"${bookingReviewVersion(booking)}"` } })
 
   } catch (error) {
     console.error('Get booking error:', error)
@@ -658,13 +619,14 @@ export async function PUT(
     }
 
     const updatedBooking = await prisma.$transaction(async tx => {
-      const lockedHealerId = await lockOwnedBooking(tx, id, session.user.id!)
+      const lockedHealerId = await lockOwnedBooking(tx, id, session.user.id!, request.headers.get('if-match') !== null)
       // Re-read after acquiring the healer lock: a competing reschedule may
       // have changed the booking while this request waited.
       const existingBooking = await tx.booking.findFirst({ where: { id, userId: session.user.id } })
       if (!existingBooking || existingBooking.healerId !== lockedHealerId) {
         throw new BookingError('Booking not found', 404)
       }
+      assertBookingReview(request.headers.get('if-match'), existingBooking)
       if (!['PENDING', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED'].includes(existingBooking.status)) {
         throw new BookingError('Booking cannot be rescheduled in its current state', 409)
       }
@@ -701,7 +663,7 @@ export async function PUT(
 
     return NextResponse.json({
       success: true,
-      data: updatedBooking,
+      data: { ...updatedBooking, reviewVersion: bookingReviewVersion(updatedBooking) },
       message: 'Booking rescheduled successfully'
     })
 
@@ -731,7 +693,7 @@ export async function DELETE(
       )
     }
 
-    const result = await cancelOwnedBooking(id, session.user.id)
+    const result = await cancelOwnedBooking(id, session.user.id, request.headers.get('if-match'))
 
     return NextResponse.json({
       success: true,
@@ -782,7 +744,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unsupported action' }, { status: 400 })
     }
 
-    const result = await cancelOwnedBooking(id, session.user.id)
+    const result = await cancelOwnedBooking(id, session.user.id, request.headers.get('if-match'))
     return NextResponse.json({
       success: true,
       ok: true,

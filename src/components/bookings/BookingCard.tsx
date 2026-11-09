@@ -43,7 +43,7 @@ export default function BookingCard({ booking, onReschedule, onCancel, onReviewS
             status === 'CANCELLED' ? 'border-destructive text-destructive' : 'border-muted-foreground text-muted-foreground'
           )} aria-label={`status ${status}`}>{status}</div>
         </div>
-        {status !== 'COMPLETED' ? <div className="flex flex-wrap gap-2">
+        {['PENDING', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED'].includes(status) ? <div className="flex flex-wrap gap-2">
           <Button variant="outline" disabled={!isReschedulable} onClick={onReschedule} aria-disabled={!isReschedulable} title={!isReschedulable ? 'Cannot reschedule within 24h' : 'Reschedule'}>
             Reschedule
           </Button>
@@ -52,7 +52,8 @@ export default function BookingCard({ booking, onReschedule, onCancel, onReviewS
           </Button>
         </div> : null}
       </div>
-      {booking.needsConfirmation && ownerId && onConfirmed ? (
+      {status === 'CANCELLED' && booking.cancellationRefund ? <section aria-label="Cancellation outcome" className="space-y-2 border-t pt-3 text-sm"><p role="status">{booking.cancellationRefund.message}</p>{booking.cancellationRefund.refundPaise > 0 ? <p className="text-muted-foreground">{booking.cancellationRefund.status === 'SUCCESS' ? 'Confirmed refund' : booking.cancellationRefund.status === 'PENDING' ? 'Refund being processed' : 'Refund amount for review'}: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(booking.cancellationRefund.refundPaise / 100)}</p> : null}</section> : null}
+      {['PENDING', 'SCHEDULED', 'RESCHEDULED'].includes(status) && booking.needsConfirmation && ownerId && onConfirmed ? (
         <PendingBookingPayment key={`${ownerId}:${booking.id}`} booking={booking} ownerId={ownerId} onConfirmed={onConfirmed} />
       ) : null}
       {status === 'COMPLETED' && (booking.canReview || booking.review) && onReviewSaved ? (

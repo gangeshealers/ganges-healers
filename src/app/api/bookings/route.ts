@@ -5,7 +5,8 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { validateBookingSlot } from '@/lib/availability'
 import { lockTransaction } from '@/lib/db/locks'
-import { BookingError } from '@/lib/bookings/transactions'
+import { storedCancellationRefund } from '@/lib/bookings/refund-policy'
+import { BookingError, bookingReviewVersion } from '@/lib/bookings/transactions'
 import { logActivity } from '@/lib/activity-log'
 import { recordBookingEmail, dispatchBookingEmails } from '@/lib/bookings/email'
 import { CreateBookingBody } from './types'
@@ -54,8 +55,8 @@ export async function GET(request: NextRequest) {
         },
         payment: {
           select: {
-            status: true,
-            amountPaise: true
+            status: true, amountPaise: true, statusEnum: true, gateway: true, gatewayPaymentId: true,
+            refunds: { select: { amountPaise: true, status: true, gatewayRefundId: true, reason: true } }
           }
         }
       },
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: bookings
+      data: bookings.map(booking => ({ ...booking, payment: booking.payment ? { status: booking.payment.status, amountPaise: booking.payment.amountPaise } : null, reviewVersion: bookingReviewVersion(booking), cancellationRefund: storedCancellationRefund(booking) }))
     }, { headers: { 'Cache-Control': 'private, no-store' } })
 
   } catch (error) {
