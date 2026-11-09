@@ -16,7 +16,7 @@ let fetchMock: jest.SpyInstance
 let confirmed: jest.Mock
 const response = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body })
 const session = (id = 'owner') => ({ data: { user: { id, role: 'USER', vip: true, freeSessionCredits: 2 }, expires: '2099-01-01' }, status: 'authenticated' as const, update: jest.fn().mockResolvedValue(null) })
-function card() { return <BookingCard booking={saved} ownerId="owner" onConfirmed={confirmed} onCancel={jest.fn()} onReschedule={jest.fn()} /> }
+function card(booking = saved) { return <BookingCard booking={booking} ownerId="owner" onConfirmed={confirmed} onCancel={jest.fn()} onReschedule={jest.fn()} /> }
 beforeEach(() => {
   sessionStorage.clear(); jest.clearAllMocks()
   sessionMock.mockReturnValue(session())
@@ -50,6 +50,69 @@ test('a paid proof survives a failed verification and refresh without opening a 
   expect(gateway).toHaveBeenCalledTimes(1)
   expect(fetchMock).toHaveBeenCalledTimes(3)
   expect(sessionStorage.getItem(storageKey)).toBeNull()
+})
+
+const past = { ...saved, startIso: '2000-01-01T10:00:00Z', isCancelable: false, isReschedulable: false }
+
+test('an earlier payment can be verified from a past appointment without offering checkout or credits', async () => {
+  sessionStorage.setItem(storageKey, JSON.stringify(proof))
+  render(card(past))
+  const verify = await screen.findByRole('button', { name: 'Confirm payment' })
+  expect(screen.queryByRole('button', { name: 'Continue payment' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Use session credit' })).not.toBeInTheDocument()
+  fireEvent.click(verify)
+  await waitFor(() => expect(confirmed).toHaveBeenCalledTimes(1))
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(fetchMock).toHaveBeenCalledWith('/api/payments/verify', expect.objectContaining({
+    method: 'POST', body: JSON.stringify({ orderId: proof.razorpay_order_id, paymentId: proof.razorpay_payment_id, signature: proof.razorpay_signature }),
+  }))
+  expect(verify).toBeDisabled()
+  expect(gateway).not.toHaveBeenCalled()
+  expect(sessionStorage.getItem(storageKey)).toBeNull()
+})
+
+test.each([null, JSON.stringify({ ...proof, razorpay_signature: 'invalid' })])('past appointments require valid saved proof for payment controls (%#)', raw => {
+  if (raw) sessionStorage.setItem(storageKey, raw)
+  render(card(past))
+  expect(screen.queryByRole('button', { name: /payment|session credit/i })).not.toBeInTheDocument()
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('a different signed-in account cannot recover a past appointment payment', () => {
+  sessionStorage.setItem(storageKey, JSON.stringify(proof))
+  sessionMock.mockReturnValue(session('different-owner'))
+  render(card(past))
+  expect(screen.queryByRole('button', { name: 'Confirm payment' })).not.toBeInTheDocument()
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test.each(['Continue payment', 'Use session credit'])('a stale %s button respects the cutoff at click time', action => {
+  const now = Date.now()
+  const start = now + 60_000
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(now)
+  render(card({ ...saved, startIso: new Date(start).toISOString() }))
+  const button = screen.getByRole('button', { name: action })
+  clock.mockReturnValue(start)
+  fireEvent.click(button)
+  expect(screen.getByRole('alert')).toHaveTextContent('The appointment start time has passed')
+  expect(fetchMock).not.toHaveBeenCalled()
+  expect(gateway).not.toHaveBeenCalled()
+})
+
+test('a quote arriving at the cutoff cannot open checkout', async () => {
+  const now = Date.now()
+  const start = now + 60_000
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(now)
+  fetchMock.mockImplementationOnce(async () => {
+    clock.mockReturnValue(start)
+    return response(quote) as Response
+  })
+  render(card({ ...saved, startIso: new Date(start).toISOString() }))
+  fireEvent.click(screen.getByRole('button', { name: 'Continue payment' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('The appointment start time has passed')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(gateway).not.toHaveBeenCalled()
+  expect(confirmed).not.toHaveBeenCalled()
 })
 
 test('an invalid saved quote cannot open the gateway or display confirmation', async () => {
