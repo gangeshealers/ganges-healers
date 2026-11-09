@@ -1280,11 +1280,13 @@ configuration, never the incoming Host header. User content is React-escaped.
 My Bookings offers payment continuation for unpaid future appointments and credit
 confirmation for eligible pending appointments without an existing payment.
 Quotes use the saved booking price. The browser retains a signed payment proof
-in owner/booking-scoped session storage until verification succeeds, including
-after refresh; verification retries never reopen checkout. Account changes and
-unmounts stop stale setup from opening a gateway. The page refetches owned
-bookings after confirmation. Provider-side payment recovery is still required
-when browser storage/proof is unavailable.
+in owner/booking-scoped session storage until verification succeeds. After a
+refresh, Past appointments with saved proof offer the existing verification
+action. Checkout and credits require a future start time, which the client
+checks before requesting either action and again before opening the gateway.
+Account changes and unmounts stop stale setup from opening a gateway. Successful
+verification refreshes owned bookings while preserving the selected tab.
+Provider-side recovery is still required when the proof is unavailable.
 
 Credit confirmation takes the same healer lock as payment setup/fulfillment before
 the membership lock, and refuses to replace a non-credit payment using the

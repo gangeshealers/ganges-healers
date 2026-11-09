@@ -52,7 +52,7 @@ export default function BookingCard({ booking, onReschedule, onCancel, onReviewS
           </Button>
         </div> : null}
       </div>
-      {booking.needsConfirmation && ownerId && onConfirmed && new Date(startIso).getTime() > Date.now() ? (
+      {booking.needsConfirmation && ownerId && onConfirmed ? (
         <PendingBookingPayment key={`${ownerId}:${booking.id}`} booking={booking} ownerId={ownerId} onConfirmed={onConfirmed} />
       ) : null}
       {status === 'COMPLETED' && (booking.canReview || booking.review) && onReviewSaved ? (
@@ -61,6 +61,8 @@ export default function BookingCard({ booking, onReschedule, onCancel, onReviewS
     </Card>
   )
 }
+
+const checkoutClosed = 'The appointment start time has passed. Checkout and session credits are closed.'
 
 /** Resume the saved booking; keep a paid proof across refreshes until verification succeeds. */
 function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: NormalizedBooking; ownerId: string; onConfirmed: () => void }) {
@@ -77,6 +79,9 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
   currentOwner.current = session?.user?.id
   const permitted = status === 'authenticated' && session?.user?.id === ownerId
   const storageKey = `ganges-booking-confirmation:${ownerId}:${booking.id}`
+  const startsAt = Date.parse(booking.startIso)
+  const canStart = startsAt > Date.now()
+  const canVerify = permitted && confirming
   const creditEligible = booking.status === 'PENDING' && session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
@@ -100,6 +105,10 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
 
   async function confirm(credit = false) {
     if (inFlight.current || !permitted || !restored || (credit && (pending.current || paymentStarted))) return
+    if ((credit || !pending.current) && !(startsAt > Date.now())) {
+      setError(checkoutClosed)
+      return
+    }
     inFlight.current = true
     setBusy(true); setError('')
     const checkOwner = () => { if (!mounted.current || currentOwner.current !== ownerId) throw new Error('Your account changed. Refresh your bookings before continuing.') }
@@ -122,6 +131,7 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
           if (!response.ok) throw new Error(quote?.error || 'Payment could not be prepared. Try again.')
           if (!quote || typeof quote.orderId !== 'string' || !quote.orderId || typeof quote.key !== 'string' || !quote.key ||
             !Number.isSafeInteger(quote.amountPaise) || quote.amountPaise <= 0 || quote.currency !== 'INR') throw new Error('Payment could not be prepared. Try again.')
+          if (!(startsAt > Date.now())) throw new Error(checkoutClosed)
           proof = await openRazorpayCheckout({ orderId: quote.orderId, amountPaise: quote.amountPaise, key: quote.key,
             description: 'Saved appointment', notes: { bookingId: booking.id }, prefill: { name: session?.user?.name || '', email: session?.user?.email || '' } })
           checkOwner()
@@ -139,6 +149,7 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
         try { sessionStorage.removeItem(storageKey) } catch { /* Confirmation has already succeeded. */ }
       }
       checkOwner()
+      setRestored(false)
       onConfirmed()
       void update?.().catch(() => {})
     } catch (error) {
@@ -148,13 +159,24 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
     } finally { inFlight.current = false; setBusy(false) }
   }
 
+  const showActions = canStart || canVerify
+  if (!showActions && (!permitted || !error)) return null
+
   return (
     <div className="space-y-3 border-t pt-3">
-      <p className="text-sm text-muted-foreground">Your appointment is awaiting confirmation. Saved price: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(booking.amountPaise / 100)}.</p>
-      <div className="flex flex-wrap gap-2">
-        <Button disabled={busy || !permitted || !restored} onClick={() => confirm()}>{busy ? 'Processing…' : confirming ? 'Confirm payment' : 'Continue payment'}</Button>
-        {creditEligible && !confirming && !paymentStarted ? <Button variant="outline" disabled={busy || !permitted || !restored} onClick={() => confirm(true)}>Use session credit</Button> : null}
-      </div>
+      {showActions && <>
+        <p className="text-sm text-muted-foreground">
+          {canVerify ? 'Check the payment you already submitted for this appointment.' : <>Your appointment is awaiting confirmation. Saved price: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(booking.amountPaise / 100)}.</>}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy || !permitted || !restored} onClick={() => confirm()}>
+            {busy ? 'Processing…' : canVerify ? 'Confirm payment' : 'Continue payment'}
+          </Button>
+          {canStart && creditEligible && !confirming && !paymentStarted && (
+            <Button variant="outline" disabled={busy || !permitted || !restored} onClick={() => confirm(true)}>Use session credit</Button>
+          )}
+        </div>
+      </>}
       {permitted && error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     </div>
   )

@@ -55,7 +55,7 @@ test('a customer confirms a saved request with one credit from the mobile bookin
   }
 })
 
-test('saved appointment payment retains its price and proof through a lost confirmation and refresh', async ({ page }, testInfo) => {
+test('saved appointment payment retains its price and proof through a lost confirmation and can be recovered from Past', async ({ page }, testInfo) => {
   test.setTimeout(120_000)
   const settings = loadTestDatabaseEnvironment()
   await verifyTestDatabaseConnection(settings)
@@ -87,11 +87,18 @@ test('saved appointment payment retains its price and proof through a lost confi
     await page.getByRole('button', { name: 'Continue payment', exact: true }).click()
     await expect(page.getByRole('alert').filter({ hasText: /could not confirm/i })).toBeVisible()
     expect(await page.evaluate(() => sessionStorage.getItem('fixture-checkout-amount'))).toBe(String(booking.pricePaise))
+    // Move the disposable appointment past its cutoff while its issued payment proof is retained.
+    await db.booking.update({ where: { id: booking.id }, data: { scheduledAt: new Date(Date.now() - 60_000) } })
     await page.reload()
+    const pastTab = page.getByRole('tab', { name: 'Past (1)', exact: true })
+    await pastTab.click()
     await expect(page.getByRole('button', { name: 'Confirm payment', exact: true })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Continue payment', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Use session credit', exact: true })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('saved-booking-confirmation-recovery.png'), fullPage: true })
     await page.getByRole('button', { name: 'Confirm payment', exact: true }).click()
     await expect(page.locator('[data-test="booking-card"]').getByLabel('status CONFIRMED')).toBeVisible()
+    await expect(pastTab).toHaveAttribute('aria-selected', 'true')
     expect(await page.evaluate(() => sessionStorage.getItem('fixture-checkout-opens'))).toBe('1')
     expect(await db.payment.count({ where: { bookingId: booking.id } })).toBe(1)
     expect(await db.bookingEmail.count({ where: { bookingId: booking.id, kind: 'CONFIRMED', status: 'PENDING' } })).toBe(1)

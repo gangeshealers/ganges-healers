@@ -55,6 +55,7 @@ export default function MyBookingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadVersion, setReloadVersion] = useState(0)
+  const [activeTab, setActiveTab] = useState('upcoming')
 
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
   const [cancelId, setCancelId] = useState<string | null>(null)
@@ -143,7 +144,7 @@ export default function MyBookingsPage() {
       ) : error ? (
         <Card className="p-6 text-red-600">{error}</Card>
       ) : (
-        <Tabs defaultValue="upcoming">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="upcoming">Upcoming ({upcoming.length})</TabsTrigger>
             <TabsTrigger value="past">Past ({past.length})</TabsTrigger>
@@ -159,7 +160,7 @@ export default function MyBookingsPage() {
             {past.length === 0 ? (
               <Card className="p-6 text-muted-foreground">No past bookings.</Card>
             ) : past.map((b) => (
-              <BookingCard key={b.id} booking={b} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
+              <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={() => setReloadVersion(v => v + 1)} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
             ))}
           </TabsContent>
         </Tabs>
