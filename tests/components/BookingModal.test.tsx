@@ -56,7 +56,7 @@ function mockCreateBooking(ok: boolean, bookingId = 'b_1') {
     return Promise.resolve(
       new Response(
         ok
-          ? JSON.stringify({ data: { id: bookingId, status: 'PENDING' } })
+          ? JSON.stringify({ data: { id: bookingId, status: 'PENDING', userId: mockUseSession.mock.results.at(-1)?.value.data.user.id, pricePaise: 50000, scheduledAt: JSON.parse(init.body).scheduledAt } })
           : JSON.stringify({ error: 'Failed to create booking' }),
         { status: ok ? 201 : 400 },
       ),
@@ -75,8 +75,8 @@ function mockCreateOrder(ok: boolean, orderId = 'order_123') {
     Promise.resolve(
       new Response(
         ok ? JSON.stringify({ 
-          key_id: 'rzp_test_key',
-          amount: 50000,
+          key: 'rzp_test_key',
+          amountPaise: 50000, currency: 'INR',
           orderId: orderId 
         }) : JSON.stringify({ error: 'Order failed' }),
         { status: ok ? 200 : 500 },
@@ -94,7 +94,7 @@ describe('BookingModal', () => {
     const date = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
     await user.type(screen.getByDisplayValue(''), date)
     await user.click(await screen.findByText('11:00 AM'))
-    jest.mocked(global.fetch).mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { id: 'free-booking', status: 'PENDING', pricePaise: 0 } }), { status: 201 }))
+    jest.mocked(global.fetch).mockImplementationOnce(async (_url, init) => new Response(JSON.stringify({ success: true, data: { id: 'free-booking', status: 'PENDING', pricePaise: 0, userId: 'free-owner', scheduledAt: JSON.parse(String(init?.body)).scheduledAt } }), { status: 201 }))
     await user.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
     expect(await screen.findByRole('heading', { name: 'Booking request received' })).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('No payment or session credit is required')

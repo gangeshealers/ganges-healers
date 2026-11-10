@@ -64,6 +64,12 @@
   without checkout or session-credit buttons. Practitioner confirmation must
   create its durable confirmation intent and inbox notices without a payment
   row or credit deduction. Retained payment proof remains recoverable.
+- Initial booking dialog: lose a creation or credit reply and verify that only
+  My Bookings review is offered. Lose a payment reply and verify that its signed
+  receipt survives in My Bookings, with one reservation/order and no second
+  checkout. Repeated clicks and account changes must not start another mutation.
+  Reconcile an unknown gateway result through the existing owned flow; do not
+  create another booking as a payment retry.
 
 ## Refunds & Cancellations
 

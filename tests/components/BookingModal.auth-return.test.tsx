@@ -60,8 +60,10 @@ test('a session object with no customer ID still requires sign-in', async () => 
 
 test('a loading session cannot trigger a premature sign-in redirect or booking', async () => {
   mockSession.mockReturnValue({ data: null, status: 'loading' })
-  await chooseSlot()
-  expect(screen.getByRole('button', { name: 'Confirm & Pay' })).toBeDisabled()
+  render(<BookingModal isOpen onClose={() => {}} healer={{ id: 'chosen-healer', user: { name: 'Chosen Practitioner' }, experienceYears: 5, rating: 4 }} serviceId="service" serviceName="Reiki Healing" />)
+  expect(screen.getByRole('status')).toHaveTextContent('Loading your account')
+  expect(screen.queryByLabelText('Select Date')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Confirm & Pay' })).not.toBeInTheDocument()
   expect(mockPush).not.toHaveBeenCalled()
   expect(jest.mocked(global.fetch).mock.calls.some(([url]) => url === '/api/bookings')).toBe(false)
 })

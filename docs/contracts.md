@@ -1058,6 +1058,42 @@ The service booking dialog follows the same path only after the server returns a
 saved zero-price PENDING request: it shows "Booking request received" and a My
 Bookings action, rather than attempting a charge/credit or claiming confirmation.
 
+### Public booking checkout recovery
+
+The initial service dialog retains one server-created appointment for its owned
+flow. A checkout dismissal or order preparation failure retries that appointment;
+it never repeats booking creation. The saved price, owner and scheduled instant
+are checked before payment. Invalid/mismatched quotes or receipts require My
+Bookings review and cannot claim confirmation or start another charge. Back/date
+changes are disabled once the reservation is saved. Repeated clicks share the
+in-flight guard, and closing is blocked while an operation is pending.
+
+A lost, 5xx or malformed creation response may have committed a reservation.
+The dialog therefore offers an owned My Bookings review instead of another POST.
+An unknown credit result follows the same rule and never falls back to checkout.
+Definitive pre-creation 4xx rejections leave date selection available. Endpoints,
+status codes, booking policies and server-side financial idempotency are unchanged.
+
+Signed checkout receipts use the existing owner/booking-scoped session-storage
+key through a shared decoder. They are retained before verification, recoverable
+in either the dialog or My Bookings, and removed only after a verified response.
+A receipt is evidence for the server to verify, never proof of settlement. Retry
+with retained proof calls only verification, including after the appointment
+cutoff; new checkout/credits remain closed at the cutoff. Blocked storage keeps
+the in-memory receipt and explains that the window should stay open. A late
+checkout callback may retain its receipt under the ORIGINAL owner, but cannot
+verify as another account or update a closed/replaced dialog. Account, service,
+practitioner and open/close changes replace the private flow. Stale availability
+responses cannot replace the currently selected date's times.
+
+Success requires the existing `ok: true` credit or `verified: true` payment
+acknowledgement. Test-only anonymous sign-in/credit convenience stays gated;
+authenticated cash customers exercise the same checkout and verification path
+against isolated gateway fixtures in browser tests. No simulated payment response
+can unlock the production success screen. No migration or dependency is needed;
+roll back the dialog/shared-helper consumer changes together, retaining the
+existing storage key and server payment/booking rows.
+
 Customers receive the saved link only through their existing owned bookings and
 calendar routes. UI links use a new tab with noopener/noreferrer. Calendar exports
 and cards also reject unsafe legacy URLs. Cancelled/completed cards omit the join
