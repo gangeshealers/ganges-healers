@@ -10,6 +10,7 @@ import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
 import { useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { openRazorpayCheckout, type RazorpayResult } from '@/lib/payments/openRazorpayCheckout'
+import { bookingCheckoutClosed as checkoutClosed, readBookingPaymentProof, saveBookingPaymentProof, clearBookingPaymentProof } from '@/lib/bookings/payment-recovery'
 
 type Props = {
   booking: NormalizedBooking
@@ -63,8 +64,6 @@ export default function BookingCard({ booking, onReschedule, onCancel, onReviewS
   )
 }
 
-const checkoutClosed = 'The appointment start time has passed. Checkout and session credits are closed.'
-
 /** Resume the saved booking; keep a paid proof across refreshes until verification succeeds. */
 function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: NormalizedBooking; ownerId: string; onConfirmed: () => void }) {
   const { data: session, status, update } = useSession()
@@ -79,7 +78,6 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
   const currentOwner = useRef(session?.user?.id)
   currentOwner.current = session?.user?.id
   const permitted = status === 'authenticated' && session?.user?.id === ownerId
-  const storageKey = `ganges-booking-confirmation:${ownerId}:${booking.id}`
   const startsAt = Date.parse(booking.startIso)
   const canStart = startsAt > Date.now()
   const canVerify = permitted && confirming
@@ -89,20 +87,10 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
 
   useEffect(() => {
     if (!permitted) { setRestored(false); return }
-    try {
-      const raw = sessionStorage.getItem(storageKey)
-      if (!raw || raw.length > 4000) return
-      const value: unknown = JSON.parse(raw)
-      if (value && typeof value === 'object' && 'razorpay_order_id' in value && 'razorpay_payment_id' in value && 'razorpay_signature' in value
-        && typeof value.razorpay_order_id === 'string' && value.razorpay_order_id.length >= 5
-        && typeof value.razorpay_payment_id === 'string' && value.razorpay_payment_id.length >= 5
-        && typeof value.razorpay_signature === 'string' && /^[a-f0-9]{64}$/i.test(value.razorpay_signature)) {
-        pending.current = { razorpay_order_id: value.razorpay_order_id, razorpay_payment_id: value.razorpay_payment_id, razorpay_signature: value.razorpay_signature }
-        setConfirming(true)
-      }
-    } catch { /* In-memory confirmation remains available if browser storage is blocked. */ }
-    finally { setRestored(true) }
-  }, [storageKey, permitted])
+    const proof = readBookingPaymentProof(ownerId, booking.id)
+    if (proof) { pending.current = proof; setConfirming(true) }
+    setRestored(true)
+  }, [ownerId, booking.id, permitted])
 
   async function confirm(credit = false) {
     if (inFlight.current || !permitted || !restored || (credit && (pending.current || paymentStarted))) return
@@ -140,7 +128,7 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
           if (proof.razorpay_order_id !== quote.orderId) throw new Error('Payment does not match this booking.')
           pending.current = proof
           setConfirming(true)
-          try { sessionStorage.setItem(storageKey, JSON.stringify(proof)) } catch { /* Keep the proof in memory. */ }
+          saveBookingPaymentProof(ownerId, booking.id, proof)
         }
         const response = await fetch('/api/payments/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId: proof.razorpay_order_id, paymentId: proof.razorpay_payment_id, signature: proof.razorpay_signature }) })
@@ -148,7 +136,7 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
         checkOwner()
         if (!response.ok || result?.verified !== true) throw new Error(result?.error || 'Payment confirmation is pending. Select Confirm payment to check again.')
         pending.current = null
-        try { sessionStorage.removeItem(storageKey) } catch { /* Confirmation has already succeeded. */ }
+        clearBookingPaymentProof(ownerId, booking.id)
       }
       checkOwner()
       setRestored(false)
