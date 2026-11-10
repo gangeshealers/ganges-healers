@@ -105,7 +105,7 @@ test('desktop and mobile header search real content and retain a working cart', 
   }
 })
 
-test('account navigation follows real session roles and signs out through Auth.js on desktop and mobile', async ({ page, browser, baseURL }) => {
+test('desktop account navigation follows real session roles and signs out through Auth.js', async ({ page, browser, baseURL }) => {
   test.setTimeout(240_000)
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
   for (const role of ['USER', 'HEALER', 'ADMIN']) {
@@ -138,7 +138,13 @@ test('account navigation follows real session roles and signs out through Auth.j
   await page.getByRole('button', { name: 'Open user menu', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Your account' }).getByRole('link', { name: 'Sign in', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
+})
 
+test('mobile account navigation signs out through Auth.js in its own session', async ({ page }) => {
+  test.setTimeout(120_000)
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  // A fixture login must start in a fresh browser context. Reusing the desktop
+  // page can overlap its post-sign-out refresh with an injected mobile session.
   expect((await page.goto(`/api/test/login?role=USER&email=nav-mobile-${token}@example.test`))?.ok()).toBeTruthy()
   await page.goto('/')
   await page.setViewportSize({ width: 390, height: 844 })
