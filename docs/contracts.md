@@ -238,6 +238,19 @@ This living document pins the repo’s public API contracts, HTTP headers, loggi
   has numeric zero/count zero in data and “No reviews yet” in the UI, regardless
   of any legacy stored rating. Homepage featured practitioners remain active and
   verified and are ordered by review count with a stable ID tie-breaker.
+  Directory/API page size defaults to 20 when omitted or blank; finite explicit
+  values are truncated to an integer and bounded to 1–50, with non-finite values
+  using the default. Queries overfetch one bounded row so `nextCursor` exists
+  only when a following result exists; a full final page no longer links to an
+  empty continuation. Search/service filters persist through pagination. Missing
+  or inactive service filters return the existing empty envelope instead of
+  silently broadening to unrelated practitioners. Existing active-practitioner
+  visibility, specialization aliases, response keys and 200/500 contracts remain.
+  Directory controls use labeled search and active-service names, retaining the
+  `q`/`serviceSlug` query keys. An unavailable deep-linked selection remains
+  explicit rather than silently resetting to All services. Active service-option
+  reads are shared within a server render; publication is not cached across
+  requests. Controls stack at mobile widths, and pagination retains both filters.
 - Public healer `certifications` remain an array of plain names. Both legacy
   strings and saved `{ name, ... }` objects are supported; blank/malformed
   entries and duplicate names are omitted instead of rendering arbitrary objects.

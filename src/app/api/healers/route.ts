@@ -5,10 +5,11 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const q = searchParams.get('q') || undefined
   const serviceSlug = searchParams.get('serviceSlug') || undefined
-  const limit = Number(searchParams.get('limit') || '')
+  const rawLimit = searchParams.get('limit')
+  const limit = rawLimit?.trim() ? Number(rawLimit) : undefined
   const cursor = searchParams.get('cursor') || undefined
   try {
-    const data = await listHealers({ q, serviceSlug, limit: Number.isFinite(limit) ? limit : undefined, cursor })
+    const data = await listHealers({ q, serviceSlug, limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined, cursor })
     return NextResponse.json(data)
   } catch (e) {
     console.error('[healers][list][error]', e)

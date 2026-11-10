@@ -2,6 +2,7 @@
 import { render, screen } from '@testing-library/react'
 
 jest.mock('@/lib/healers/queries', () => ({
+  getHealerServiceOptions: jest.fn(async () => [{ slug: 'yoga-healing', name: 'Yoga Therapy' }, { slug: 'reiki-healing', name: 'Reiki Healing' }]),
   listHealers: jest.fn(async () => ({
     items: [
       { id: 'h1', slug: 'h1', name: 'Alice', title: 'Yoga Healer', yearsExperience: 5, ratingAvg: 4.8, reviewCount: 2, avatarUrl: null, shortBio: 'Bio A', services: [{ slug: 'yoga-healing', title: 'Yoga Therapy' }] },
@@ -14,6 +15,15 @@ jest.mock('@/lib/healers/queries', () => ({
 import HealersPage from '@/app/healers/page'
 
 describe('HealersPage smoke', () => {
+  test('service names and accessible labels preserve the existing query fields', async () => {
+    render(await HealersPage({ searchParams: Promise.resolve({ q: 'Yoga', serviceSlug: 'yoga-healing' }) }))
+    expect(screen.getByRole('form', { name: 'Find healers' })).toHaveAttribute('action', '/healers')
+    expect(screen.getByRole('textbox', { name: 'Search healers' })).toHaveValue('Yoga')
+    expect(screen.getByRole('combobox', { name: 'Service' })).toHaveValue('yoga-healing')
+    expect(screen.getByRole('option', { name: 'Yoga Therapy' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'All services' })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Service slug (optional)')).not.toBeInTheDocument()
+  })
   test('renders healer cards with names and ratings', async () => {
     const el = await (HealersPage as any)({ searchParams: Promise.resolve({}) })
     render(el)
