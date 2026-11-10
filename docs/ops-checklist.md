@@ -55,6 +55,15 @@
   - Emits client-only analytics event `product_service_cta_click` on click; no server/API/DB changes.
 
 - Empty states render consistent copy; Clear filters removes q/filters only.
+- Booking delivery: reschedule an unpaid appointment and verify both booking
+  workspaces hide its room, its calendar is TENTATIVE without a URL, and the
+  practitioner cannot save a room or complete it. After payment verifies, the
+  owned room/calendar flow must work again. Paid, credit-funded and explicitly
+  free reschedules remain supported; historical CONFIRMED rows remain usable.
+- Free pending appointments explain that practitioner confirmation is pending
+  without checkout or session-credit buttons. Practitioner confirmation must
+  create its durable confirmation intent and inbox notices without a payment
+  row or credit deduction. Retained payment proof remains recoverable.
 
 ## Refunds & Cancellations
 

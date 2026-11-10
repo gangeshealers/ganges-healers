@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { GET as listHealer } from '@/app/api/healer/bookings/route'
 import { PATCH } from '@/app/api/healer/bookings/[id]/route'
 import { GET as listCustomer } from '@/app/api/bookings/route'
+import { GET as detailCustomer } from '@/app/api/bookings/[id]/route'
 import { GET as calendar } from '@/app/api/bookings/[id]/calendar/route'
 import { lockTransaction } from '@/lib/db/locks'
 
@@ -81,8 +82,11 @@ test('meeting writes require safe HTTPS, the saved version and an active confirm
   for (const meetingLink of ['javascript:alert(1)', 'http://meeting.example.test', 'https://user:password@meeting.example.test']) expect((await link(meetingLink)).status).toBe(400)
   expect((await patch({ action: 'SET_MEETING_LINK', meetingLink: 'https://meeting.example.test' })).status).toBe(400)
   expect((await PATCH(new NextRequest('http://localhost/action', { method: 'PATCH', body: '{' }), params())).status).toBe(400)
-  await prisma.booking.update({ where: { id: bookingId }, data: { status: 'PENDING' } })
+  await prisma.booking.update({ where: { id: bookingId }, data: { status: 'PENDING', meetingLink: 'https://meeting.example.test/pending-room' } })
   expect((await link('https://meeting.example.test')).status).toBe(409)
+  const content = await (await calendar(new Request('http://localhost/calendar'), params())).text()
+  expect(content).toContain('STATUS:TENTATIVE')
+  expect(content).not.toContain('URL:')
 })
 
 test('completion waits for the scheduled end and supports an ended rescheduled session', async () => {
@@ -140,4 +144,48 @@ test('a role revoked while waiting for the reservation lock is rechecked before 
   }
   expect((await waiting).status).toBe(403)
   expect((await fresh()).meetingLink).toBeNull()
+})
+
+test.each(['missing', 'pending', 'mismatch', 'refunded', 'credit-pending'])('an unfunded reschedule (%s) exposes no room and cannot be delivered', async funding => {
+  if (funding === 'missing') await prisma.payment.delete({ where: { bookingId } })
+  else await prisma.payment.update({ where: { bookingId }, data: funding === 'pending' ? { statusEnum: 'PENDING' }
+    : funding === 'mismatch' ? { amountPaise: 1 }
+      : funding === 'refunded' ? { statusEnum: 'REFUNDED' }
+        : { gateway: 'vip_credit', amountPaise: 0, statusEnum: 'PENDING' } })
+  await prisma.booking.update({ where: { id: bookingId }, data: { status: 'RESCHEDULED', meetingLink: 'https://meeting.example.test/private-legacy-room' } })
+  const paymentBefore = await prisma.payment.findUnique({ where: { bookingId } })
+  const creditsBefore = (await prisma.user.findUniqueOrThrow({ where: { id: users[2] } })).freeSessionCredits
+  expect((await link('https://meeting.example.test/blocked')).status).toBe(409)
+  const practitionerRows = await (await listHealer(new NextRequest('http://localhost/api/healer/bookings'))).json()
+  expect(practitionerRows.data.find((row: { id: string }) => row.id === bookingId).meetingLink).toBeNull()
+  mockActor = { user: { id: users[2], role: 'USER' } }
+  const listed = await (await listCustomer(new NextRequest('http://localhost/api/bookings'))).json()
+  expect(listed.data.find((row: { id: string }) => row.id === bookingId)).toMatchObject({ meetingLink: null, needsConfirmation: true })
+  const detail = await detailCustomer(new NextRequest('http://localhost/booking'), params())
+  expect((await detail.json()).data).toMatchObject({ meetingLink: null, needsConfirmation: true })
+  const exported = await calendar(new Request('http://localhost/calendar'), params())
+  const content = await exported.text()
+  expect(content).toContain('STATUS:TENTATIVE')
+  expect(content).not.toContain('URL:')
+  expect(content).not.toContain('private-legacy-room')
+  await prisma.booking.update({ where: { id: bookingId }, data: { scheduledAt: new Date(Date.now() - 7200000) } })
+  mockActor = { user: { id: users[0], role: 'HEALER' } }
+  expect((await patch({ action: 'COMPLETE' })).status).toBe(409)
+  expect((await fresh()).status).toBe('RESCHEDULED')
+  expect(await prisma.payment.findUnique({ where: { bookingId } })).toEqual(paymentBefore)
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: users[2] } })).freeSessionCredits).toBe(creditsBefore)
+  expect(await prisma.activityLog.count({ where: { entityId: bookingId } })).toBe(0)
+})
+
+test.each(['paid', 'credit', 'free', 'legacy-confirmed'])('a %s appointment still exposes its room through owned reads and calendar', async funding => {
+  if (funding === 'free' || funding === 'legacy-confirmed') await prisma.payment.delete({ where: { bookingId } })
+  if (funding === 'credit') await prisma.payment.update({ where: { bookingId }, data: { gateway: 'vip_credit', amountPaise: 0 } })
+  await prisma.booking.update({ where: { id: bookingId }, data: { status: funding === 'legacy-confirmed' ? 'CONFIRMED' : 'RESCHEDULED', ...(funding === 'free' ? { pricePaise: 0 } : {}) } })
+  expect((await link('https://meeting.example.test/funded-room')).status).toBe(200)
+  mockActor = { user: { id: users[2], role: 'USER' } }
+  const detail = await detailCustomer(new NextRequest('http://localhost/booking'), params())
+  expect((await detail.json()).data).toMatchObject({ meetingLink: 'https://meeting.example.test/funded-room', needsConfirmation: false })
+  const content = await (await calendar(new Request('http://localhost/calendar'), params())).text()
+  expect(content).toContain('STATUS:CONFIRMED')
+  expect(content).toContain('URL:https://meeting.example.test/funded-room')
 })

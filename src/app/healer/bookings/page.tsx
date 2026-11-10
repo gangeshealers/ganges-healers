@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
-import { healerBookingCapabilities, safeMeetingLink } from '@/lib/bookings/session-delivery'
+import { bookingDeliveryState, healerBookingCapabilities, safeMeetingLink } from '@/lib/bookings/session-delivery'
 
 interface Booking {
   id: string; scheduledAt: string; durationMin: number; status: string; pricePaise: number; updatedAt: string; meetingLink: string | null
@@ -99,11 +99,12 @@ export default function HealerBookingsPage() {
 function BookingList({ bookings, now, busy, onAction, onCancel, onReload }: { bookings: Booking[]; now: number; busy: boolean; onAction: (booking: Booking, action: Action) => Promise<string | null>; onCancel: (booking: Booking) => void; onReload: () => void }) {
   if (!bookings.length) return <Card><CardContent className="py-8 text-center text-muted-foreground">No bookings</CardContent></Card>
   return <div className="space-y-3">{bookings.map(booking => {
-    const can = healerBookingCapabilities(booking, now), meeting = safeMeetingLink(booking.meetingLink)
+    const delivery = bookingDeliveryState(booking), can = healerBookingCapabilities(booking, now), meeting = delivery.confirmed ? safeMeetingLink(booking.meetingLink) : null
     return <Card key={booking.id}><CardContent className="py-4 space-y-4"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div className="space-y-1"><p className="font-medium">{booking.user.name || booking.user.email}</p><p className="text-sm text-muted-foreground">{booking.service.name}</p><p className="text-sm text-muted-foreground">{clinicTime(booking.scheduledAt)} IST · {booking.durationMin} min</p><a className="text-sm underline" href={`/api/bookings/${encodeURIComponent(booking.id)}/calendar`}>Download calendar</a></div>
       <div className="space-y-2"><Badge variant={statusColor[booking.status] ?? 'outline'}>{booking.status}</Badge>{booking.payment && <p className="text-xs">{booking.payment.gateway === 'vip_credit' ? 'Session credit applied' : `Payment: ${booking.payment.status} · ₹${(booking.payment.amountPaise / 100).toLocaleString('en-IN')}`}</p>}
-        <div className="flex flex-wrap gap-2">{['PENDING', 'SCHEDULED'].includes(booking.status) && <Button size="sm" disabled={busy || !can.canConfirm} onClick={() => void onAction(booking, { action: 'CONFIRM' })}>Confirm</Button>}{['CONFIRMED', 'RESCHEDULED'].includes(booking.status) && <Button size="sm" disabled={busy || !can.canComplete} title={!can.canComplete ? 'Available after the scheduled session ends' : undefined} onClick={() => void onAction(booking, { action: 'COMPLETE' })}>Complete session</Button>}{can.canCancel && <Button size="sm" variant="destructive" disabled={busy} onClick={() => onCancel(booking)}>Cancel unpaid booking</Button>}</div>
+        <div className="flex flex-wrap gap-2">{['PENDING', 'SCHEDULED'].includes(booking.status) && <Button size="sm" disabled={busy || !can.canConfirm} onClick={() => void onAction(booking, { action: 'CONFIRM' })}>Confirm</Button>}{['CONFIRMED', 'RESCHEDULED'].includes(booking.status) && <Button size="sm" disabled={busy || !can.canComplete} title={!delivery.confirmed ? 'Available after payment confirmation and the scheduled session end' : !can.canComplete ? 'Available after the scheduled session ends' : undefined} onClick={() => void onAction(booking, { action: 'COMPLETE' })}>Complete session</Button>}{can.canCancel && <Button size="sm" variant="destructive" disabled={busy} onClick={() => onCancel(booking)}>Cancel unpaid booking</Button>}</div>
         {['PENDING', 'SCHEDULED'].includes(booking.status) && !can.canConfirm && <p className="text-xs text-muted-foreground">Confirmation requires an upcoming session with verified payment, an applied credit, or a free booking.</p>}
+        {booking.status === 'RESCHEDULED' && !delivery.confirmed && <p className="text-xs text-muted-foreground">This reserved time is awaiting payment confirmation before session delivery.</p>}
         {can.cancellationNeedsReview && <p className="max-w-sm text-xs text-muted-foreground">Paid sessions and used credits require administrator review before practitioner cancellation.</p>}
       </div></div>
       {meeting && ['CONFIRMED', 'RESCHEDULED'].includes(booking.status) && <a className="inline-flex rounded border px-3 py-2 text-sm underline" href={meeting} target="_blank" rel="noopener noreferrer">Join session</a>}

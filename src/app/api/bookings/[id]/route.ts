@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma'
 import { validateBookingSlot } from '@/lib/availability'
 import { BookingError, lockOwnedBooking, bookingReviewVersion, assertBookingReview } from '@/lib/bookings/transactions'
 import { recordBookingNotifications } from '@/lib/bookings/notifications'
+import { bookingDeliveryState } from '@/lib/bookings/session-delivery'
 import { RescheduleBody } from '../types'
 import { computeRefund, refundStatusFromStored, cancellationRefundMessage, storedCancellationRefund, type CancellationRefund, type CancellationRefundStatus } from '@/lib/bookings/refund-policy'
 import { fetchRefundStatus, hasRazorpayRefundCredentials, refundPayment } from '@/lib/payments/razorpay-refunds'
@@ -206,7 +207,7 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
       durationMin: booking.durationMin,
       status: 'CANCELLED' as const,
       pricePaise: booking.pricePaise,
-      meetingLink: booking.meetingLink,
+      meetingLink: null,
       createdAt: booking.createdAt,
       updatedAt: alreadyCancelled ? booking.updatedAt : now,
     }
@@ -568,9 +569,10 @@ export async function GET(
       )
     }
 
+    const delivery = bookingDeliveryState(booking)
     return NextResponse.json({
       success: true,
-      data: { ...booking, payment: booking.payment ? { status: booking.payment.status, amountPaise: booking.payment.amountPaise } : null, reviewVersion: bookingReviewVersion(booking), cancellationRefund: storedCancellationRefund(booking) }
+      data: { ...booking, meetingLink: delivery.confirmed ? booking.meetingLink : null, needsConfirmation: delivery.needsConfirmation, payment: booking.payment ? { status: booking.payment.status, amountPaise: booking.payment.amountPaise } : null, reviewVersion: bookingReviewVersion(booking), cancellationRefund: storedCancellationRefund(booking) }
     }, { headers: { 'Cache-Control': 'private, no-store', ETag: `"${bookingReviewVersion(booking)}"` } })
 
   } catch (error) {
@@ -663,13 +665,17 @@ export async function PUT(
         include: {
           healer: { include: { user: { select: { name: true, image: true } } } },
           service: { select: { name: true, category: true, duration: true } },
+          payment: { select: { status: true, statusEnum: true, amountPaise: true, gateway: true } },
         },
       })
     }, { maxWait: 10000, timeout: 10000, isolationLevel: 'ReadCommitted' })
 
+    // Keep the reschedule response's existing payment-free shape.
+    const { payment, ...publicBooking } = updatedBooking
+    const delivery = bookingDeliveryState({ status: updatedBooking.status, pricePaise: updatedBooking.pricePaise, payment })
     return NextResponse.json({
       success: true,
-      data: { ...updatedBooking, reviewVersion: bookingReviewVersion(updatedBooking) },
+      data: { ...publicBooking, meetingLink: delivery.confirmed ? updatedBooking.meetingLink : null, needsConfirmation: delivery.needsConfirmation, reviewVersion: bookingReviewVersion(updatedBooking) },
       message: 'Booking rescheduled successfully'
     })
 

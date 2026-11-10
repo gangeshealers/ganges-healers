@@ -50,3 +50,17 @@ test('renders Upcoming and Past tabs and splits items', async () => {
   expect(await screen.findByText('Service A')).toBeInTheDocument()
   // Past tab content should include past item when selected
 })
+
+test('server confirmation state overrides a legacy success string for a rescheduled appointment', async () => {
+  jest.mocked(global.fetch).mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: [{ ...mockBookings.data[0], status: 'RESCHEDULED', needsConfirmation: true, pricePaise: 50000, meetingLink: 'https://meeting.example.test/unfunded', payment: { status: 'success', amountPaise: 50000 } }] }), { status: 200 }))
+  render(<MyBookingsPage />)
+  expect(await screen.findByRole('button', { name: 'Continue payment' })).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Join session' })).not.toBeInTheDocument()
+})
+
+test('an explicit free request shows practitioner waiting guidance without a checkout action', async () => {
+  jest.mocked(global.fetch).mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: [{ ...mockBookings.data[0], status: 'PENDING', needsConfirmation: true, pricePaise: 0, payment: null }] }), { status: 200 }))
+  render(<MyBookingsPage />)
+  expect(await screen.findByRole('status')).toHaveTextContent('No payment or session credit is required')
+  expect(screen.queryByRole('button', { name: /payment|session credit/i })).not.toBeInTheDocument()
+})

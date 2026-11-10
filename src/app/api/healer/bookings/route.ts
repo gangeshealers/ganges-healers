@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireHealer } from '@/lib/auth/requireHealer'
+import { bookingDeliveryState } from '@/lib/bookings/session-delivery'
 
 export const dynamic = 'force-dynamic'
 const headers = { 'Cache-Control': 'private, no-store' }
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
       orderBy: { scheduledAt: 'asc' },
     })
 
-    return NextResponse.json({ success: true, data: bookings }, { headers })
+    return NextResponse.json({ success: true, data: bookings.map(booking => ({ ...booking, meetingLink: bookingDeliveryState(booking).confirmed ? booking.meetingLink : null })) }, { headers })
   } catch (error: unknown) {
     const status = (error as { status?: number }).status
     if (status === 401 || status === 403) {

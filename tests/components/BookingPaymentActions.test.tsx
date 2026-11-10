@@ -173,3 +173,21 @@ test('the saved cancellation outcome remains readable without a payment or refun
   expect(screen.getByRole('region', { name: 'Cancellation outcome' })).toHaveTextContent('pending Razorpay confirmation')
   expect(fetchMock).not.toHaveBeenCalled()
 })
+
+test('a free pending appointment waits for its practitioner without offering a charge or spending a credit', async () => {
+  render(card({ ...saved, amountPaise: 0, isFree: true }))
+  expect(await screen.findByRole('status')).toHaveTextContent('No payment or session credit is required')
+  expect(screen.queryByRole('button', { name: /payment|session credit/i })).not.toBeInTheDocument()
+  expect(fetchMock).not.toHaveBeenCalled()
+  expect(gateway).not.toHaveBeenCalled()
+})
+
+test('an explicit free flag cannot discard an earlier submitted payment proof', async () => {
+  sessionStorage.setItem(storageKey, JSON.stringify(proof))
+  render(card({ ...saved, amountPaise: 0, isFree: true }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm payment' }))
+  await waitFor(() => expect(confirmed).toHaveBeenCalledTimes(1))
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(fetchMock).toHaveBeenCalledWith('/api/payments/verify', expect.anything())
+  expect(gateway).not.toHaveBeenCalled()
+})

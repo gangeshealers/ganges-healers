@@ -17,6 +17,7 @@ type ApiBooking = {
   id: string
   reviewVersion?: string
   cancellationRefund?: unknown
+  needsConfirmation?: boolean
   userId: string
   healerId: string
   serviceId: string
@@ -47,6 +48,7 @@ export type NormalizedBooking = {
   amountPaise: number
   needsConfirmation?: boolean
   hasPaymentInProgress?: boolean
+  isFree?: boolean
   meetingLink?: string | null
   canReview?: boolean
   review?: BookingReview | null
@@ -102,8 +104,9 @@ export default function MyBookingsPage() {
             healerId: b.healerId,
             serviceId: b.serviceId,
             amountPaise: Number.isFinite(b.payment?.amountPaise) ? (b.payment?.amountPaise || 0) : (b.pricePaise || 0),
-            needsConfirmation: ['PENDING', 'SCHEDULED', 'RESCHEDULED'].includes(status) && !['success', 'SUCCESS', 'refunded', 'REFUNDED'].includes(b.payment?.status || ''),
+            needsConfirmation: typeof b.needsConfirmation === 'boolean' ? b.needsConfirmation : ['PENDING', 'SCHEDULED', 'RESCHEDULED'].includes(status) && !['success', 'SUCCESS', 'refunded', 'REFUNDED'].includes(b.payment?.status || ''),
             hasPaymentInProgress: Boolean(b.payment),
+            isFree: b.pricePaise === 0 && !b.payment,
             canReview: status === 'COMPLETED' && start.getTime() + (b.durationMin ?? 60) * 60000 <= now && b.userId !== b.healer?.userId,
             review: b.review ?? null,
           }

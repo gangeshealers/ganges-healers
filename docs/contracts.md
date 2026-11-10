@@ -1035,6 +1035,29 @@ Updated timestamps advance monotonically by at least one millisecond so two
 writes in the same clock tick cannot share a version. No booking time, saved
 price, payment, refund or credit is rewritten by this action.
 
+RESCHEDULED is a time reservation, not proof of payment. Delivery (meeting-link
+writes and completion) requires the saved price to be captured, a successfully
+applied VIP credit, or an explicit zero-price booking with no payment row. A
+stored status enum takes precedence over the legacy payment string. Unfunded or
+inconsistent reschedules return the existing 409 without an audit or financial
+write. Historical CONFIRMED rows retain their existing delivery eligibility.
+Owned customer GET/list and reschedule responses add `needsConfirmation`; they
+redact `meetingLink` unless delivery is confirmed, and keep gateway details
+private. Pending/SCHEDULED and unfunded rescheduled calendar exports are
+TENTATIVE and omit the room URL. Terminal customer reads and cancelled exports
+omit the room URL as well. Existing response envelopes and mutation status codes
+are preserved; consumers may adopt the additive boolean instead of interpreting
+the public legacy payment string.
+
+My Bookings uses the saved booking price and absence of a payment row to identify
+a free pending appointment. It explains that practitioner confirmation is pending
+and offers no new checkout or session-credit action. A previously submitted,
+owner-scoped payment proof remains verifiable. Zero-amount VIP credit payments
+are not reclassified as free appointments. No credit-return or refund rule changes.
+The service booking dialog follows the same path only after the server returns a
+saved zero-price PENDING request: it shows "Booking request received" and a My
+Bookings action, rather than attempting a charge/credit or claiming confirmation.
+
 Customers receive the saved link only through their existing owned bookings and
 calendar routes. UI links use a new tab with noopener/noreferrer. Calendar exports
 and cards also reject unsafe legacy URLs. Cancelled/completed cards omit the join

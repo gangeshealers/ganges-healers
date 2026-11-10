@@ -104,6 +104,8 @@ function RescheduleEditor({ open, onOpenChange, booking, onSuccess, onReload }: 
         reviewVersion: body.data.reviewVersion,
         startIso: newStart.toISOString(),
         status: 'RESCHEDULED',
+        meetingLink: body.data.meetingLink === null ? null : reviewed.meetingLink,
+        needsConfirmation: typeof body.data.needsConfirmation === 'boolean' ? body.data.needsConfirmation : reviewed.needsConfirmation,
         isCancelable: hoursUntil >= 24,
         isReschedulable: hoursUntil >= 24,
       }

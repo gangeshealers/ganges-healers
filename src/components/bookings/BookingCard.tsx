@@ -106,6 +106,7 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
 
   async function confirm(credit = false) {
     if (inFlight.current || !permitted || !restored || (credit && (pending.current || paymentStarted))) return
+    if (booking.isFree && !pending.current) return
     if ((credit || !pending.current) && !(startsAt > Date.now())) {
       setError(checkoutClosed)
       return
@@ -159,6 +160,8 @@ function PendingBookingPayment({ booking, ownerId, onConfirmed }: { booking: Nor
           : error instanceof Error ? error.message : 'Your booking could not be confirmed. Try again.')
     } finally { inFlight.current = false; setBusy(false) }
   }
+
+  if (booking.isFree && !confirming) return permitted && restored ? <p role="status" className="border-t pt-3 text-sm text-muted-foreground">This free appointment is awaiting practitioner confirmation. No payment or session credit is required.</p> : null
 
   const showActions = canStart || canVerify
   if (!showActions && (!permitted || !error)) return null

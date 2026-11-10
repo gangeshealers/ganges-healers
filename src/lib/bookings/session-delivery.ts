@@ -14,18 +14,26 @@ export interface DeliveryBooking {
   payment: { status: string; statusEnum?: string | null; amountPaise: number; gateway?: string } | null
 }
 
-/** UI capabilities mirror server checks, which always rerun on a fresh locked booking. */
-export function healerBookingCapabilities(booking: DeliveryBooking, now = Date.now()) {
+/** Rescheduling reserves time; it does not prove that a priced appointment was funded. */
+export function bookingDeliveryState(booking: Pick<DeliveryBooking, 'status' | 'pricePaise' | 'payment'>) {
   const payment = booking.payment
   const captured = !!payment && (payment.statusEnum ? payment.statusEnum === 'SUCCESS' : payment.status.toLowerCase() === 'success')
   const credit = payment?.gateway === 'vip_credit'
   const validPrice = Number.isSafeInteger(booking.pricePaise) && booking.pricePaise >= 0
   const funded = captured && (credit ? payment.amountPaise === 0 : validPrice && payment.amountPaise === booking.pricePaise)
   const free = validPrice && booking.pricePaise === 0 && !payment
+  // Keep historical CONFIRMED records usable even when their payment predates tracking.
+  const confirmed = booking.status === 'CONFIRMED' || (booking.status === 'RESCHEDULED' && (funded || free))
+  const needsConfirmation = ['PENDING', 'SCHEDULED', 'RESCHEDULED'].includes(booking.status) && !funded && !(booking.status === 'RESCHEDULED' && free)
+  return { captured, credit, funded, free, confirmed, needsConfirmation }
+}
+
+/** UI capabilities mirror server checks, which always rerun on a fresh locked booking. */
+export function healerBookingCapabilities(booking: DeliveryBooking, now = Date.now()) {
+  const { captured, credit, funded, free, confirmed } = bookingDeliveryState(booking)
   const start = typeof booking.scheduledAt === 'string' ? Date.parse(booking.scheduledAt) : booking.scheduledAt.getTime()
   const validTime = Number.isFinite(start) && Number.isSafeInteger(booking.durationMin) && booking.durationMin > 0 && booking.durationMin <= 1440
   const end = start + booking.durationMin * 60000
-  const confirmed = ['CONFIRMED', 'RESCHEDULED'].includes(booking.status)
   const cancellable = ['PENDING', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED'].includes(booking.status)
   return {
     canConfirm: ['PENDING', 'SCHEDULED'].includes(booking.status) && validTime && start > now && (funded || free),

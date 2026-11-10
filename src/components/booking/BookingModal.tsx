@@ -49,7 +49,7 @@ export default function BookingModal({
   const { data: session, status: sessionStatus } = useSession()
   const router = useRouter()
   
-  const [step, setStep] = useState<'date' | 'time' | 'confirm' | 'processing' | 'success'>('date')
+  const [step, setStep] = useState<'date' | 'time' | 'confirm' | 'processing' | 'success' | 'requested'>('date')
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedTime, setSelectedTime] = useState<string>('')
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([])
@@ -167,6 +167,7 @@ export default function BookingModal({
       }
       const data = await response.json()
       const newBookingId = data?.data?.id as string
+      if (typeof newBookingId !== 'string' || !newBookingId) throw new Error('The booking request could not be confirmed. Check My Bookings before trying again.')
       setCreatedBookingId(newBookingId)
       // E2E test hook: expose booking id when in TEST_MODE
       if (typeof window !== 'undefined' && (process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1')) {
@@ -174,6 +175,12 @@ export default function BookingModal({
           const w = window as unknown as { __e2eBookingId?: string }
           w.__e2eBookingId = newBookingId
         } catch { /* noop */ }
+      }
+
+      // Only the saved server price may bypass checkout; a request still needs practitioner confirmation.
+      if (data.data.pricePaise === 0 && data.data.status === 'PENDING') {
+        setStep('requested')
+        return
       }
 
       // Decide payment path
@@ -461,6 +468,13 @@ export default function BookingModal({
           )}
 
           {/* Step 5: Success */}
+          {step === 'requested' && (
+            <div className="text-center space-y-4">
+              <h3 className="text-lg font-semibold">Booking request received</h3>
+              <p role="status" className="text-sm text-gray-600">This free appointment is awaiting practitioner confirmation. No payment or session credit is required. Check My Bookings for updates.</p>
+              <Button onClick={() => { handleClose(); router.push('/dashboard/bookings') }} className="w-full">View My Bookings</Button>
+            </div>
+          )}
           {step === 'success' && (
             <div className="text-center space-y-4">
               <div className="flex justify-center">
