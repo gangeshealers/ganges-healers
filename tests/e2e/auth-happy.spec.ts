@@ -111,7 +111,7 @@ test('a profile-selected practitioner survives registration and real password si
     expect((await (await page.request.get('/api/auth/session')).json()).user.id).toBe(registered.id)
     destination.searchParams.set('healerId', 'unavailable-practitioner')
     await page.goto(`${destination.pathname}${destination.search}`)
-    await expect(page.getByRole('alert')).toContainText('The selected healer is unavailable for this service')
+    await expect(page.getByRole('main').getByRole('alert')).toContainText('The selected healer is unavailable for this service')
     await expect(page.getByRole('dialog')).toHaveCount(0)
   } finally {
     try {

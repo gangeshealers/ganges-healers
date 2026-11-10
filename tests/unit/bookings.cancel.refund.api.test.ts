@@ -1,5 +1,6 @@
 // The Prisma store and Razorpay gateway are mocked; this suite uses no real data or credentials.
 import { NextRequest } from 'next/server'
+jest.mock('@/lib/bookings/notifications', () => ({ recordBookingNotifications: jest.fn() }))
 
 type TestBooking = {
   id: string

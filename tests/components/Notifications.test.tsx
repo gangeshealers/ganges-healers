@@ -7,7 +7,7 @@ import NotificationInbox from '@/components/notifications/NotificationInbox'
 import NotificationsPage from '@/app/dashboard/notifications/page'
 import { Navbar } from '@/components/navigation/Navbar'
 import { CartProvider } from '@/components/store/CartProvider'
-import type { NotificationItem } from '@/lib/notifications/types'
+import { bookingNotificationTypes, type NotificationItem } from '@/lib/notifications/types'
 
 jest.mock('@/lib/auth', () => ({ auth: jest.fn() }))
 jest.mock('next/navigation', () => ({ usePathname: () => '/', useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }), redirect: (path: string) => { throw new Error(`REDIRECT:${path}`) } }))
@@ -40,7 +40,7 @@ beforeEach(() => {
       return response({ ok: true, ownerId: owner, unreadCount: rows.filter(row => !row.read).length })
     }
     const params = new URL(url, 'http://localhost').searchParams
-    const filtered = rows.filter(row => (params.get('status') !== 'unread' || !row.read) && (params.get('status') !== 'read' || row.read) && (!params.get('type') || params.get('type') === 'all' || row.type === params.get('type')) && (!params.get('q') || `${row.title} ${row.message}`.toLowerCase().includes(params.get('q')!.toLowerCase())))
+    const filtered = rows.filter(row => (params.get('status') !== 'unread' || !row.read) && (params.get('status') !== 'read' || row.read) && (!params.get('type') || params.get('type') === 'all' || (params.get('type') === 'booking' ? bookingNotificationTypes.includes(row.type) : row.type === params.get('type'))) && (!params.get('q') || `${row.title} ${row.message}`.toLowerCase().includes(params.get('q')!.toLowerCase())))
     return response(list(filtered))
   }) as typeof fetch
 })
@@ -241,4 +241,17 @@ test('list errors offer a working retry instead of claiming an empty inbox', asy
   global.fetch = original
   await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByRole('article', { name: 'Activity one' })).toBeVisible()
+})
+
+
+test('booking activity links each audience to its own workspace and offers a booking-only filter', async () => {
+  rows = [item('customer-booking', { type: 'booking_requested_customer' }), item('practitioner-booking', { type: 'booking_cancelled_practitioner' }), item('legacy', { type: 'legacy_type', message: 'https://example.test is plain text' })]
+  render(tree())
+  const customer = await screen.findByRole('article', { name: 'Activity customer-booking' })
+  expect(within(customer).getByRole('link', { name: 'View my bookings' })).toHaveAttribute('href', '/dashboard/bookings')
+  expect(within(screen.getByRole('article', { name: 'Activity practitioner-booking' })).getByRole('link', { name: 'View practitioner bookings' })).toHaveAttribute('href', '/healer/bookings')
+  expect(within(screen.getByRole('article', { name: 'Activity legacy' })).queryByRole('link')).not.toBeInTheDocument()
+  await userEvent.setup().selectOptions(screen.getByLabelText('Activity type'), 'booking')
+  await waitFor(() => expect(screen.queryByRole('article', { name: 'Activity legacy' })).not.toBeInTheDocument())
+  expect(screen.getAllByRole('article')).toHaveLength(2)
 })

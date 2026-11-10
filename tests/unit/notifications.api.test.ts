@@ -1,3 +1,4 @@
+import { bookingNotificationTypes, bookingNotificationDestination } from '@/lib/notifications/types'
 import { GET, PATCH as markAll } from '@/app/api/notifications/route'
 import { PATCH as markOne } from '@/app/api/notifications/[id]/read/route'
 
@@ -33,7 +34,7 @@ test('filters, search, and stable pagination retain account scope and global unr
   const result = await GET(request('?status=read&type=other&q=REIKI&limit=2&cursor=owned'))
   expect(await result.json()).toMatchObject({ notifications: [{ id: 'a' }, { id: 'b' }], nextCursor: 'b', unreadCount: 3 })
   expect(db.findFirst).toHaveBeenCalledWith({ where: { id: 'owned', userId: 'alice' }, select: { id: true } })
-  expect(db.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'alice', read: true, type: { notIn: ['community_comment', 'community_like'] }, OR: [{ title: { contains: 'REIKI', mode: 'insensitive' } }, { message: { contains: 'REIKI', mode: 'insensitive' } }] }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], cursor: { id: 'owned' }, skip: 1, take: 3 }))
+  expect(db.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'alice', read: true, type: { notIn: ['community_comment', 'community_like', ...bookingNotificationTypes] }, OR: [{ title: { contains: 'REIKI', mode: 'insensitive' } }, { message: { contains: 'REIKI', mode: 'insensitive' } }] }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], cursor: { id: 'owned' }, skip: 1, take: 3 }))
 })
 
 test('unknown and foreign account cursors return the same 404 without listing', async () => {
@@ -80,4 +81,13 @@ test('bulk marks only current owned unread records and reports the server count'
 test.each([{}, { action: 'readAll' }, { action: 'delete', ownerId: 'alice' }, { action: 'readAll', ownerId: 'alice', userId: 'bob' }, '{'])('invalid bulk request cannot write: %p', async body => {
   expect((await markAll(request('', body))).status).toBe(400)
   expect(db.updateMany).not.toHaveBeenCalled()
+})
+
+
+test('booking filtering is scoped and only explicit notice types receive workspace destinations', async () => {
+  expect((await GET(request('?type=booking&userId=bob'))).status).toBe(200)
+  expect(db.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'alice', type: { in: bookingNotificationTypes } } }))
+  expect(bookingNotificationDestination('booking_requested_customer')).toEqual({ href: '/dashboard/bookings', label: 'View my bookings' })
+  expect(bookingNotificationDestination('booking_confirmed_practitioner')).toEqual({ href: '/healer/bookings', label: 'View practitioner bookings' })
+  for (const type of ['__proto__', 'community_like', 'booking_requested_customer?next=external', 'https://example.test']) expect(bookingNotificationDestination(type)).toBeNull()
 })

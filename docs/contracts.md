@@ -1378,3 +1378,26 @@ Navigation links expose the workspace through the admin dashboard/account menu.
 Existing delivery/provider endpoints, retry windows and financial contracts are
 unchanged. No migration or provider configuration is required. Reverting the
 workspace retains delivery outcomes and audits; it never resets or resends them.
+
+
+### Transactional service-booking inbox notices
+
+New requests, committed confirmation, reschedule and cancellation transitions
+persist customer/practitioner notices in the same PostgreSQL transaction. A
+failed notice write rolls back the corresponding state/payment/credit/outbox or
+staff audit. Only new request/confirmation intents create their notices; duplicate
+callbacks, cancellation retries and unchanged legacy reschedules do not add unread
+rows or reset existing read history. No settled-history backfill occurs.
+
+`GET /api/notifications` adds `type=booking` for the eight declared audience/event
+types. `other` excludes those recognized types and retains unknown legacy events.
+Existing keys, ownership, paging and read controls remain. Explicit type scopes
+link to owned customer/practitioner booking workspaces without guessing IDs/URLs
+from text. Closed recipient snapshots and revoked practitioners are skipped;
+self-bookings create one customer notice. The shared recorder uses one context
+read and one batched insertion, with no queue/provider call or migration.
+
+Notices describe saved state, not provider delivery/refund acceptance. Practitioner confirmation also records the existing CONFIRMED email intent,
+including free appointments, for the existing worker/recovery path. Email retry
+budgets, financial policy, live-provider settings and socket semantics remain. Polling/focus/manual refresh discovers committed inbox rows.
+Retain rows and read state when rolling the producer/filter/link changes back.

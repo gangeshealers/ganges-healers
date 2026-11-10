@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { requireHealer } from '@/lib/auth/requireHealer'
 import { z } from 'zod'
 import { lockTransaction } from '@/lib/db/locks'
+import { recordBookingEmail } from '@/lib/bookings/email'
+import { recordBookingNotifications } from '@/lib/bookings/notifications'
 import { BookingError } from '@/lib/bookings/transactions'
 import { healerBookingCapabilities, safeMeetingLink } from '@/lib/bookings/session-delivery'
 
@@ -54,6 +56,8 @@ export async function PATCH(
         const statusMap = { CONFIRM: 'CONFIRMED', CANCEL: 'CANCELLED', COMPLETE: 'COMPLETED' } as const
         const changed = await tx.booking.updateMany({ where: { id, healerId: healer.id, status: booking.status, updatedAt: booking.updatedAt }, data: { status: statusMap[input.action], updatedAt: nextUpdatedAt } })
         if (changed.count !== 1) throw new BookingError('Booking changed; please try again', 409)
+        if (input.action === 'CONFIRM') await recordBookingEmail(tx, id, 'CONFIRMED')
+        if (input.action === 'CANCEL') await recordBookingNotifications(tx, id, 'CANCELLED')
       }
       await tx.activityLog.create({ data: { userId: user.id, action: input.action === 'SET_MEETING_LINK' ? 'booking_meeting_link_updated' : `booking_${input.action.toLowerCase()}_by_healer`, entityType: 'booking', entityId: booking.id, metadata: { action: input.action, ...(input.action === 'SET_MEETING_LINK' ? { hasMeetingLink: input.meetingLink !== null } : {}) } } })
       return tx.booking.findUniqueOrThrow({ where: { id }, include: { service: { select: { name: true, category: true } }, user: { select: { id: true, name: true, email: true } }, payment: { select: { status: true, statusEnum: true, amountPaise: true, gateway: true } } } })

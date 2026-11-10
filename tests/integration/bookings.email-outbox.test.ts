@@ -183,7 +183,9 @@ test('replaying a legacy settled appointment does not create a new unsolicited c
   const saved = await booking('CONFIRMED')
   const paymentId = `pay_${randomUUID()}`
   const payment = await prisma.payment.create({ data: { userId, bookingId: saved.id, type: 'SESSION', gateway: 'razorpay', gatewayOrderId: `order_${randomUUID()}`, gatewayPaymentId: paymentId, amountPaise: 10000, status: 'success', statusEnum: 'SUCCESS' } })
+  const noticesBefore = await prisma.notification.findMany({ where: { userId }, orderBy: { id: 'asc' } })
   expect((await finalizePayment({ orderId: payment.gatewayOrderId!, paymentId, userId, signature: 'replay' })).idempotent).toBe(true)
+  expect(await prisma.notification.findMany({ where: { userId }, orderBy: { id: 'asc' } })).toEqual(noticesBefore)
   expect(await prisma.bookingEmail.count({ where: { bookingId: saved.id } })).toBe(0)
   expect(email.sendBookingNotice).not.toHaveBeenCalled()
 })

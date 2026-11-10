@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { validateBookingSlot } from '@/lib/availability'
 import { BookingError, lockOwnedBooking, bookingReviewVersion, assertBookingReview } from '@/lib/bookings/transactions'
+import { recordBookingNotifications } from '@/lib/bookings/notifications'
 import { RescheduleBody } from '../types'
 import { computeRefund, refundStatusFromStored, cancellationRefundMessage, storedCancellationRefund, type CancellationRefund, type CancellationRefundStatus } from '@/lib/bookings/refund-policy'
 import { fetchRefundStatus, hasRazorpayRefundCredentials, refundPayment } from '@/lib/payments/razorpay-refunds'
@@ -193,6 +194,7 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
         data: { status: 'CANCELLED', updatedAt: now },
       })
       if (changed.count !== 1) throw new BookingError('Booking changed; please try again', 409)
+      await recordBookingNotifications(tx, id, 'CANCELLED')
     }
 
     const cancelledBooking = {
@@ -644,14 +646,18 @@ export async function PUT(
       })
       if (!validation.valid) throw new BookingError(validation.error || 'Time slot not available', 409)
 
-      // A concurrent cancellation/status update need not take the healer lock.
-      // Do not overwrite it or revive a cancelled booking from a stale read.
-      const changed = await tx.booking.updateMany({
-        where: { id, userId: session.user.id, status: existingBooking.status,
-          scheduledAt: existingBooking.scheduledAt, updatedAt: existingBooking.updatedAt },
-        data: { scheduledAt: newScheduledDate, status: 'RESCHEDULED', updatedAt: new Date() },
-      })
-      if (changed.count !== 1) throw new BookingError('Booking changed; please try again', 409)
+      const unchanged = existingBooking.status === 'RESCHEDULED' && existingBooking.scheduledAt.getTime() === newScheduledDate.getTime()
+      if (!unchanged) {
+        // A concurrent cancellation/status update need not take the healer lock.
+        // Do not overwrite it or revive a cancelled booking from a stale read.
+        const changed = await tx.booking.updateMany({
+          where: { id, userId: session.user.id, status: existingBooking.status,
+            scheduledAt: existingBooking.scheduledAt, updatedAt: existingBooking.updatedAt },
+          data: { scheduledAt: newScheduledDate, status: 'RESCHEDULED', updatedAt: new Date() },
+        })
+        if (changed.count !== 1) throw new BookingError('Booking changed; please try again', 409)
+        if (existingBooking.scheduledAt.getTime() !== newScheduledDate.getTime()) await recordBookingNotifications(tx, id, 'RESCHEDULED')
+      }
       return tx.booking.findUniqueOrThrow({
         where: { id },
         include: {
