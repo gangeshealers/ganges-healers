@@ -1,4 +1,8 @@
 import { prisma } from '@/lib/prisma'
+import { cache } from 'react'
+
+/** Share active service names within a server render without caching publication across requests. */
+export const getHealerServiceOptions = cache(async () => prisma.service.findMany({ where: { isActive: true }, select: { slug: true, name: true } }))
 
 export type HealerListItem = {
   id: string
@@ -45,14 +49,15 @@ function specializationKeyFromServiceName(name: string) {
 }
 
 export async function listHealers(params?: { serviceSlug?: string; q?: string; limit?: number; cursor?: string }): Promise<{ items: HealerListItem[]; nextCursor: string | null }> {
-  const limit = Math.max(1, Math.min(params?.limit ?? 20, 50))
+  const limit = Math.max(1, Math.min(Math.trunc(params?.limit !== undefined && Number.isFinite(params.limit) ? params.limit : 20), 50))
   const q = params?.q?.trim()
 
   // Optional filter by serviceSlug → translate to specialization key via service name
   let specializationFromService: string | undefined
   if (params?.serviceSlug) {
-    const svc = await prisma.service.findUnique({ where: { slug: params.serviceSlug }, select: { name: true } })
-    if (svc?.name) specializationFromService = specializationKeyFromServiceName(svc.name)
+    const svc = await prisma.service.findUnique({ where: { slug: params.serviceSlug, isActive: true }, select: { name: true } })
+    if (!svc?.name) return { items: [], nextCursor: null }
+    specializationFromService = specializationKeyFromServiceName(svc.name)
   }
 
   const where: any = { isActive: true } // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -69,11 +74,11 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
   }
 
   const cursor = params?.cursor ? { id: params.cursor } : undefined
-  const healers = await prisma.healer.findMany({
+  const page = await prisma.healer.findMany({
     where,
     orderBy: { id: 'asc' },
     ...(cursor ? { cursor, skip: 1 } : {}),
-    take: limit,
+    take: limit + 1,
     select: {
       id: true,
       bio: true,
@@ -82,10 +87,11 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
       user: { select: { name: true, image: true } },
     },
   })
+  const healers = page.slice(0, limit)
 
   // Fetch all services once to map specializations → services
   const [allServices, ratings] = await Promise.all([
-    prisma.service.findMany({ where: { isActive: true }, select: { slug: true, name: true } }),
+    getHealerServiceOptions(),
     getHealerReviewSummaries(healers.map(healer => healer.id)),
   ])
 
@@ -112,7 +118,7 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
     }
   })
 
-  const nextCursor = healers.length === limit ? healers[healers.length - 1].id : null
+  const nextCursor = page.length > limit ? healers[healers.length - 1].id : null
   return { items, nextCursor }
 }
 
@@ -132,7 +138,7 @@ export async function getHealerBySlug(slug: string): Promise<HealerDetail | null
   if (!h) return null
 
   const [allServices, ratings] = await Promise.all([
-    prisma.service.findMany({ where: { isActive: true }, select: { slug: true, name: true } }),
+    getHealerServiceOptions(),
     getHealerReviewSummaries([h.id]),
   ])
   const rating = ratings.get(h.id)

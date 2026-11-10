@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { listHealers } from '@/lib/healers/queries'
+import { listHealers, getHealerServiceOptions } from '@/lib/healers/queries'
 import type { Metadata } from 'next'
 import { canonicalOf } from '@/config/site'
 import Breadcrumbs from '@/components/seo/Breadcrumbs'
@@ -22,7 +22,12 @@ export default async function HealersPage({ searchParams }: { searchParams?: Pro
   const q = typeof sp.q === 'string' ? sp.q : undefined
   const serviceSlug = typeof sp.serviceSlug === 'string' ? sp.serviceSlug : undefined
   const cursor = typeof sp.cursor === 'string' ? sp.cursor : undefined
-  const { items, nextCursor } = await listHealers({ q, serviceSlug, cursor, limit: 20 })
+  const [{ items, nextCursor }, availableServices] = await Promise.all([
+    listHealers({ q, serviceSlug, cursor, limit: 20 }),
+    getHealerServiceOptions(),
+  ])
+  const services = [...availableServices].sort((a, b) => a.name.localeCompare(b.name))
+  const unavailableService = Boolean(serviceSlug && !services.some(service => service.slug === serviceSlug))
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -31,10 +36,16 @@ export default async function HealersPage({ searchParams }: { searchParams?: Pro
         <BreadcrumbsLd crumbs={crumbs} />
       </>) })()}
       <h1 className="text-2xl font-semibold">Healers</h1>
-      <form className="flex gap-2">
-        <input name="q" defaultValue={q} placeholder="Search healers" className="border rounded px-3 py-2 flex-1 focus-ring" />
-        <input name="serviceSlug" defaultValue={serviceSlug} placeholder="Service slug (optional)" className="border rounded px-3 py-2 focus-ring" />
-        <button type="submit" className="border rounded px-3 py-2 focus-ring">Search</button>
+      <form action="/healers" method="get" aria-label="Find healers" className="flex flex-col gap-2 sm:flex-row">
+        <label className="sr-only" htmlFor="healer-search">Search healers</label>
+        <input id="healer-search" name="q" defaultValue={q} placeholder="Search healers" className="min-w-0 w-full border rounded px-3 py-2 sm:flex-1 focus-ring" />
+        <label className="sr-only" htmlFor="healer-service">Service</label>
+        <select id="healer-service" name="serviceSlug" defaultValue={serviceSlug || ''} aria-invalid={unavailableService || undefined} className="min-w-0 w-full max-w-full border rounded px-3 py-2 sm:w-auto sm:max-w-xs focus-ring">
+          <option value="">All services</option>
+          {unavailableService ? <option value={serviceSlug}>Unavailable service</option> : null}
+          {services.map(service => <option key={service.slug} value={service.slug}>{service.name}</option>)}
+        </select>
+        <button type="submit" className="shrink-0 border rounded px-3 py-2 focus-ring">Search</button>
       </form>
       {items.length === 0 ? (
         <EmptyState

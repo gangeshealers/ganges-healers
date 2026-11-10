@@ -76,6 +76,8 @@ describe('Healers list API', () => {
     expect('shortBio' in it).toBe(true)
     expect(Array.isArray(it.services)).toBe(true)
     expect('nextCursor' in json).toBe(true)
+    expect(json.items).toHaveLength(3)
+    expect(json.nextCursor).toBeNull()
   })
 
   test('q search filters by name/bio/spec', async () => {
@@ -98,5 +100,16 @@ describe('Healers list API', () => {
     const res2 = await List.GET(get(`http://localhost/api/healers?limit=2&cursor=${j1.nextCursor}`))
     const j2 = await res2.json()
     expect(j2.items.length).toBeGreaterThanOrEqual(1)
+    expect(j2.nextCursor).toBeNull()
+  })
+
+  test('an exact final page does not advertise an empty continuation', async () => {
+    const response = await List.GET(get('http://localhost/api/healers?limit=3'))
+    expect(await response.json()).toMatchObject({ items: [{ id: 'h1' }, { id: 'h2' }, { id: 'h3' }], nextCursor: null })
+  })
+
+  test('a missing service filter cannot broaden into unrelated practitioners', async () => {
+    const response = await List.GET(get('http://localhost/api/healers?serviceSlug=missing'))
+    expect(await response.json()).toEqual({ items: [], nextCursor: null })
   })
 })
