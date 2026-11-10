@@ -33,7 +33,7 @@ test('loads owned availability and submits the chosen India-time instant', async
       ] } }), { status: 200 })
     }
     if (String(url) === '/api/bookings/booking-1' && init?.method === 'PUT') {
-      return new Response(JSON.stringify({ success: true, data: { id: booking.id, status: 'RESCHEDULED', reviewVersion: 'b'.repeat(64), scheduledAt: expected } }), { status: 200 })
+      return new Response(JSON.stringify({ success: true, data: { id: booking.id, status: 'RESCHEDULED', reviewVersion: 'b'.repeat(64), scheduledAt: expected, meetingLink: null, needsConfirmation: true } }), { status: 200 })
     }
     return new Response('{}', { status: 404 })
   })
@@ -45,7 +45,7 @@ test('loads owned availability and submits the chosen India-time instant', async
   expect(fetchMock).toHaveBeenCalledWith('/api/availability?healerId=healer-1&date=' + date + '&bookingId=booking-1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   await user.click(slot)
   await user.click(screen.getByRole('button', { name: 'Confirm' }))
-  await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ startIso: expected, status: 'RESCHEDULED' })))
+  await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ startIso: expected, status: 'RESCHEDULED', meetingLink: null, needsConfirmation: true })))
   expect(fetchMock).toHaveBeenCalledWith('/api/bookings/booking-1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ scheduledAt: expected }) }))
   expect(onOpenChange).toHaveBeenCalledWith(false)
 })

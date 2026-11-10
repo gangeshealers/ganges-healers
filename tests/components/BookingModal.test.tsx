@@ -86,6 +86,23 @@ function mockCreateOrder(ok: boolean, orderId = 'order_123') {
 }
 
 describe('BookingModal', () => {
+  test('a saved free request waits for practitioner confirmation without spending a VIP credit or starting checkout', async () => {
+    mockUseSession.mockReturnValue({ data: { user: { id: 'free-owner', role: 'USER', vip: true, freeSessionCredits: 2 }, expires: '2099-01-01' }, status: 'authenticated', update: jest.fn() })
+    const user = userEvent.setup()
+    render(<BookingModal isOpen onClose={jest.fn()} healer={healer} serviceId={serviceId} serviceName={serviceName} />)
+    mockAvailability([{ time: '11:00', available: true }])
+    const date = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
+    await user.type(screen.getByDisplayValue(''), date)
+    await user.click(await screen.findByText('11:00 AM'))
+    jest.mocked(global.fetch).mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { id: 'free-booking', status: 'PENDING', pricePaise: 0 } }), { status: 201 }))
+    await user.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+    expect(await screen.findByRole('heading', { name: 'Booking request received' })).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('No payment or session credit is required')
+    expect(screen.getByRole('button', { name: 'View My Bookings' })).toBeVisible()
+    expect(screen.queryByText('Booking Confirmed!')).not.toBeInTheDocument()
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+  })
+
   test('VIP user path: picks date/time → creates booking → confirms with credits (no Razorpay)', async () => {
     const user = userEvent.setup();
     const onClose = jest.fn();

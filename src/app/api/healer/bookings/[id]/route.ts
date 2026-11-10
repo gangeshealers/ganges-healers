@@ -6,7 +6,7 @@ import { lockTransaction } from '@/lib/db/locks'
 import { recordBookingEmail } from '@/lib/bookings/email'
 import { recordBookingNotifications } from '@/lib/bookings/notifications'
 import { BookingError } from '@/lib/bookings/transactions'
-import { healerBookingCapabilities, safeMeetingLink } from '@/lib/bookings/session-delivery'
+import { bookingDeliveryState, healerBookingCapabilities, safeMeetingLink } from '@/lib/bookings/session-delivery'
 
 const actionSchema = z.union([
   z.object({ action: z.enum(['CONFIRM', 'CANCEL', 'COMPLETE']) }),
@@ -62,7 +62,7 @@ export async function PATCH(
       await tx.activityLog.create({ data: { userId: user.id, action: input.action === 'SET_MEETING_LINK' ? 'booking_meeting_link_updated' : `booking_${input.action.toLowerCase()}_by_healer`, entityType: 'booking', entityId: booking.id, metadata: { action: input.action, ...(input.action === 'SET_MEETING_LINK' ? { hasMeetingLink: input.meetingLink !== null } : {}) } } })
       return tx.booking.findUniqueOrThrow({ where: { id }, include: { service: { select: { name: true, category: true } }, user: { select: { id: true, name: true, email: true } }, payment: { select: { status: true, statusEnum: true, amountPaise: true, gateway: true } } } })
     }, { maxWait: 10000, timeout: 10000 })
-    return NextResponse.json({ success: true, data: updated }, { headers })
+    return NextResponse.json({ success: true, data: { ...updated, meetingLink: bookingDeliveryState(updated).confirmed ? updated.meetingLink : null } }, { headers })
   } catch (error: unknown) {
     const status = error instanceof BookingError ? error.status : (error as { status?: number }).status
     if (error instanceof BookingError || status === 401 || status === 403) {

@@ -89,6 +89,17 @@ test('an ended rescheduled session has a working completion action', async () =>
   expect(screen.getByText('COMPLETED')).toBeVisible()
 })
 
+test.each([false, true])('an unverified reschedule hides a stored room and delivery actions (ended=%s)', async ended => {
+  ;(fetch as jest.Mock).mockResolvedValue(response({ success: true, data: [{ ...row, status: 'RESCHEDULED', scheduledAt: new Date(Date.now() + (ended ? -7200000 : 86400000)).toISOString(), payment: { ...row.payment, statusEnum: 'PENDING' }, meetingLink: 'https://meeting.example.test/unverified' }] }))
+  render(<HealerBookingsPage />)
+  if (ended) await userEvent.click(await screen.findByRole('tab', { name: 'Past (1)' }))
+  expect(await screen.findByText('This reserved time is awaiting payment confirmation before session delivery.')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Complete session' })).toBeDisabled()
+  expect(screen.queryByRole('link', { name: 'Join session' })).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Session link for Sound Healing')).not.toBeInTheDocument()
+  expect((fetch as jest.Mock).mock.calls.every(([, init]) => !init?.method)).toBe(true)
+})
+
 test.each([['CONFIRMED', 'https://meeting.example.test/join', true], ['CANCELLED', 'https://meeting.example.test/join', false], ['CONFIRMED', 'javascript:alert(1)', false]])('customer join controls respect %s status and safe links', (status, meetingLink, visible) => {
   render(<BookingCard booking={{ id: 'booking', serviceSlug: 'sound', serviceName: 'Sound Healing', healerName: 'Healer', startIso: new Date().toISOString(), status: status as 'CONFIRMED' | 'CANCELLED', isCancelable: false, isReschedulable: false, healerId: 'healer', serviceId: 'service', amountPaise: 1000, meetingLink }} onCancel={jest.fn()} onReschedule={jest.fn()} />)
   const link = screen.queryByRole('link', { name: 'Join session' })
