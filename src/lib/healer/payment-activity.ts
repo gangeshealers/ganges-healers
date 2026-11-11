@@ -53,7 +53,7 @@ function csvCell(value: string): string {
   return '"' + safe.replace(/"/g, '""') + '"'
 }
 export function healerActivityCsv(rows: HealerActivityRow[]): string {
-  const header = ['Captured At (UTC)', 'Session At (UTC)', 'Service', 'Gross Amount (INR)', 'Booking Reference']
+  const header = ['Payment Record Created (UTC)', 'Session At (UTC)', 'Service', 'Gross Amount (INR)', 'Booking Reference']
   const data = rows.map(row => [
     row.createdAt.toISOString(),
     row.booking?.scheduledAt.toISOString() ?? '',
