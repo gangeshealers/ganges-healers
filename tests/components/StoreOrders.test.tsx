@@ -8,14 +8,14 @@ import OrdersLoading from '@/app/dashboard/orders/loading'
 import OrderNotFound from '@/app/dashboard/orders/[id]/not-found'
 
 jest.mock('@/lib/auth', () => ({ auth: jest.fn() }))
-jest.mock('@/lib/prisma', () => ({ prisma: { order: { findMany: jest.fn(), findFirst: jest.fn() } } }))
+jest.mock('@/lib/prisma', () => ({ prisma: { order: { findMany: jest.fn(), findFirst: jest.fn() }, invoice: { findFirst: jest.fn() } } }))
 jest.mock('next/navigation', () => ({
   redirect: jest.fn((url: string) => { throw new Error(`redirect:${url}`) }),
   notFound: jest.fn(() => { throw new Error('not-found') }),
 }))
 
 const auth = jest.requireMock<{ auth: jest.Mock }>('@/lib/auth').auth
-const db = jest.requireMock<{ prisma: { order: { findMany: jest.Mock; findFirst: jest.Mock } } }>('@/lib/prisma').prisma
+const db = jest.requireMock<{ prisma: { order: { findMany: jest.Mock; findFirst: jest.Mock }; invoice: { findFirst: jest.Mock } } }>('@/lib/prisma').prisma
 const params = { params: Promise.resolve({ id: 'order-1' }) }
 const address = { name: 'Test Customer', line1: 'Practice Road', city: 'Rishikesh', state: 'Uttarakhand', postalCode: '249201' }
 const order = (index = 1, status = 'paid') => ({
@@ -29,6 +29,7 @@ beforeEach(() => {
   auth.mockResolvedValue({ user: { id: 'owner' } })
   db.order.findMany.mockResolvedValue([])
   db.order.findFirst.mockResolvedValue(order())
+  db.invoice.findFirst.mockResolvedValue(null)
 })
 
 test.each([null, { user: {} }, { user: { id: '' } }])('refuses an incomplete session before either order query', async session => {
@@ -37,6 +38,7 @@ test.each([null, { user: {} }, { user: { id: '' } }])('refuses an incomplete ses
   await expect(OrderDetailsPage(params)).rejects.toThrow('redirect:/auth/signin')
   expect(db.order.findMany).not.toHaveBeenCalled()
   expect(db.order.findFirst).not.toHaveBeenCalled()
+  expect(db.invoice.findFirst).not.toHaveBeenCalled()
 })
 
 test('keeps filtering, pagination and empty-page recovery scoped to the current account', async () => {
@@ -82,6 +84,36 @@ test('loads only the owned order and displays saved line totals without multiply
   expect(screen.getByText('Practice Road')).toBeInTheDocument()
   const progress = screen.getByRole('list', { name: 'Order progress' })
   expect(within(progress).getByText('Paid').closest('li')).toHaveAttribute('aria-current', 'step')
+})
+
+test('shows an issued receipt only after verifying the owned store payment', async () => {
+  db.order.findFirst.mockResolvedValue({ ...order(), paymentId: 'payment-verified' })
+  db.invoice.findFirst.mockResolvedValue({ id: 'invoice-123', invoiceNumber: 'GH-2026-123' })
+  render(await OrderDetailsPage(params))
+  expect(db.invoice.findFirst).toHaveBeenCalledWith({
+    where: { paymentId: 'payment-verified', payment: { userId: 'owner', type: 'STORE' } },
+    select: { id: true, invoiceNumber: true },
+  })
+  expect(screen.getByRole('link', { name: 'View invoice' })).toHaveAttribute('href', '/invoices/GH-2026-123/view')
+  expect(screen.getByRole('link', { name: 'See all billing history' })).toHaveAttribute('href', '/dashboard/billing')
+})
+
+test('never invents a receipt for unpaid or unissued store orders', async () => {
+  db.order.findFirst.mockResolvedValue({ ...order(), paymentId: null })
+  render(await OrderDetailsPage(params))
+  expect(db.invoice.findFirst).not.toHaveBeenCalled()
+  expect(screen.queryByRole('link', { name: 'View invoice' })).not.toBeInTheDocument()
+  expect(screen.getByText(/No invoice has been issued for this order yet/)).toBeInTheDocument()
+})
+
+test('does not offer someone else\'s or mismatched invoice even with an order payment ID', async () => {
+  db.order.findFirst.mockResolvedValue({ ...order(), paymentId: 'payment-verified' })
+  db.invoice.findFirst.mockResolvedValue(null)
+  render(await OrderDetailsPage(params))
+  expect(screen.queryByRole('link', { name: 'View invoice' })).not.toBeInTheDocument()
+  expect(db.invoice.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+    where: { paymentId: 'payment-verified', payment: { userId: 'owner', type: 'STORE' } },
+  }))
 })
 
 test('does not disclose an unavailable or unowned order', async () => {
