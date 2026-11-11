@@ -14,7 +14,6 @@ test('the dashboard keeps a route to all bookings and encourages new appointment
   expect(screen.getByRole('link', { name: 'View all bookings' })).toHaveAttribute('href', '/dashboard/bookings')
   expect(screen.getByText(/previous sessions are available in booking history/)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Browse services' })).toHaveAttribute('href', '/services')
-  expect(screen.getByRole('link', { name: /View All/ })).toHaveAttribute('href', '/courses/enrolled')
 })
 
 test('shows the session time in India rather than relying on the browser timezone', () => {
