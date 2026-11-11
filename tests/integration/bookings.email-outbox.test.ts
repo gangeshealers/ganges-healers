@@ -36,7 +36,7 @@ beforeAll(async () => {
   reviewerId = (await prisma.user.create({ data: { email: `outbox-review-${randomUUID()}@example.test`, role: 'ADMIN' } })).id
   healerUserId = (await prisma.user.create({ data: { email: `outbox-healer-${randomUUID()}@example.test`, role: 'HEALER' } })).id
   const availability = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(d => [d, { start: '09:00', end: '20:00' }]))
-  healerId = (await prisma.healer.create({ data: { userId: healerUserId, availability } })).id
+  healerId = (await prisma.healer.create({ data: { userId: healerUserId, availability, isVerified: true } })).id
   serviceId = (await prisma.service.create({ data: { slug: `outbox-${randomUUID()}`, name: 'Yoga <script>fixture</script>', description: 'Fixture', category: 'Fixture', price: 100, duration: 60 } })).id
   process.env.BOOKING_EMAIL_USER_ID = userId
 })
