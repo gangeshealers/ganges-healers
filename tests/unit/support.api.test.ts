@@ -1,9 +1,11 @@
 import { NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { createMemberSupportTicket, SupportTicketError } from '@/lib/support/tickets'
+import { isSupportDeskEnabled } from '@/lib/support/availability'
 import { POST } from '@/app/api/support/tickets/route'
 
 jest.mock('@/lib/auth', () => ({ auth: jest.fn() }))
+jest.mock('@/lib/support/availability', () => ({ isSupportDeskEnabled: jest.fn(() => true) }))
 jest.mock('@/lib/support/tickets', () => ({
   createMemberSupportTicket: jest.fn(),
   SupportTicketError: class SupportTicketError extends Error {
@@ -25,6 +27,7 @@ function req(body: string, headers: Record<string, string> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  ;(isSupportDeskEnabled as jest.Mock).mockReturnValue(true)
   ;(auth as jest.Mock).mockResolvedValue({ user: { id: 'owner-123' } })
   ;(createMemberSupportTicket as jest.Mock).mockResolvedValue({ id: 'ticket-123', status: 'OPEN' })
 })
@@ -66,4 +69,13 @@ test('persistent submission limit produces a clear 429', async () => {
   const res = await POST(req(JSON.stringify(valid)))
   expect(res.status).toBe(429)
   expect(await res.json()).toEqual({ error: 'Daily limit reached.', code: 'RATE_LIMITED' })
+})
+
+
+test('disabled deployment never queries the support table or accepts submissions', async () => {
+  ;(isSupportDeskEnabled as jest.Mock).mockReturnValueOnce(false)
+  const res = await POST(req(JSON.stringify(valid)))
+  expect(res.status).toBe(503)
+  expect(await res.json()).toMatchObject({ code: 'NOT_ENABLED' })
+  expect(createMemberSupportTicket).not.toHaveBeenCalled()
 })
