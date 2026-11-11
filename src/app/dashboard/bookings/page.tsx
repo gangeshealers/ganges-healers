@@ -187,6 +187,16 @@ export default function MyBookingsPage() {
             <TabsTrigger value="past">Past ({past.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="upcoming" className="mt-4 space-y-3">
+            {upcoming.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  Add your upcoming appointments to your calendar. This is a one-time snapshot; download again after changes.
+                </p>
+                <a href="/api/bookings/calendar" download="ganges-healers-upcoming.ics" className="inline-flex rounded-md border bg-background px-4 py-2 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Download upcoming calendar
+                </a>
+              </div>
+            )}
             {upcoming.length === 0 ? (
               <Card className="space-y-3 p-6">
                 <p className="text-sm text-muted-foreground">No upcoming bookings.</p>
