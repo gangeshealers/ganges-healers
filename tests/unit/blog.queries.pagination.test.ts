@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { getPublishedBlogPage } from '@/lib/blog/queries'
+import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/publication'
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -20,6 +21,7 @@ test('only published and title/excerpt-matching articles are paginated', async (
   expect(prisma.blogPost.count).toHaveBeenCalledWith({
     where: {
       published: true,
+      slug: { notIn: LEGAL_DOCUMENT_SLUGS },
       OR: [
         { title: { contains: 'Healing', mode: 'insensitive' } },
         { excerpt: { contains: 'Healing', mode: 'insensitive' } },
@@ -47,6 +49,6 @@ test('pages past the end display the last real page', async () => {
   const result = await getPublishedBlogPage({ q: '', page: 1000 })
   expect(result.page).toBe(2)
   expect(prisma.blogPost.findMany).toHaveBeenCalledWith(expect.objectContaining({
-    where: { published: true }, skip: 9, take: 9,
+    where: { published: true, slug: { notIn: LEGAL_DOCUMENT_SLUGS } }, skip: 9, take: 9,
   }))
 })

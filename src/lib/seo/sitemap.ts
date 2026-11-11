@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { canonicalOf } from '@/config/site'
+import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/publication'
 
 export type SitemapItem = {
   url: string
@@ -36,7 +37,7 @@ export async function getSitemapItems(): Promise<SitemapItem[]> {
       select: { slug: true, updatedAt: true },
     })),
     safe(() => prisma.blogPost.findMany({
-      where: { published: true },
+      where: { published: true, slug: { notIn: LEGAL_DOCUMENT_SLUGS } },
       select: { slug: true, updatedAt: true },
     })),
     safe(() => prisma.audioTrack.findMany({
