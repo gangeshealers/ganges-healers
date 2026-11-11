@@ -3,6 +3,15 @@ import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@prisma/client'
 import { loadTestDatabaseEnvironment, verifyTestDatabaseConnection } from '../../scripts/test-database'
 
+test('wide desktop navigation includes Blog and Store without losing booking access', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  const desktop = page.getByRole('navigation', { name: 'Desktop navigation' })
+  await expect(desktop.getByRole('link', { name: 'Blog', exact: true })).toBeVisible()
+  await expect(desktop.getByRole('link', { name: 'Store', exact: true })).toBeVisible()
+  await expect(page.getByRole('banner').getByRole('link', { name: 'Book a Session', exact: true })).toBeVisible()
+})
+
 test('desktop and mobile header search real content and retain a working cart', async ({ page, browser, baseURL }) => {
   test.setTimeout(240_000)
   const term = `navquartz${Date.now()}${Math.random().toString(36).slice(2, 6)}`

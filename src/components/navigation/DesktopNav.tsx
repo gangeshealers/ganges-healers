@@ -81,14 +81,14 @@ export function DesktopNav({
         className,
       )}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-6 lg:px-8">
-        <div className="flex min-w-0 flex-1 items-center justify-start">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 lg:px-6">
+        <div className="flex min-w-0 shrink-0 items-center justify-start">
           {leftContent ?? defaultLogo}
         </div>
 
-        <nav aria-label={ariaLabel} className="hidden flex-1 items-center justify-center lg:flex">
+        <nav aria-label={ariaLabel} className="hidden min-w-0 flex-1 items-center justify-center lg:flex">
           <NavSection className="w-full">
-            <ul className="flex items-center justify-center gap-1">
+            <ul className="flex items-center justify-center gap-0 xl:gap-0.5">
               {items.map((item) => (
                 <NavItem
                   key={item.href ?? item.label}
@@ -110,7 +110,7 @@ export function DesktopNav({
           </NavSection>
         </nav>
 
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+        <div className="flex min-w-0 shrink-0 items-center justify-end gap-1 xl:gap-2">
           {searchControl !== undefined ? searchControl : <button
             type="button"
             className="rounded-md px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/70 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"

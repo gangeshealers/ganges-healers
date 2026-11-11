@@ -46,6 +46,14 @@ beforeEach(() => {
   }) as typeof fetch
 })
 
+test('desktop navigation includes the Blog and Store destinations alongside the main catalog links', () => {
+  render(tree())
+  const desktop = within(screen.getByRole('navigation', { name: 'Desktop navigation', hidden: true }))
+  for (const [name, href] of [['Programs', '/programs'], ['Services', '/services'], ['Audio', '/audio'], ['Community', '/community'], ['Courses', '/courses'], ['Blog', '/blog'], ['Store', '/store']]) {
+    expect(desktop.getByRole('link', { name, hidden: true })).toHaveAttribute('href', href)
+  }
+})
+
 test('mounted search opens with real browse links, focuses its input, and restores trigger focus on Escape', async () => {
   render(tree())
   const trigger = screen.getAllByRole('button', { name: 'Open search' })[0]
