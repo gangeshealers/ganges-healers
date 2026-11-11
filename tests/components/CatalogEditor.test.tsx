@@ -14,6 +14,7 @@ test('a duplicate slug keeps the creation draft and a successful retry clears it
     .mockResolvedValueOnce({ error: 'That URL slug is already in use.' }).mockResolvedValueOnce({})
   const user = userEvent.setup()
   const name = editor(action, true)
+  await waitFor(() => expect(name.closest('form')).toHaveAttribute('data-hydrated', 'true'))
   await user.type(name, 'Draft service')
   await user.click(screen.getByRole('button', { name: 'Create' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('That URL slug is already in use.')

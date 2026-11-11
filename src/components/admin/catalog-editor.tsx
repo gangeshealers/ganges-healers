@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition, type ComponentProps, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useTransition, type ComponentProps, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 
 type SaveResult = { error?: string; reloadRequired?: boolean }
@@ -15,6 +15,8 @@ export function CatalogEditor({ action, children, item, create = false, submitLa
   submitVariant?: ComponentProps<typeof Button>['variant']
 }) {
   const [result, setResult] = useState<SaveResult | null>(null)
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => setHydrated(true), [])
   const [pending, startTransition] = useTransition()
   const saving = useRef(false)
   // Preserve native server-action submission before the editor hydrates.
@@ -42,7 +44,7 @@ export function CatalogEditor({ action, children, item, create = false, submitLa
   }
 
   return (
-    <form action={formAction} onSubmit={submit}>
+    <form action={formAction} onSubmit={submit} data-hydrated={hydrated ? 'true' : 'false'}>
       <fieldset disabled={pending} className={compact ? 'flex flex-wrap items-center gap-2' : 'mt-2 grid grid-cols-1 gap-3 md:grid-cols-3'}>
         {children}
         {result?.error && <p role="alert" className="text-sm text-destructive md:col-span-3">{result.error}</p>}

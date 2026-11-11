@@ -6,7 +6,14 @@ import { prisma } from '@/lib/prisma'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { SupportTicketError, updateAdminSupportTicket } from '@/lib/support/tickets'
 import { isSupportDeskEnabled } from '@/lib/support/availability'
-import { type Prisma, type SupportTicketStatus } from '@prisma/client'
+import {
+  ADMIN_SUPPORT_PAGE_SIZE,
+  ADMIN_SUPPORT_MAX_QUERY,
+  type AdminSupportStatus,
+  adminSupportHref,
+  adminSupportWhere,
+  parseAdminSupportFilters,
+} from '@/lib/support/admin-filters'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,9 +21,21 @@ async function saveSupportResponse(formData: FormData) {
   'use server'
   await requireCurrentAdmin()
   if (!isSupportDeskEnabled()) redirect('/admin/support')
+  const getText = (name: string) => {
+    const value = formData.get(name)
+    return typeof value === 'string' ? value : undefined
+  }
+  const view = parseAdminSupportFilters({
+    status: getText('returnStatus'),
+    page: getText('returnPage'),
+    q: getText('returnQuery'),
+  })
   let errorCode: string | null = null
   try {
-    await updateAdminSupportTicket(Object.fromEntries(formData))
+    await updateAdminSupportTicket({
+      id: getText('id'), updatedAt: getText('updatedAt'),
+      status: getText('status'), response: getText('response'),
+    })
   } catch (error) {
     if (error instanceof SupportTicketError) {
       errorCode = error.code === 'STALE_TICKET' ? 'stale' : 'invalid'
@@ -25,14 +44,11 @@ async function saveSupportResponse(formData: FormData) {
       errorCode = 'save'
     }
   }
-  if (errorCode) redirect(`/admin/support?error=${errorCode}`)
+  if (errorCode) redirect(adminSupportHref(view.status, view.q, view.page, { error: errorCode }))
   revalidatePath('/admin/support')
   revalidatePath('/dashboard/support')
-  redirect('/admin/support?updated=1')
+  redirect(adminSupportHref(view.status, view.q, view.page, { updated: true }))
 }
-
-const supportedStatuses: SupportTicketStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED']
-const PAGE_SIZE = 30
 
 export default async function AdminSupportPage({
   searchParams,
@@ -57,19 +73,17 @@ export default async function AdminSupportPage({
   }
 
   const params = (await searchParams) ?? {}
-  const rawStatus = typeof params.status === 'string' ? params.status : 'OPEN'
-  const status: SupportTicketStatus | undefined = supportedStatuses.find(candidate => candidate === rawStatus)
-  const where: Prisma.SupportTicketWhereInput = status ? { status } : {}
+  const filters = parseAdminSupportFilters(params)
+  const { status, q } = filters
+  const where = adminSupportWhere(status, q)
   const total = await prisma.supportTicket.count({ where })
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-  const rawPage = typeof params.page === 'string' ? params.page : ''
-  const requestedPage = /^[1-9]\d{0,3}$/.test(rawPage) && Number(rawPage) <= 1000 ? Number(rawPage) : 1
-  const page = totalPages ? Math.min(requestedPage, totalPages) : 1
+  const totalPages = Math.ceil(total / ADMIN_SUPPORT_PAGE_SIZE)
+  const page = totalPages ? Math.min(filters.page, totalPages) : 1
   const tickets = total ? await prisma.supportTicket.findMany({
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    skip: (page - 1) * PAGE_SIZE,
-    take: PAGE_SIZE,
+    skip: (page - 1) * ADMIN_SUPPORT_PAGE_SIZE,
+    take: ADMIN_SUPPORT_PAGE_SIZE,
     select: {
       id: true, subject: true, message: true, status: true, response: true,
       createdAt: true, updatedAt: true,
@@ -85,12 +99,7 @@ export default async function AdminSupportPage({
       : params.error === 'save'
         ? 'The request could not be saved. Please try again.'
         : null
-  const filterHref = (nextStatus: string, nextPage = 1) => {
-    const q = new URLSearchParams()
-    if (nextStatus !== 'ALL') q.set('status', nextStatus)
-    if (nextPage > 1) q.set('page', String(nextPage))
-    return `/admin/support${q.size ? `?${q}` : ''}`
-  }
+  const filterHref = (nextStatus: AdminSupportStatus, nextPage = 1) => adminSupportHref(nextStatus, q, nextPage)
 
   return (
     <div className="container mx-auto max-w-5xl space-y-6 px-4 py-10">
@@ -105,26 +114,42 @@ export default async function AdminSupportPage({
       {notice ? <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p> : null}
       {error ? <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
 
+      <form action="/admin/support" method="get" role="search" aria-label="Search support requests" className="rounded-lg border bg-white p-4 space-y-2">
+        <label htmlFor="support-search" className="block text-sm font-medium">Find a request</label>
+        <div className="flex flex-wrap items-center gap-2">
+          <input id="support-search" name="q" type="search" maxLength={ADMIN_SUPPORT_MAX_QUERY} defaultValue={q}
+            placeholder="Subject, member name or email"
+            className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-violet-600" />
+          <input type="hidden" name="status" value={status} />
+          <button type="submit" className="rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Find requests</button>
+          {q ? <Link href={adminSupportHref(status, '')} className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50">Clear search</Link> : null}
+        </div>
+        <p className="text-xs text-muted-foreground">Search up to 80 characters; only staff can see member details.</p>
+      </form>
+
       <nav aria-label="Filter support requests" className="flex flex-wrap gap-2">
-        {[
+        {([
           { value: 'OPEN', label: 'Received' },
           { value: 'IN_PROGRESS', label: 'In review' },
           { value: 'RESOLVED', label: 'Resolved' },
           { value: 'ALL', label: 'All requests' },
-        ].map(item => (
+        ] as const).map(item => (
           <Link
             key={item.value} href={filterHref(item.value)}
-            aria-current={(status ?? 'ALL') === item.value ? 'page' : undefined}
-            className={`rounded-lg border px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 ${(status ?? 'ALL') === item.value ? 'bg-slate-950 text-white' : 'bg-white hover:bg-slate-50'}`}
+            aria-current={status === item.value ? 'page' : undefined}
+            className={`rounded-lg border px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 ${status === item.value ? 'bg-slate-950 text-white' : 'bg-white hover:bg-slate-50'}`}
           >
             {item.label}
           </Link>
         ))}
       </nav>
-      <p className="text-sm text-muted-foreground">{total} {total === 1 ? 'request' : 'requests'} in this view</p>
+      <p role="status" className="text-sm text-muted-foreground">{total} {total === 1 ? 'request' : 'requests'} {q ? 'matching your search' : 'in this view'}</p>
 
       {tickets.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No support requests in this view.</p>
+        <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          <p>No support requests {q ? 'match your search.' : 'in this view.'}</p>
+          {q && <Link href={adminSupportHref(status, '')} className="mt-3 inline-flex underline">Clear search</Link>}
+        </div>
       ) : (
         <div className="space-y-5">
           {tickets.map(ticket => (
@@ -142,6 +167,9 @@ export default async function AdminSupportPage({
               <form action={saveSupportResponse} className="space-y-3 rounded-lg bg-slate-50 p-4">
                 <input type="hidden" name="id" value={ticket.id} />
                 <input type="hidden" name="updatedAt" value={ticket.updatedAt.toISOString()} />
+                <input type="hidden" name="returnStatus" value={status} />
+                <input type="hidden" name="returnQuery" value={q} />
+                <input type="hidden" name="returnPage" value={page} />
                 <div className="space-y-1">
                   <label htmlFor={`status-${ticket.id}`} className="block text-sm font-medium">Request status</label>
                   <select name="status" id={`status-${ticket.id}`} defaultValue={ticket.status} className="w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-violet-600">
@@ -167,9 +195,9 @@ export default async function AdminSupportPage({
       )}
       {totalPages > 1 ? (
         <nav aria-label="Support queue pages" className="flex items-center justify-between gap-3">
-          {page > 1 ? <Link href={filterHref(status ?? 'ALL', page - 1)} className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50">Previous requests</Link> : <span />}
+          {page > 1 ? <Link href={filterHref(status, page - 1)} className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50">Previous requests</Link> : <span />}
           <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
-          {page < totalPages ? <Link href={filterHref(status ?? 'ALL', page + 1)} className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50">Next requests</Link> : <span />}
+          {page < totalPages ? <Link href={filterHref(status, page + 1)} className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50">Next requests</Link> : <span />}
         </nav>
       ) : null}
     </div>

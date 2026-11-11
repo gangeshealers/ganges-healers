@@ -48,10 +48,14 @@ test('full-text search retains account, topic, and tag restrictions', async () =
 
 test('pinned posts are not repeated on the next owned page', async () => {
   const pinned = await prisma.communityPost.create({ data: { userId: users[0], topicId, title: 'Pinned', content: 'Pinned discussion', isPinned: true } })
-  await prisma.communityPost.create({ data: { userId: users[0], topicId, title: 'Newer', content: 'Newer discussion', createdAt: new Date('2026-01-02T12:00:00Z') } })
+  const newer = await prisma.communityPost.create({ data: { userId: users[0], topicId, title: 'Newer', content: 'Newer discussion', createdAt: new Date('2026-01-02T12:00:00Z') } })
   const first = await (await GET(request({ mine: '1', take: '1' }))).json()
   expect(first.data.map((post: { id: string }) => post.id)).toContain(pinned.id)
   expect(first.nextCursor).toBeTruthy()
   const next = await (await GET(request({ mine: '1', take: '1', cursor: first.nextCursor }))).json()
-  expect(next.data.map((post: { id: string }) => post.id)).toEqual([ownPostId])
+  expect(next.data.map((post: { id: string }) => post.id)).toEqual([newer.id])
+  expect(next.nextCursor).toBeTruthy()
+  const last = await (await GET(request({ mine: '1', take: '1', cursor: next.nextCursor }))).json()
+  expect(last.data.map((post: { id: string }) => post.id)).toEqual([ownPostId])
+  expect(last.nextCursor).toBeNull()
 })

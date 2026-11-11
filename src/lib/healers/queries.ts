@@ -1,8 +1,16 @@
 import { prisma } from '@/lib/prisma'
 import { cache } from 'react'
+import type { Prisma } from '@prisma/client'
 
 /** Share active service names within a server render without caching publication across requests. */
 export const getHealerServiceOptions = cache(async () => prisma.service.findMany({ where: { isActive: true }, select: { slug: true, name: true } }))
+
+export type HealerDirectorySort = 'default' | 'experience'
+
+/** Unknown sort values must leave the directory in its existing stable order. */
+export function parseHealerDirectorySort(value: unknown): HealerDirectorySort {
+  return value === 'experience' ? 'experience' : 'default'
+}
 
 export type HealerListItem = {
   id: string
@@ -48,7 +56,7 @@ function specializationKeyFromServiceName(name: string) {
   return map[name] ?? name
 }
 
-export async function listHealers(params?: { serviceSlug?: string; q?: string; limit?: number; cursor?: string }): Promise<{ items: HealerListItem[]; nextCursor: string | null }> {
+export async function listHealers(params?: { serviceSlug?: string; q?: string; limit?: number; cursor?: string; sort?: HealerDirectorySort }): Promise<{ items: HealerListItem[]; nextCursor: string | null }> {
   const limit = Math.max(1, Math.min(Math.trunc(params?.limit !== undefined && Number.isFinite(params.limit) ? params.limit : 20), 50))
   const q = params?.q?.trim()
 
@@ -74,9 +82,12 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
   }
 
   const cursor = params?.cursor ? { id: params.cursor } : undefined
+  const orderBy: Prisma.HealerOrderByWithRelationInput[] = params?.sort === 'experience'
+    ? [{ experienceYears: 'desc' }, { id: 'asc' }]
+    : [{ id: 'asc' }]
   const page = await prisma.healer.findMany({
     where,
-    orderBy: { id: 'asc' },
+    orderBy,
     ...(cursor ? { cursor, skip: 1 } : {}),
     take: limit + 1,
     select: {
