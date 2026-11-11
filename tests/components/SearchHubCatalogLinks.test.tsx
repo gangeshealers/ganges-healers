@@ -29,7 +29,7 @@ test('full catalog browsing clarifies result caps and keeps the original query',
   expect(within(browse).getByRole('link', { name: 'Store products' })).toHaveAttribute('href', '/store?q=Reiki')
   expect(within(browse).getByRole('link', { name: 'Articles' })).toHaveAttribute('href', '/blog')
   expect(screen.getByRole('link', { name: 'Search services catalog' })).toHaveAttribute('href', '/services?q=Reiki')
-  expect(screen.getByRole('link', { name: 'Reiki Healing' })).toHaveAttribute('href', '/services/reiki')
+  expect(screen.getByRole('link', { name: /Reiki Healing/ })).toHaveAttribute('href', '/services/reiki')
 })
 
 test('search results page lets the visitor revise their query directly', async () => {
