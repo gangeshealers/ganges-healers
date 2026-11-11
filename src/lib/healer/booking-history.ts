@@ -31,3 +31,32 @@ export function healerHistoryWhere(healerId: string, status: HealerHistoryStatus
     ...(query ? { service: { name: { contains: query, mode: 'insensitive' } } } : {}),
   }
 }
+
+
+export const HEALER_HISTORY_EXPORT_LIMIT = 1000
+export type HealerHistoryExportRow = {
+  id: string
+  scheduledAt: Date
+  durationMin: number
+  status: string
+  service: { name: string }
+}
+function csvCell(value: string) {
+  const safe = /^[\s\u0000-\u001f]*[=+\-@]/.test(value) ? "'" + value : value
+  return '"' + safe.replace(/"/g, '""') + '"'
+}
+/** No customer names, addresses, emails, meeting links or provider receipts. */
+export function healerHistoryCsv(rows: HealerHistoryExportRow[]) {
+  const header = ['Session At (UTC)', 'Service', 'Status', 'Duration (minutes)', 'Booking Reference']
+  const records = rows.map(row => [
+    row.scheduledAt.toISOString(), row.service.name, row.status,
+    String(row.durationMin), row.id,
+  ].map(csvCell).join(','))
+  return '\uFEFF' + [header.map(csvCell).join(','), ...records].join('\r\n') + '\r\n'
+}
+export function healerHistoryExportHref(status: HealerHistoryStatus, query = '') {
+  const qs = new URLSearchParams()
+  if (status !== 'all') qs.set('status', status)
+  if (query) qs.set('q', query)
+  return '/api/healer/bookings/history/export' + (qs.size ? '?' + qs.toString() : '')
+}
