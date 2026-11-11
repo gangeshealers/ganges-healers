@@ -1,0 +1,11 @@
+# Booking reminder timing and email safety
+
+`GET /api/cron/booking-reminders` runs under the existing `CRON_SECRET` Bearer check. The Vercel cron entry runs daily at **09:00 UTC (14:30 IST)**. The handler does not accept a caller-supplied day. It selects bookings whose start instant falls within **tomorrow's India local calendar date**, from 00:00 IST (inclusive) to the next 00:00 IST (exclusive). This replaces host-server-local `new Date(year, month, date)` boundaries, which can shift reminders to the wrong day when Vercel workers use UTC.
+
+It selects confirmed/rescheduled bookings, but suppresses reminders for closed accounts and rescheduled appointments that do not satisfy `bookingDeliveryState`'s stored payment/credit confirmation. That avoids implying an unfunded time reservation is a delivered session. All human-readable date and time strings use `Asia/Kolkata` and display **IST**. The response reports matching, eligible, skipped and provider-accepted counts, with no email addresses or customer names.
+
+The reminder email escapes customer, service and practitioner text for safe HTML rendering. It calls the existing finite-timeout Resend transport with a stable provider idempotency key `booking-reminder/<bookingId>/<scheduledAtIso>` and only reports a send when the provider returns an acceptance ID. Retrying the same booking and scheduled time within Resend's documented 24-hour idempotency window reuses the same key; a changed appointment time gets a distinct key.
+
+**Limit:** this improves retry safety but is not a durable reminder outbox or a delivery/bounce guarantee. A manually replayed cron invocation outside the provider's idempotency retention may send again; independently scheduled emails cannot be recalled if the appointment changes after provider acceptance. Never bulk replay old days as a workaround. Add reminder events to a durable queue before claiming exactly-once end-to-end delivery. The booking confirmation email outbox is separate and retains its own recovery/lease rules.
+
+Testing covers next-day IST boundaries at a UTC midnight crossing, confirmed/closed/unfunded eligibility, cron authentication, HTML escaping, and stable per-slot provider keys. No schema migration, new credential, real provider email or schedule change is part of this patch. Revert the timing and template changes together to roll back.
