@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { cached } from '@/lib/cache'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,7 +21,7 @@ function toTsquery(q: string): string {
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const q = searchParams.get('q')?.trim()
+    const q = searchParams.get('q')?.trim().slice(0, 200)
 
     if (!q || q.length < 2) {
       return NextResponse.json({
@@ -72,7 +71,9 @@ export async function GET(req: Request) {
        ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
        LIMIT 10`, tsquery,
     )
-    const cachedResults = cached(`search:${tsquery}`, async () => {
+    // Do not cache active/publication state: staff can withdraw content at any time.
+    // Reading these groups fresh avoids stale suggestions on other server instances.
+    const freshCatalogs = (async () => {
       const [services, healers, programs, products] =
       await Promise.all([
         prisma.$queryRawUnsafe<Array<{ id: string; slug: string; name: string; category: string; tagline: string | null }>>(
@@ -85,7 +86,7 @@ export async function GET(req: Request) {
         prisma.$queryRawUnsafe<Array<{ id: string; bio: string | null; specializations: string[]; userName: string | null; userImage: string | null }>>(
           `SELECT h.id, h.bio, h.specializations, u.name AS "userName", u.image AS "userImage"
            FROM "Healer" h JOIN "User" u ON h."userId" = u.id
-           WHERE h."isActive" = true AND (
+           WHERE h."isActive" = true AND h."isVerified" = true AND (
              h."searchVector" @@ to_tsquery('english', $1)
              OR u.name ILIKE '%' || $2 || '%'
            )
@@ -109,10 +110,10 @@ export async function GET(req: Request) {
       ])
 
       return { services, healers, programs, products }
-    })
+    })()
 
-    // Publication state is read afresh even when the other result groups are cached.
-    const [results, blog, courses, audio] = await Promise.all([cachedResults, freshBlog, freshCourses, freshAudio])
+    // Every published/active group is evaluated against the current database state.
+    const [results, blog, courses, audio] = await Promise.all([freshCatalogs, freshBlog, freshCourses, freshAudio])
 
     // Reshape healers to match previous API contract
     const shapedHealers = results.healers.map((h) => ({
