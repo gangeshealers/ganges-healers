@@ -87,7 +87,13 @@ export default function HealerBookingsPage() {
   const past = bookings.filter(booking => ended(booking) || terminal(booking))
   const waiting = bookings.filter(booking => booking.status === 'PENDING')
   return <div className="space-y-6">
-    <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-semibold">Manage Bookings</h1><p className="mt-2 text-sm text-muted-foreground">Session times are shown in India time (IST). Add your meeting link for the customer and their calendar.</p></div><Button variant="outline" disabled={!!acting || loading} onClick={() => void fetchBookings()}>Reload saved bookings</Button></div>
+    <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-semibold">Manage Bookings</h1><p className="mt-2 text-sm text-muted-foreground">Session times are shown in India time (IST). Add your meeting link for the customer and their calendar. The schedule download is a one-time snapshot of your future confirmed sessions and program appointments.</p></div><div className="flex flex-wrap items-center gap-2">
+      {ownerId && <a href="/api/healer/calendar" download="ganges-healers-practitioner-schedule.ics"
+        className="inline-flex h-9 items-center rounded-md border bg-background px-4 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Download upcoming schedule
+      </a>}
+      <Button variant="outline" disabled={!!acting || loading} onClick={() => void fetchBookings()}>Reload saved bookings</Button>
+    </div></div>
     {error && <div role="alert" className="rounded border p-4 space-y-2"><p>{error}</p><Button variant="outline" onClick={() => void fetchBookings()}>Retry bookings</Button></div>}
     {loading ? <div role="status" className="flex justify-center py-20"><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin" /><span className="sr-only">Loading bookings</span></div> : !error && <Tabs defaultValue="upcoming"><TabsList><TabsTrigger value="upcoming">Upcoming ({upcoming.length})</TabsTrigger><TabsTrigger value="pending">Pending ({waiting.length})</TabsTrigger><TabsTrigger value="past">Past ({past.length})</TabsTrigger></TabsList>
       {[{ key: 'upcoming', rows: upcoming }, { key: 'pending', rows: waiting }, { key: 'past', rows: past }].map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-4"><BookingList bookings={tab.rows} now={now} busy={!!acting} onAction={act} onCancel={setCancelling} onReload={() => void fetchBookings()} /></TabsContent>)}
