@@ -100,9 +100,10 @@ export async function listProducts(params?: { categorySlug?: string; chakra?: st
   return { items, nextCursor }
 }
 
+/** Public product detail follows listProducts' published-only visibility rule. */
 export async function getProductBySlug(slug: string): Promise<ProductDetail | null> {
   const r = await prisma.product.findUnique({
-    where: { slug },
+    where: { slug, isActive: true },
     select: {
       id: true,
       slug: true,
