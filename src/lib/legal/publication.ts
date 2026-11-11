@@ -1,15 +1,7 @@
 import { cache } from 'react'
 import { prisma } from '@/lib/prisma'
-
-export const POLICY_PAGES = {
-  privacy: { slug: 'privacy-policy', title: 'Privacy Policy', description: 'Published Ganges Healers privacy information.' },
-  terms: { slug: 'terms-of-service', title: 'Terms of Service', description: 'Published Ganges Healers service terms.' },
-} as const
-
-export type PolicyPageKind = keyof typeof POLICY_PAGES
-
-/** Reserved legal article slugs must not leak into the ordinary wellness blog. */
-export const LEGAL_DOCUMENT_SLUGS = Object.values(POLICY_PAGES).map(page => page.slug)
+import { POLICY_PAGES, type PolicyPageKind } from '@/lib/legal/routes'
+export { POLICY_PAGES, LEGAL_DOCUMENT_SLUGS, type PolicyPageKind } from '@/lib/legal/routes'
 
 /**
  * Only an admin-published exact reserved slug can appear as a legal document.
