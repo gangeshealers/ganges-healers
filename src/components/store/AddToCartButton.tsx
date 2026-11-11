@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { ShoppingCart } from "lucide-react"
 import { trackAddToCart } from "@/lib/analytics/meta-pixel"
 import { trackClientEvent } from "@/lib/analytics/track-client-event"
+import { getStockPresentation } from "@/lib/store/stock-presentation"
 
 interface Props {
   productId: string
@@ -14,12 +15,13 @@ interface Props {
   pricePaise: number
   imageUrl: string | null
   stockStatus: string
+  stockCount?: number | null
 }
 
-export default function AddToCartButton({ productId, slug, title, pricePaise, imageUrl, stockStatus }: Props) {
+export default function AddToCartButton({ productId, slug, title, pricePaise, imageUrl, stockStatus, stockCount }: Props) {
   const { addItem, setIsOpen } = useCart()
 
-  if (stockStatus === "OUT") {
+  if (!getStockPresentation(stockStatus, stockCount).available) {
     return (
       <Button disabled variant="outline" className="w-full mt-4">
         Out of stock
