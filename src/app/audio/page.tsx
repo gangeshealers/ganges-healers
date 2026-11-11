@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
+import { audioCatalogHref, parseAudioCatalogParams, type AudioCatalogParams, type AudioSort } from '@/lib/audio/catalog-queries'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -18,33 +20,34 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-type SortOption = 'newest' | 'shortest' | 'longest'
+const PAGE_SIZE = 12
 
 export default async function AudioLibraryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; q?: string; sort?: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const { category, q, sort } = await searchParams
-
-  const where: Record<string, unknown> = { isPublished: true }
-  if (category) where.category = category
-  if (q) {
-    where.OR = [
+  const filters = parseAudioCatalogParams(await searchParams)
+  const { category, q, sort } = filters
+  const where: Prisma.AudioTrackWhereInput = {
+    isPublished: true,
+    ...(category ? { category } : {}),
+    ...(q ? { OR: [
       { title: { contains: q, mode: 'insensitive' } },
       { description: { contains: q, mode: 'insensitive' } },
       { category: { contains: q, mode: 'insensitive' } },
-    ]
+    ] } : {}),
   }
 
-  const orderBy = sort === 'shortest'
-    ? { duration: 'asc' as const }
+  // Explicit ID tiebreakers make next/previous pages deterministic.
+  const orderBy: Prisma.AudioTrackOrderByWithRelationInput[] = sort === 'shortest'
+    ? [{ duration: 'asc' }, { id: 'asc' }]
     : sort === 'longest'
-      ? { duration: 'desc' as const }
-      : { createdAt: 'desc' as const }
+      ? [{ duration: 'desc' }, { id: 'desc' }]
+      : [{ createdAt: 'desc' }, { id: 'desc' }]
 
-  const [tracks, categoriesRaw] = await Promise.all([
-    prisma.audioTrack.findMany({ where, orderBy }),
+  const [total, categoriesRaw] = await Promise.all([
+    prisma.audioTrack.count({ where }),
     prisma.audioTrack.findMany({
       where: { isPublished: true },
       select: { category: true },
@@ -52,22 +55,19 @@ export default async function AudioLibraryPage({
       orderBy: { category: 'asc' },
     }),
   ])
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const page = totalPages ? Math.min(filters.page, totalPages) : 1
+  const tracks = total ? await prisma.audioTrack.findMany({
+    where, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
+  }) : []
+  const categories = categoriesRaw.map(({ category }) => category)
 
-  const categories = categoriesRaw.map((c) => c.category)
-
-  // Build filter URL helper
-  function filterHref(params: Record<string, string | undefined>) {
-    const sp = new URLSearchParams()
-    const merged = { category, q, sort, ...params }
-    for (const [k, v] of Object.entries(merged)) {
-      if (v) sp.set(k, v)
-    }
-    const qs = sp.toString()
-    return `/audio${qs ? `?${qs}` : ''}`
+  function filterHref(changes: Partial<AudioCatalogParams> = {}) {
+    return audioCatalogHref({ ...filters, ...changes, page: changes.page ?? 1 })
   }
 
-  const sortOptions: { value: SortOption | undefined; label: string }[] = [
-    { value: undefined, label: 'Newest' },
+  const sortOptions: { value: AudioSort; label: string }[] = [
+    { value: 'newest', label: 'Newest' },
     { value: 'shortest', label: 'Shortest' },
     { value: 'longest', label: 'Longest' },
   ]
@@ -104,20 +104,25 @@ export default async function AudioLibraryPage({
       <div className="container mx-auto px-4 py-8">
         {/* Search & Sort */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <form className="flex-1 max-w-md" action="/audio">
+          <form className="flex flex-1 max-w-md gap-2" action="/audio" method="get" role="search">
             {category && <input type="hidden" name="category" value={category} />}
             {sort && <input type="hidden" name="sort" value={sort} />}
             <input
-              type="text"
+              type="search"
               name="q"
+              aria-label="Search audio tracks"
               defaultValue={q}
+              maxLength={120}
               placeholder="Search tracks..."
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-violet-600 focus:border-transparent"
+              className="min-w-0 w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-violet-600 focus:border-transparent"
             />
+            <button type="submit" className="rounded-lg bg-violet-700 px-4 py-2 font-medium text-white hover:bg-violet-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
+              Search
+            </button>
           </form>
           <div className="flex gap-2">
             {sortOptions.map((opt) => {
-              const isActive = (sort || undefined) === opt.value
+              const isActive = sort === opt.value
               return (
                 <Link
                   key={opt.label}
@@ -160,13 +165,18 @@ export default async function AudioLibraryPage({
 
         {/* Results count */}
         <p className="text-gray-600 mb-4 text-sm">
-          {tracks.length} track{tracks.length !== 1 ? 's' : ''}{category ? ` in ${category}` : ''}{q ? ` matching "${q}"` : ''}
+          Showing {tracks.length} of {total} track{total !== 1 ? 's' : ''}{category ? ` in ${category}` : ''}{q ? ` matching "${q}"` : ''}
         </p>
 
         {tracks.length === 0 ? (
           <EmptyState
             title="No audio tracks found"
-            subtitle={q ? 'Try a different search term.' : 'Check back soon — new tracks are being added.'}
+            subtitle={q || category ? 'Try a different search or category.' : 'Check back soon — new tracks are being added.'}
+            action={q || category || sort !== 'newest' ? (
+              <Link href="/audio" className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
+                Clear filters
+              </Link>
+            ) : null}
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -203,6 +213,21 @@ export default async function AudioLibraryPage({
             ))}
           </div>
         )}
+        {totalPages > 1 ? (
+          <nav aria-label="Audio pages" className="mt-10 flex items-center justify-center gap-5">
+            {page > 1 ? (
+              <Link href={filterHref({ page: page - 1 })} className="rounded-lg border bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
+                Previous tracks
+              </Link>
+            ) : <span className="text-sm text-gray-500">First page</span>}
+            <span className="text-sm text-gray-700">Page {page} of {totalPages}</span>
+            {page < totalPages ? (
+              <Link href={filterHref({ page: page + 1 })} className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
+                Next tracks
+              </Link>
+            ) : <span className="text-sm text-gray-500">Last page</span>}
+          </nav>
+        ) : null}
       </div>
     </div>
   )
