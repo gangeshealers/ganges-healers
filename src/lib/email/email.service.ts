@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Resend } from 'resend'
 import { BookingConfirmationEmail as BookingConfirmationEmailComponent } from './templates/booking-confirmation'
 import { QuizAlignmentEmail } from './templates/quiz-alignment'
@@ -148,7 +149,7 @@ export const emailService = {
     date: string
     time: string
     bookingId: string
-    scheduledAtIso: string
+    scheduledAtIso?: string
   }) {
     const html = [
       '<h2>Session Reminder</h2>',
@@ -164,7 +165,8 @@ export const emailService = {
       to: data.to,
       subject: 'Reminder: ' + data.serviceName + ' tomorrow at ' + data.time,
       html,
-    }, 'booking-reminder/' + data.bookingId + '/' + data.scheduledAtIso)
+    }, 'booking-reminder/' + data.bookingId + '/' +
+      (data.scheduledAtIso || 'legacy-' + createHash('sha256').update(data.date + '\\0' + data.time).digest('hex')))
   },
 
   async sendInvoiceEmail(data: { to: string; invoiceNumber: string; amountPaise: number; link: string }) {
