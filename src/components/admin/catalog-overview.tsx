@@ -36,7 +36,7 @@ export function AdminCatalogOverview({ items }: { items: CatalogOverviewItem[] }
                 href={item.href}
                 className="mt-auto inline-flex w-fit rounded-md text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                Manage {item.label}
+                Open {item.label} workspace
               </Link>
             </CardContent>
           </Card>
