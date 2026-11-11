@@ -11,9 +11,14 @@ export default async function DashboardPage() {
 
   const [bookings, recentPosts, courseEnrollments] = await Promise.all([
     prisma.booking.findMany({
-      where: { userId: session.user.id },
-      orderBy: { scheduledAt: "asc" },
-      take: 20,
+      // The dashboard is an upcoming snapshot, not an oldest-first lifetime history.
+      where: {
+        userId: session.user.id,
+        scheduledAt: { gte: new Date() },
+        status: { in: ['PENDING', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED'] },
+      },
+      orderBy: [{ scheduledAt: "asc" }, { id: "asc" }],
+      take: 5,
       include: { service: true, healer: { include: { user: true } }, payment: true },
     }),
     prisma.communityPost.findMany({

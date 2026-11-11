@@ -23,6 +23,14 @@ test.each([null, { user: {} }, { user: { id: '' } }])('rejects incomplete sessio
 test('scopes bookings and enrollments to the signed-in customer', async () => {
   auth.mockResolvedValue({ user: { id: 'customer' } })
   await DashboardPage()
-  expect(db.booking.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'customer' } }))
+  expect(db.booking.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    where: {
+      userId: 'customer',
+      scheduledAt: { gte: expect.any(Date) },
+      status: { in: ['PENDING', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED'] },
+    },
+    orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
+    take: 5,
+  }))
   expect(db.courseEnrollment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ userId: 'customer' }) }))
 })
