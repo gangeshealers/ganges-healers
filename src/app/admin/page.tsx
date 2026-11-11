@@ -55,6 +55,7 @@ export default async function AdminPage() {
         <Button asChild variant="outline"><Link href="/admin/blog">Manage Articles</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/payments">Payments</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/analytics">Analytics</Link></Button>
+        <Button asChild variant="outline"><Link href="/admin/launch">Launch Readiness</Link></Button>
       </nav>
 
       <Card>
