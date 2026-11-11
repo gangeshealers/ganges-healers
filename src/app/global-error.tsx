@@ -2,6 +2,7 @@
 
 import * as Sentry from '@sentry/nextjs'
 import { useEffect } from 'react'
+import Link from 'next/link'
 
 export default function GlobalError({
   error,
@@ -36,7 +37,7 @@ export default function GlobalError({
           >
             Try again
           </button>
-          <a
+          <Link
             href="/"
             style={{
               display: 'inline-block',
@@ -48,7 +49,7 @@ export default function GlobalError({
             }}
           >
             Return home
-          </a>
+          </Link>
         </div>
       </body>
     </html>
