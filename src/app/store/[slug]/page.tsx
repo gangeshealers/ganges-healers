@@ -38,6 +38,8 @@ export default async function ProductDetailPage({ params, searchParams }: { para
   const variant = await getVariant('product_headline')
   const p = await getProductBySlug(slug)
   if (!p) return notFound()
+  // Recorded quantities take precedence over a stale textual stock flag.
+  const outOfStock = p.stockStatus === 'OUT' || (p.stockCount !== null && p.stockCount <= 0)
   const crumbs = makeProductCrumbs(slug, p.title)
   const bundles = p.chakra ? await listBundles(p.chakra) : []
 
@@ -92,17 +94,14 @@ export default async function ProductDetailPage({ params, searchParams }: { para
             </p>
           ) : null}
           <div className="mt-2">
-            {p.stockStatus === 'OUT' ? (
+            {outOfStock ? (
               <span className="text-red-600">Out of stock</span>
             ) : p.stockCount !== null && p.stockCount <= 5 ? (
-              <span className="text-amber-600 font-medium">Only {p.stockCount} left — selling fast</span>
+              <span className="text-amber-600 font-medium">Only {p.stockCount} left</span>
             ) : p.stockStatus === 'LOW' ? (
               <span className="text-amber-600">Low stock</span>
             ) : (
-              <>
-                <span className="text-green-600">In stock</span>
-                <span className="ml-2 text-sm text-amber-600">· Only a few pieces available</span>
-              </>
+              <span className="text-green-600">In stock</span>
             )}
           </div>
           <AddToCartButton
@@ -111,7 +110,7 @@ export default async function ProductDetailPage({ params, searchParams }: { para
             title={p.title}
             pricePaise={p.pricePaise}
             imageUrl={p.imageUrl}
-            stockStatus={p.stockStatus}
+            stockStatus={outOfStock ? 'OUT' : p.stockStatus}
           />
           {p.service ? (
             <div className="mt-4 space-y-2">
