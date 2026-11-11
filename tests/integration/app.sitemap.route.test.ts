@@ -19,11 +19,12 @@ describe('app sitemap route', () => {
     const urls = items.map(i => i.url)
     expect(urls).toEqual(expect.arrayContaining([
       'https://example.com/',
-      'https://example.com/about',
       'https://example.com/services/yoga',
       'https://example.com/programs/foundation-6-week',
       'https://example.com/healers/anita-sharma',
     ]))
+    // Do not publish the absent /about route to search engines.
+    expect(urls).not.toContain('https://example.com/about')
     // No query params allowed
     expect(items.every(i => !i.url.includes('?'))).toBe(true)
     // Types check: each item must have url
