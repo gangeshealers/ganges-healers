@@ -59,6 +59,12 @@ test('staff assigns and reserves a program session; the customer sees it and onl
     const ownerCard = ownerPage.locator(`[data-enrollment-id="${enrollment.id}"]`)
     await expect(ownerCard.getByText('Confirmed', { exact: true })).toBeVisible({ timeout: 30000 })
     await expect(ownerCard.getByRole('link', { name: 'Download calendar' })).toHaveAttribute('href', download)
+    const calendarFeed = `/api/program-enrollments/${enrollment.id}/calendar`
+    await expect(ownerCard.getByRole('link', { name: 'Download upcoming program calendar' })).toHaveAttribute('href', calendarFeed)
+    const feed = await ownerContext.request.get(calendarFeed)
+    expect(feed.status()).toBe(200)
+    expect(await feed.text()).toContain('UID:program-' + actual.id)
+
     await expect(ownerCard.getByRole('button', { name: 'Mark session completed' })).toHaveCount(0)
     expect((await ownerContext.request.get(download)).status()).toBe(200)
     expect((await ownerContext.request.patch(`/api/program-enrollments/${enrollment.id}`, { data: { action: 'complete', sessionNumber: 1 } })).status()).toBe(403)
