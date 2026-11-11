@@ -20,7 +20,7 @@ test('a practitioner publishes a session link to its customer and calendar and c
       const target = role === 'HEALER' ? page : customer
       expect((await target.request.get(`/api/test/login?${new URLSearchParams({ role, email })}`)).status()).toBe(200)
     }
-    const healer = await db.healer.create({ data: { userId: users[0] } })
+    const healer = await db.healer.create({ data: { userId: users[0], isVerified: true } })
     serviceId = (await db.service.create({ data: { slug: `delivery-${suffix}`, name: `Delivery ${suffix}`, description: 'Isolated session delivery fixture', category: 'Test', price: 10, duration: 60 } })).id
     bookingId = (await db.booking.create({ data: { healerId: healer.id, userId: users[1], serviceId, scheduledAt: new Date(Date.now() + 86400000), durationMin: 60, pricePaise: 1000, status: 'CONFIRMED', payment: { create: { gateway: 'vip_credit', amountPaise: 0, status: 'success' } } } })).id
     const ended = await db.booking.create({ data: { healerId: healer.id, userId: users[1], serviceId, scheduledAt: new Date(Date.now() - 7200000), durationMin: 60, pricePaise: 0, status: 'RESCHEDULED' } })
