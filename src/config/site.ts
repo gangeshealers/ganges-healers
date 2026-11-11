@@ -28,7 +28,8 @@ export function siteOrigin(configuredUrl?: string, deploymentHost?: string): str
 export const SITE_URL = siteOrigin(process.env.NEXT_PUBLIC_SITE_URL, process.env.VERCEL_URL)
 
 export function canonicalOf(path: string, stripParams: string[] = []): string {
-  const url = new URL(path, SITE_URL)
+  // Read the configured origin for each render, preserving existing runtime/test overrides.
+  const url = new URL(path, siteOrigin(process.env.NEXT_PUBLIC_SITE_URL, process.env.VERCEL_URL))
   for (const key of stripParams) url.searchParams.delete(key)
   return url.toString().replace(/\/$/, '')
 }
