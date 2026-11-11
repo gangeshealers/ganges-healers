@@ -22,6 +22,8 @@ export default function MembershipPage() {
   const [credits, setCredits] = useState<number>(0)
   const [submitting, setSubmitting] = useState<Record<string, boolean>>({})
   const [polling, setPolling] = useState(false)
+  const [endingMembership, setEndingMembership] = useState(false)
+  const [confirmEnding, setConfirmEnding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   interface InvoiceLite { id: string; issuedAt: string; totalPaise: number; pdfUrl: string | null; invoiceNumber?: string | null; paymentId?: string | null }
   const [recentInvoices, setRecentInvoices] = useState<InvoiceLite[]>([])
@@ -120,6 +122,35 @@ export default function MembershipPage() {
     }
   }
 
+  const handleEndMembership = async () => {
+    if (!membership || endingMembership) return
+    setEndingMembership(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/memberships/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ membershipId: membership.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const message = data.error || 'Cancellation could not be confirmed. Please contact support.'
+        setError(message)
+        toast.error(message)
+        return
+      }
+      setMembership(current => current ? { ...current, status: 'cancelled' } : current)
+      setConfirmEnding(false)
+      toast.success('Membership ended. Your existing session credits are retained.')
+      await fetchMembership()
+    } catch {
+      setError('Could not confirm cancellation. Refresh your membership or contact support.')
+      toast.error('Cancellation could not be confirmed.')
+    } finally {
+      setEndingMembership(false)
+    }
+  }
+
   const renderPlans = () => (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mt-6">
       {plans.map(p => (
@@ -166,7 +197,33 @@ export default function MembershipPage() {
       <p className="text-sm mt-2">Credits: {credits}</p>
       {membership.status === 'pending' && <p className="text-xs text-muted-foreground mt-2">Pending confirmation... waiting for payment activation webhook.</p>}
       {membership.status === 'paused' && <p className="text-xs text-muted-foreground mt-2">Membership paused. Reactivate in Razorpay or contact support.</p>}
-      {membership.status === 'cancelled' && <p className="text-xs text-muted-foreground mt-2">Membership cancelled. You keep previously granted credits.</p>}
+      {membership.status === 'cancelled' && <p className="text-xs text-muted-foreground mt-2">Membership ended. You keep previously granted credits.</p>}
+      {['pending', 'active', 'paused', 'halted'].includes(membership.status) && (
+        <div className="mt-5 border-t pt-4 space-y-3">
+          {!confirmEnding ? (
+            <Button type="button" variant="outline" disabled={endingMembership} onClick={() => setConfirmEnding(true)}>
+              End membership now
+            </Button>
+          ) : (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3 text-sm text-slate-800">
+              <p className="font-semibold">End your VIP membership immediately?</p>
+              <p>VIP access ends now, even if the paid period has time remaining. Existing session credits remain available. Ending membership does not automatically refund a payment.</p>
+              <p>This is a single-cycle purchase and does not automatically renew. You can also keep your membership until its current term finishes.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="destructive" disabled={endingMembership} onClick={handleEndMembership}>
+                  {endingMembership ? 'Confirming with Razorpay…' : 'Yes, end access now'}
+                </Button>
+                <Button type="button" variant="outline" disabled={endingMembership} onClick={() => setConfirmEnding(false)}>
+                  Keep membership
+                </Button>
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Need help with billing? <Link href="/dashboard/support" className="underline">Contact support</Link>.
+          </p>
+        </div>
+      )}
     </div>
   )
 

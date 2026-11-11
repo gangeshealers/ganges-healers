@@ -67,7 +67,7 @@ export async function applyMembershipEvent(input: unknown): Promise<{ applied: b
     // Signed webhooks may arrive out of order. Never let a replay resurrect a cancelled membership.
     const stale = event.created_at < (metadata.lastEventAt ?? 0)
       || (event.created_at === metadata.lastEventAt && metadata.lastEvent === 'subscription.cancelled')
-      || (membership.status === 'cancelled' && states[name] === 'active')
+      || (membership.status === 'cancelled' && states[name] !== 'cancelled')
     const isPaid = quote.statusEnum === 'SUCCESS' || name === 'subscription.charged'
     if (!stale && (states[name] !== 'active' || isPaid)) {
       await tx.vIPMembership.update({ where: { id: membership.id }, data: {
