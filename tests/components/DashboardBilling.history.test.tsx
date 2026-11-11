@@ -50,6 +50,7 @@ test('filters by the authenticated owner, displays invoices and paginates', asyn
     take: 26,
     orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
   }))
+  expect(screen.getByRole('link', { name: 'Download billing CSV' })).toHaveAttribute('href', '/api/invoices/me/export?type=STORE&q=INV')
   expect(screen.getAllByRole('link', { name: 'View invoice' })).toHaveLength(25)
   expect(screen.getAllByRole('link', { name: 'View invoice' })[0]).toHaveAttribute('href', '/invoices/INV-1000/view')
   expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/dashboard/billing?type=STORE&q=INV&page=3')
