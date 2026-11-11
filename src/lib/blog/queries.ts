@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
-import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/publication'
+import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/routes'
 
 /** Fresh reads keep publication changes consistent across application instances. */
 export function getPublishedBlogSummaries(take?: number) {
