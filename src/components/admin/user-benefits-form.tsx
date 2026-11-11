@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { UserBenefitsInput, UserBenefitsRecord, UserBenefitsResult } from '@/lib/admin/user-benefits'
 
-type Props = { actorId: string; label: string; user: UserBenefitsRecord; onSave: (input: UserBenefitsInput) => Promise<UserBenefitsResult> }
+type Props = { actorId: string; label: string; reloadHref?: string; user: UserBenefitsRecord; onSave: (input: UserBenefitsInput) => Promise<UserBenefitsResult> }
 
 /** A session change unmounts drafts and prevents a late response reaching another administrator. */
 export function UserBenefitsForm(props: Props) {
@@ -17,7 +17,7 @@ export function UserBenefitsForm(props: Props) {
   return <BenefitsEditor key={`${props.actorId}:${props.user.id}`} {...props} />
 }
 
-function BenefitsEditor({ label, user, onSave }: Props) {
+function BenefitsEditor({ label, user, onSave, reloadHref = '/admin' }: Props) {
   const [reviewed, setReviewed] = useState(user)
   const [vip, setVip] = useState(user.vip)
   const [credits, setCredits] = useState(String(user.freeSessionCredits))
@@ -55,7 +55,7 @@ function BenefitsEditor({ label, user, onSave }: Props) {
     <div className="grid gap-1"><Label htmlFor={`credits-${user.id}`}>Free credits</Label><Input id={`credits-${user.id}`} type="number" min={0} max={2147483647} step={1} value={credits} onChange={event => { setCredits(event.target.value); setMessage(null) }} disabled={pending || stale} className="w-28" /></div>
     <div className="grid min-w-40 flex-1 gap-1"><Label htmlFor={`reason-${user.id}`}>Reason for change</Label><Input id={`reason-${user.id}`} maxLength={300} value={reason} onChange={event => setReason(event.target.value)} disabled={pending || stale} /></div>
     <Button type="submit" size="sm" disabled={pending || stale || !changed || !validCredits || !reason.trim()}>{pending ? 'Saving…' : 'Save benefits'}</Button>
-    {error && <div className="w-full text-sm"><p role="alert" className="text-destructive">{error}</p>{stale && <a href="/admin" className="underline">Reload user list</a>}</div>}
+    {error && <div className="w-full text-sm"><p role="alert" className="text-destructive">{error}</p>{stale && <a href={reloadHref} className="underline">Reload user list</a>}</div>}
     {message && <p role="status" className="w-full text-sm">{message}</p>}
   </form>
 }
