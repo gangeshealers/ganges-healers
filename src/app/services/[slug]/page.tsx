@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const url = canonicalOf(`/services/${slug}`, ['openBooking','programSlug','healerId'])
   // Best-effort fetch of service for title/desc; avoid throwing on not found here
   try {
-    const s = await prisma.service.findUnique({ where: { slug }, select: { name: true, description: true } })
+    const s = await prisma.service.findUnique({ where: { slug, isActive: true }, select: { name: true, description: true } })
     if (!s) return { alternates: { canonical: url } }
     return {
       title: `${s.name} | Service | Ganges Healers`,
@@ -66,7 +66,7 @@ export default async function ServiceDetailPage({
   const hasRequestedHealer = sp.healerId !== undefined
 
   const service = await prisma.service.findUnique({
-    where: { slug },
+    where: { slug, isActive: true },
     select: {
       id: true,
       name: true,
@@ -93,7 +93,7 @@ export default async function ServiceDetailPage({
 
   const [healers, reviews, monthlyBookings, sacredTools] = await Promise.all([
     prisma.healer.findMany({
-      where: { isActive: true, specializations: { has: key } },
+      where: { isActive: true, isVerified: true, specializations: { has: key } },
       select: {
         id: true,
         bio: true,
