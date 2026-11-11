@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import { GET } from '@/app/api/bookings/calendar/route'
 
-let actor: string | null = null
-jest.mock('@/lib/auth', () => ({ auth: async () => actor ? { user: { id: actor, role: 'USER' } } : null }))
+let mockActor: string | null = null
+jest.mock('@/lib/auth', () => ({ auth: async () => mockActor ? { user: { id: mockActor, role: 'USER' } } : null }))
 
 const users: string[] = []
 const created: Record<string, string> = {}
@@ -32,7 +32,7 @@ beforeAll(async () => {
   await insert('past', users[0], 'CONFIRMED', later(-2), 'https://meet.example.test/past')
   await insert('foreign', users[1], 'CONFIRMED', later(12), 'https://meet.example.test/foreign-private')
 })
-beforeEach(() => { actor = users[0] })
+beforeEach(() => { mockActor = users[0] })
 afterAll(async () => {
   try {
     if (users.length || healerUser) await prisma.user.deleteMany({ where: { id: { in: [...users, healerUser].filter(Boolean) } } })
@@ -57,7 +57,7 @@ test('exports only the authenticated member’s future live appointments, withou
 })
 
 test('switching to a different owner never reveals the previous account’s calendar', async () => {
-  actor = users[1]
+  mockActor = users[1]
   const content = await (await GET()).text()
   expect(content.match(/BEGIN:VEVENT/g)).toHaveLength(1)
   expect(content).toContain('UID:booking-' + created.foreign)
@@ -66,7 +66,7 @@ test('switching to a different owner never reveals the previous account’s cale
 })
 
 test('returns 401 instead of any calendar when the session is gone', async () => {
-  actor = null
+  mockActor = null
   const response = await GET()
   expect(response.status).toBe(401)
   expect(response.headers.get('cache-control')).toBe('private, no-store')
