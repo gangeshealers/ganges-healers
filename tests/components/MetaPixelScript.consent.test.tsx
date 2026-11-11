@@ -67,6 +67,19 @@ test('marketing code never runs on authentication pages, even after opt-in', asy
   expect(screen.queryByTestId('marketing-pixel-script')).not.toBeInTheDocument()
 })
 
+test('moving to an authentication route revokes an already-loaded pixel', async () => {
+  window.localStorage.setItem(MARKETING_CONSENT_KEY, 'allowed')
+  const fbq = jest.fn()
+  Object.defineProperty(window, 'fbq', { configurable: true, writable: true, value: fbq })
+  const { rerender } = render(<MetaPixelScript pixelId={pixel} />)
+  await waitFor(() => expect(screen.getByTestId('marketing-pixel-script')).toBeInTheDocument())
+  fbq.mockClear()
+  usePath.mockReturnValue('/auth/signin')
+  rerender(<MetaPixelScript pixelId={pixel} />)
+  expect(screen.queryByTestId('marketing-pixel-script')).not.toBeInTheDocument()
+  await waitFor(() => expect(fbq).toHaveBeenCalledWith('consent', 'revoke'))
+})
+
 test('no consent UI or pixel is rendered without a valid configured identifier', () => {
   render(<><MetaPixelScript pixelId="bad<script>" /><PrivacyChoicesButton pixelId="bad<script>" /></>)
   expect(screen.queryByTestId('marketing-pixel-script')).not.toBeInTheDocument()
