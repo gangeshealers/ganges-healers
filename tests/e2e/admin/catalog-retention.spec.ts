@@ -223,8 +223,12 @@ test('reviewed healer decisions retain stale drafts and reject changed staff acc
     await article.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(article.getByRole('status')).toHaveText('Healer profile saved.')
     expect(await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).toMatchObject({ bio: 'Reviewed staff biography', experienceYears: 4, isActive: true, isVerified: true })
+    // Locate the form from its own submit button; a nested article-scoped `has` locator
+    // is evaluated relative to each form and cannot find the article ancestor again.
+    const verifyEditor = article.getByRole('button', { name: 'Unverify', exact: true }).locator('xpath=ancestor::form[1]')
+    await expect(verifyEditor).toHaveAttribute('data-hydrated', 'true', { timeout: 30_000 })
     await article.getByRole('button', { name: 'Unverify', exact: true }).click()
-    await expect(article.getByRole('button', { name: 'Verify', exact: true })).toBeVisible()
+    await expect(article.getByRole('button', { name: 'Verify', exact: true })).toBeVisible({ timeout: 30_000 })
     await article.getByRole('button', { name: 'Deactivate', exact: true }).click()
     await expect(article.getByText('(Inactive)', { exact: true })).toBeVisible()
     expect(await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).toMatchObject({ bio: 'Reviewed staff biography', isActive: false, isVerified: false })
@@ -305,6 +309,8 @@ test('reviewed program catalog saves retain mobile drafts and preserve paid acce
     expect(await db.programEnrollment.findUniqueOrThrow({ where: { id: enrollment.id } })).toEqual(enrollment)
     expect(await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment)
     const availability = article.locator('form').filter({ has: page.getByRole('button', { name: 'Deactivate', exact: true }) })
+    // The invalid-field check relies on the client action's inline error state, not the native pre-hydration fallback.
+    await expect(availability).toHaveAttribute('data-hydrated', 'true', { timeout: 30_000 })
     // Mutate the hidden field and submit in the same browser task. Otherwise
     // a concurrent React refresh may restore the legitimate value between steps.
     await availability.locator('input[name="isActive"]').evaluate(element => {

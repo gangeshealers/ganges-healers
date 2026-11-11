@@ -39,12 +39,24 @@ test('full-text search binds its input and scopes hits before limiting', async (
   } }))
 })
 
-test('pinned discussions appear once and never return in regular cursor pages', async () => {
-  db.communityPost.findMany.mockResolvedValueOnce([{ id: 'pinned' }]).mockResolvedValueOnce([{ id: 'first' }, { id: 'second' }]).mockResolvedValueOnce([{ id: 'second' }])
-  expect(await (await GET(request('take=1'))).json()).toEqual({ success: true, data: [{ id: 'pinned' }, { id: 'first' }], nextCursor: 'first' })
-  expect(await (await GET(request('take=1&cursor=first'))).json()).toEqual({ success: true, data: [{ id: 'second' }], nextCursor: null })
-  expect(db.communityPost.findMany.mock.calls[1][0].where.isPinned).toBe(false)
-  expect(db.communityPost.findMany.mock.calls[2][0]).toMatchObject({ where: { isPinned: false }, cursor: { id: 'first' }, skip: 1 })
+test('pinned discussions occupy bounded page slots, with cursor continuation to regular posts', async () => {
+  db.communityPost.findMany
+    .mockResolvedValueOnce([{ id: 'pinned' }, { id: 'first' }])
+    .mockResolvedValueOnce([{ id: 'first' }, { id: 'second' }])
+  expect(await (await GET(request('take=1'))).json()).toEqual({
+    success: true, data: [{ id: 'pinned' }], nextCursor: 'pinned',
+  })
+  expect(await (await GET(request('take=1&cursor=pinned'))).json()).toEqual({
+    success: true, data: [{ id: 'first' }], nextCursor: 'first',
+  })
+  expect(db.communityPost.findMany).toHaveBeenCalledTimes(2)
+  expect(db.communityPost.findMany.mock.calls[0][0]).toMatchObject({
+    where: { deletedAt: null }, take: 2,
+    orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+  })
+  expect(db.communityPost.findMany.mock.calls[1][0]).toMatchObject({
+    where: { deletedAt: null }, cursor: { id: 'pinned' }, skip: 1, take: 2,
+  })
 })
 
 test('engagement sorting has a deterministic final tie breaker', async () => {
