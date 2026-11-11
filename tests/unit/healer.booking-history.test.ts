@@ -1,5 +1,6 @@
 import {
   HEALER_HISTORY_MAX_PAGE, healerHistoryWhere, healerHistoryHref, parseHealerHistory,
+  healerHistoryCsv, healerHistoryExportHref,
 } from '@/lib/healer/booking-history'
 
 describe('owner-only healer booking history', () => {
@@ -30,4 +31,23 @@ describe('owner-only healer booking history', () => {
     expect(healerHistoryHref('cancelled', 'Reiki & Yoga', 4))
       .toBe('/healer/bookings/history?status=cancelled&q=Reiki+%26+Yoga&page=4')
   })
+  test('CSV retains only appointment data and neutralizes spreadsheet formulas', () => {
+    const csv = healerHistoryCsv([{
+      id: 'booking-123',
+      scheduledAt: new Date('2026-11-11T08:00:00.000Z'),
+      durationMin: 60,
+      status: 'COMPLETED',
+      service: { name: '=SUM(A1:A5), "Calm session"' },
+    }])
+    expect(csv.startsWith('\uFEFF')).toBe(true)
+    expect(csv).toContain('"\u0027=SUM(A1:A5), ""Calm session"""')
+    expect(csv).toContain('"2026-11-11T08:00:00.000Z"')
+    expect(csv).toContain('"booking-123"')
+    expect(csv).not.toContain('customer@example.test')
+    expect(csv).not.toMatch(/member name|meeting link|payment token/i)
+    expect(csv.endsWith('\r\n')).toBe(true)
+    expect(healerHistoryExportHref('cancelled', 'Reiki & Yoga'))
+      .toBe('/api/healer/bookings/history/export?status=cancelled&q=Reiki+%26+Yoga')
+  })
+
 })
