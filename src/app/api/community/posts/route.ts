@@ -56,7 +56,11 @@ export async function GET(request: NextRequest) {
         orderBy = [{ comments: { _count: 'desc' } }, { createdAt: 'desc' }, { id: 'desc' }]
         break
       default: // 'latest'
-        orderBy = [{ createdAt: 'desc' }, { id: 'desc' }]
+        // Pinned discussions occupy real slots in the same cursor-paginated feed.
+        // For full-text searches, keep the existing chronological relevance window.
+        orderBy = !search
+          ? [{ isPinned: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }]
+          : [{ createdAt: 'desc' }, { id: 'desc' }]
     }
 
     const postInclude = {
@@ -66,40 +70,23 @@ export async function GET(request: NextRequest) {
       _count: { select: { comments: { where: { deletedAt: null } }, likes: true } },
     } as const
 
-    // Fetch pinned posts separately (only on first page, no cursor, default sort, no search)
-    type PostWithIncludes = Prisma.CommunityPostGetPayload<{ include: typeof postInclude }>
-    let pinnedPosts: PostWithIncludes[] = []
-    const pinnedFirst = sort === 'latest' && !search
-    if (!cursor && pinnedFirst) {
-      pinnedPosts = await prisma.communityPost.findMany({
-        where: { ...where, isPinned: true },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        include: postInclude,
-      })
-    }
-
+    // One bounded query for both pinned and ordinary posts. The compound
+    // order remains stable when the cursor moves between pinned and non-pinned
+    // rows; no pinned post can disappear or bypass the page size.
     const posts = await prisma.communityPost.findMany({
       take: take + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      where: {
-        ...where,
-        ...(pinnedFirst ? { isPinned: false } : {}),
-      },
+      where,
       orderBy,
       include: postInclude,
     })
-
     const hasMore = posts.length > take
     if (hasMore) posts.pop()
-
     const nextCursor = hasMore ? posts[posts.length - 1]?.id : null
-
-    // Combine pinned + regular for first page
-    const allPosts = cursor ? posts : [...pinnedPosts, ...posts]
 
     return NextResponse.json({
       success: true,
-      data: allPosts,
+      data: posts,
       nextCursor,
     })
   } catch (error) {
