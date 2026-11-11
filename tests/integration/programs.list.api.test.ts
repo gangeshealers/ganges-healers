@@ -99,6 +99,16 @@ describe('Programs list API', () => {
     expect(json.items.every((p: any) => /yoga|intro/i.test(p.title + ' ' + p.shortDescription))).toBe(true)
   })
 
+  test('a page that exactly fits the result count has no false next cursor', async () => {
+    const all = await List.GET(get('http://localhost/api/programs?limit=50'))
+    const total = (await all.json()).items.length
+    expect(total).toBeGreaterThan(0)
+    const response = await List.GET(get(`http://localhost/api/programs?limit=${total}`))
+    const page = await response.json()
+    expect(page.items).toHaveLength(total)
+    expect(page.nextCursor).toBeNull()
+  })
+
   test('limit and cursor pagination', async () => {
     const res1 = await List.GET(get('http://localhost/api/programs?limit=2'))
     const j1 = await res1.json()

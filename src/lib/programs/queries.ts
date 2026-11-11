@@ -44,7 +44,8 @@ export async function listPrograms(params?: { serviceSlug?: string; q?: string; 
     where,
     orderBy: { id: 'asc' },
     ...(cursor ? { cursor, skip: 1 } : {}),
-    take: limit,
+    // Read one extra record so the public page never advertises an empty next page.
+    take: limit + 1,
     select: {
       id: true,
       slug: true,
@@ -57,7 +58,8 @@ export async function listPrograms(params?: { serviceSlug?: string; q?: string; 
     },
   })
 
-  const items: ProgramListItem[] = rows.map((r) => ({
+  const pageRows = rows.slice(0, limit)
+  const items: ProgramListItem[] = pageRows.map((r) => ({
     id: r.id,
     slug: r.slug,
     title: r.title,
@@ -69,7 +71,7 @@ export async function listPrograms(params?: { serviceSlug?: string; q?: string; 
     heroImageUrl: null,
     ratingAvg: null,
   }))
-  const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
+  const nextCursor = rows.length > limit ? pageRows[pageRows.length - 1].id : null
   return { items, nextCursor }
 }
 
