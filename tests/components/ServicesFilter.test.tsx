@@ -89,3 +89,27 @@ test('unsupported sort URL values are ignored and the default is not added to su
   await user.click(screen.getByRole('button', { name: 'Apply Filters' }))
   expect(mockPush).toHaveBeenLastCalledWith('/services?search=sound')
 })
+
+test('in-person and online format options preserve current filters and reset on clear', async () => {
+  mockParams = new URLSearchParams({ format: 'in_person', category: 'Yoga', search: 'therapy', sort: 'popular' })
+  const user = userEvent.setup()
+  render(<ServicesFilter categories={['Yoga']} />)
+  const format = screen.getByRole('combobox', { name: 'Session format' })
+  expect(format).toHaveValue('in_person')
+  await user.selectOptions(format, 'online')
+  await user.click(screen.getByRole('button', { name: 'Apply Filters' }))
+  const url = new URL(mockPush.mock.lastCall?.[0], 'https://example.test')
+  expect(Object.fromEntries(url.searchParams)).toEqual({ category: 'Yoga', search: 'therapy', sort: 'popular', format: 'online' })
+  await user.click(screen.getByRole('button', { name: 'Clear all' }))
+  expect(format).toHaveValue('all')
+  expect(mockPush).toHaveBeenLastCalledWith('/services')
+})
+
+test('invalid format query values never become filters', async () => {
+  mockParams = new URLSearchParams({ format: 'IN_PERSON' })
+  const user = userEvent.setup()
+  render(<ServicesFilter categories={[]} />)
+  expect(screen.getByRole('combobox', { name: 'Session format' })).toHaveValue('all')
+  await user.click(screen.getByRole('button', { name: 'Apply Filters' }))
+  expect(mockPush).toHaveBeenLastCalledWith('/services')
+})
