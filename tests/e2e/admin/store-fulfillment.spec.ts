@@ -77,6 +77,12 @@ test('staff records a paid shipment and delivery and only the customer sees the 
     await expect(page.getByRole('button', { name: 'Mark delivered' })).toHaveCount(0)
     await ownerPage.reload()
     await expect(ownerPage.getByRole('main').getByText(/Delivery recorded/)).toBeVisible()
+    await page.goto('/admin/orders')
+    await page.getByRole('searchbox', { name: 'Exact order reference' }).fill(order.id)
+    await page.getByRole('button', { name: 'Find order', exact: true }).click()
+    await expect(page.getByRole('link', { name: `Order ${order.id}`, exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'All statuses' })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('list').getByText('Delivered', { exact: true })).toBeVisible()
     expect(await db.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ status: 'delivered', paymentId: payment.id })
     expect(await db.activityLog.count({ where: { entityId: order.id, userId: adminId } })).toBe(2)
   } finally {
