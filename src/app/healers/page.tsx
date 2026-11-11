@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { listHealers, getHealerServiceOptions } from '@/lib/healers/queries'
+import { listHealers, getHealerServiceOptions, parseHealerDirectorySort } from '@/lib/healers/queries'
 import type { Metadata } from 'next'
 import { canonicalOf } from '@/config/site'
 import Breadcrumbs from '@/components/seo/Breadcrumbs'
@@ -22,8 +22,9 @@ export default async function HealersPage({ searchParams }: { searchParams?: Pro
   const q = typeof sp.q === 'string' ? sp.q : undefined
   const serviceSlug = typeof sp.serviceSlug === 'string' ? sp.serviceSlug : undefined
   const cursor = typeof sp.cursor === 'string' ? sp.cursor : undefined
+  const sort = parseHealerDirectorySort(sp.sort)
   const [{ items, nextCursor }, availableServices] = await Promise.all([
-    listHealers({ q, serviceSlug, cursor, limit: 20 }),
+    listHealers({ q, serviceSlug, cursor, sort, limit: 20 }),
     getHealerServiceOptions(),
   ])
   const services = [...availableServices].sort((a, b) => a.name.localeCompare(b.name))
@@ -44,6 +45,11 @@ export default async function HealersPage({ searchParams }: { searchParams?: Pro
           <option value="">All services</option>
           {unavailableService ? <option value={serviceSlug}>Unavailable service</option> : null}
           {services.map(service => <option key={service.slug} value={service.slug}>{service.name}</option>)}
+        </select>
+        <label className="sr-only" htmlFor="healer-sort">Sort healers</label>
+        <select id="healer-sort" name="sort" defaultValue={sort} className="min-w-0 w-full border rounded px-3 py-2 sm:w-auto focus-ring">
+          <option value="default">Default order</option>
+          <option value="experience">Most experienced</option>
         </select>
         <button type="submit" className="shrink-0 border rounded px-3 py-2 focus-ring">Search</button>
       </form>
@@ -77,10 +83,15 @@ export default async function HealersPage({ searchParams }: { searchParams?: Pro
           ))}
         </div>
       )}
-      {nextCursor ? (
-        <div className="pt-2">
-          <Link href={`/healers?${new URLSearchParams({ ...(q ? { q } : {}), ...(serviceSlug ? { serviceSlug } : {}), cursor: nextCursor }).toString()}`} className="border rounded px-3 py-2 inline-block focus-ring">Load more</Link>
-        </div>
+      {nextCursor || cursor ? (
+        <nav aria-label="Healer directory pages" className="flex flex-wrap items-center justify-between gap-3 pt-2">
+          {cursor ? (
+            <Link href={`/healers?${new URLSearchParams({ ...(q ? { q } : {}), ...(serviceSlug ? { serviceSlug } : {}), ...(sort !== 'default' ? { sort } : {}) }).toString()}`} className="border rounded px-3 py-2 inline-block focus-ring">Back to first page</Link>
+          ) : <span />}
+          {nextCursor ? (
+            <Link href={`/healers?${new URLSearchParams({ ...(q ? { q } : {}), ...(serviceSlug ? { serviceSlug } : {}), ...(sort !== 'default' ? { sort } : {}), cursor: nextCursor }).toString()}`} className="border rounded px-3 py-2 inline-block focus-ring">Next healers</Link>
+          ) : <span className="text-sm text-muted-foreground">End of results</span>}
+        </nav>
       ) : null}
     </div>
   )
