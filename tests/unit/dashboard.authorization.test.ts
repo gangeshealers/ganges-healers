@@ -34,3 +34,17 @@ test('scopes bookings and enrollments to the signed-in customer', async () => {
   }))
   expect(db.courseEnrollment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ userId: 'customer' }) }))
 })
+
+test('dashboard community preview excludes soft-deleted posts and deleted comments', async () => {
+  auth.mockResolvedValue({ user: { id: 'customer' } })
+  await DashboardPage()
+  expect(db.communityPost.findMany).toHaveBeenCalledWith({
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    include: {
+      user: { select: { name: true, image: true } },
+      _count: { select: { comments: { where: { deletedAt: null } }, likes: true } },
+    },
+  })
+})
