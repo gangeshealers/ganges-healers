@@ -8,9 +8,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Prisma } from '@prisma/client'
 import { CatalogEditor } from '@/components/admin/catalog-editor'
+import ServiceImageField from '@/components/admin/ServiceImageField'
 import { maxServiceDuration, maxServicePrice, serviceFieldsSchema, serviceFormSchema } from '@/lib/services/catalog-schema'
 
-const invalidFields = 'Enter a name, description and category, choose a mode, and enter a valid price and duration.'
+const invalidFields = 'Enter the required service details, a valid price/duration, and an approved HTTPS image URL or leave the image empty.'
 
 async function guardAdmin() {
   const session = await auth()
@@ -36,6 +37,8 @@ async function createService(formData: FormData) {
     throw error
   }
   revalidatePath('/admin/services')
+  revalidatePath('/services')
+  revalidatePath(`/services/${fields.data.slug}`)
   return {}
 }
 
@@ -48,7 +51,10 @@ async function updateService(formData: FormData) {
   if (typeof id !== 'string' || !id) return { error: 'Select a service to edit.' }
   const result = await prisma.service.updateMany({ where: { id }, data: fields.data })
   if (!result.count) return { error: 'This service is no longer available. Reload the page.' }
+  const slug = formData.get('slug')
   revalidatePath('/admin/services')
+  revalidatePath('/services')
+  if (typeof slug === 'string' && slug) revalidatePath(`/services/${slug}`)
   return {}
 }
 
@@ -112,6 +118,9 @@ export default async function AdminServicesPage() {
               <Label htmlFor="new-desc">Description</Label>
               <textarea id="new-desc" name="description" required className="min-h-[60px] rounded-md border px-3 py-2 bg-background text-sm" />
             </div>
+            <div className="md:col-span-3">
+              <ServiceImageField id="new-service-image" />
+            </div>
           </CatalogEditor>
         </CardContent>
       </Card>
@@ -134,6 +143,7 @@ export default async function AdminServicesPage() {
                 <div className="flex gap-2 shrink-0">
                   <form action={toggleService}>
                     <input type="hidden" name="id" value={s.id} />
+                  <input type="hidden" name="slug" value={s.slug} />
                     <input type="hidden" name="isActive" value={String(s.isActive)} />
                     <Button type="submit" variant="outline" size="sm">
                       {s.isActive ? 'Deactivate' : 'Activate'}
@@ -174,6 +184,9 @@ export default async function AdminServicesPage() {
                   <div className="md:col-span-3 grid gap-1">
                     <Label htmlFor={`${s.id}-description`}>Description</Label>
                     <textarea id={`${s.id}-description`} name="description" defaultValue={s.description} required className="min-h-[60px] rounded-md border px-3 py-2 bg-background text-sm" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <ServiceImageField id={`${s.id}-image`} initialUrl={s.image} />
                   </div>
                 </CatalogEditor>
               </details>
