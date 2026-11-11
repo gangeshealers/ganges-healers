@@ -74,7 +74,7 @@ export default async function ProgramsPage({ searchParams }: { searchParams?: Pr
               const hasFilters = Boolean(sp?.q || sp?.serviceSlug || cursor)
               if (!hasFilters) return null
               const qs = new URLSearchParams(Object.entries(sp).flatMap(([k,v]) => Array.isArray(v) ? v.map((vv) => [k, String(vv)]) : v ? [[k, String(v)]] : []))
-              const href = clearSearchParams('/programs' + (qs.toString() ? `?${qs.toString()}` : ''), ['q','serviceSlug'])
+              const href = clearSearchParams('/programs' + (qs.toString() ? `?${qs.toString()}` : ''), ['q','serviceSlug','cursor'])
               return <Link href={href}><Button variant="secondary">Clear filters</Button></Link>
             })()}
           />
