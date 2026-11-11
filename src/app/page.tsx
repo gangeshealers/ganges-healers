@@ -6,6 +6,7 @@ import FreeAudioExperience from "@/components/home/FreeAudioExperience"
 import ServicesPreview from "@/components/home/ServicesPreview"
 import FeaturedHealers from "@/components/home/FeaturedHealers"
 import ProgramsPreview from "@/components/home/ProgramsPreview"
+import CoursesPreview from "@/components/home/CoursesPreview"
 import CommunityHighlights from "@/components/home/CommunityHighlights"
 import BlogPreview from "@/components/home/BlogPreview"
 import VIPMembershipSection from "@/components/home/VIPMembershipSection"
@@ -42,13 +43,15 @@ export default function Home() {
       <FeaturedHealers />
       {/* 7. Structured transformation — healing programs */}
       <ProgramsPreview />
-      {/* 8. Social proof — community activity */}
+      {/* 8. Learning — active courses with saved lesson counts */}
+      <CoursesPreview />
+      {/* 9. Social proof — community activity */}
       <CommunityHighlights />
-      {/* 9. Content marketing — latest blog posts */}
+      {/* 10. Content marketing — latest blog posts */}
       <BlogPreview />
-      {/* 10. Monetisation — VIP membership pitch */}
+      {/* 11. Monetisation — VIP membership pitch */}
       <VIPMembershipSection />
-      {/* 11. Final CTA — diversified across all pillars */}
+      {/* 12. Final CTA — diversified across all pillars */}
       <CTASection />
     </div>
   )
