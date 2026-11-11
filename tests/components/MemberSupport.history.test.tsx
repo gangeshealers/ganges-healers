@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -107,6 +107,7 @@ test('repeated search values never produce an owner query and a bounded literal 
   expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'owner-123' }, skip: 20 }))
   expect(screen.queryByRole('link', { name: 'Clear search' })).not.toBeInTheDocument()
 
+  cleanup()
   findMany.mockClear()
   const tooLong = 'a'.repeat(100)
   render(await MemberSupportPage({ searchParams: Promise.resolve({ q: tooLong }) }))
