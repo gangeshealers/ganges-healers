@@ -117,6 +117,14 @@ export default function DashboardClient({ bookings, recentPosts = [], courseEnro
       <section className="rounded-lg border p-5 space-y-2"><h2 className="text-xl font-semibold">My Programs</h2><p className="text-sm text-muted-foreground">View your enrollments, confirmed appointments and session progress.</p><Button asChild variant="outline"><Link href="/dashboard/programs">View My Programs</Link></Button></section>
 
       <section className="rounded-lg border p-5 space-y-2">
+        <h2 className="text-xl font-semibold">Billing &amp; invoices</h2>
+        <p className="text-sm text-muted-foreground">
+          Find receipts from your sessions, memberships, courses, programs and store purchases.
+        </p>
+        <Button asChild variant="outline"><Link href="/dashboard/billing">View billing history</Link></Button>
+      </section>
+
+      <section className="rounded-lg border p-5 space-y-2">
         <h2 className="text-xl font-semibold">Need assistance?</h2>
         <p className="text-sm text-muted-foreground">
           Send a private support request about bookings, payments, courses, or your account, and follow responses in your dashboard.
