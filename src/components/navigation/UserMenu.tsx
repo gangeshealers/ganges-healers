@@ -65,7 +65,7 @@ export function UserMenu({
       { label: 'Manage articles', href: '/admin/blog' },
       { label: 'Payments', href: '/admin/payments' },
       { label: 'Analytics', href: '/admin/analytics' },
-    ] }] : mode === 'healer' ? [{ title: 'Healer workspace', items: [{ label: 'Healer dashboard', href: '/healer' }, { label: 'Healer bookings', href: '/healer/bookings' }, { label: 'Assigned programs', href: '/healer/programs' }, { label: 'Availability', href: '/healer/availability' }, { label: 'Healer profile', href: '/healer/profile' }] }] : []),
+    ] }] : mode === 'healer' ? [{ title: 'Healer workspace', items: [{ label: 'Healer dashboard', href: '/healer' }, { label: 'Healer bookings', href: '/healer/bookings' }, { label: 'Assigned programs', href: '/healer/programs' }, { label: 'Session payments', href: '/healer/payments' }, { label: 'Availability', href: '/healer/availability' }, { label: 'Healer profile', href: '/healer/profile' }] }] : []),
     { title: 'My account', items: [{ label: 'Dashboard', href: '/dashboard' }, { label: 'My bookings', href: '/dashboard/bookings' }, { label: 'My programs', href: '/dashboard/programs' }, { label: 'Orders', href: '/dashboard/orders' }, { label: 'Billing & invoices', href: '/dashboard/billing' }, { label: 'Membership', href: '/dashboard/membership' }, { label: 'Notifications', href: '/dashboard/notifications' }, { label: 'Support center', href: '/dashboard/support' }, { label: 'My discussions', href: '/community/mine' }, { label: 'Settings', href: '/dashboard/settings' }] },
   ];
   return <Dialog open={open} onOpenChange={onOpenChange}>
