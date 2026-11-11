@@ -21,6 +21,12 @@ The system stores content and account references in PostgreSQL. Support messages
 
 ## Deployment
 
+**Fail-closed rollout:** `SUPPORT_DESK_ENABLED` defaults to disabled. Until it is set to the exact string `true`, member and admin pages show a safe unavailable message and the POST endpoint returns HTTP 503 without querying `SupportTicket`. Admin update actions refuse changes while disabled.
+
+Apply and verify migration `20261111010000_member_support_desk` in each intended database environment *before* enabling this variable there. Do not enable the feature for production without database cutover, support staffing, and data-retention/privacy review. A Vercel Preview deployment can contain the code with the feature disabled until its own Preview database is migrated.
+
+
+
 Migration: `20261111010000_member_support_desk`. Apply it **only** to the intended database branch, using the repo's established deployment migration workflow and verifying the target first. Do not apply migrations or customer messages to the production database as part of this feature PR.
 
 The workflow requires **no new external providers or environment variables**. It does not claim email delivery, support SLAs, attachments, chat, or remote case management. Production rollout requires a data-retention/privacy review and an operational support team.
