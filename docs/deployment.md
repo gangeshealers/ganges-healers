@@ -159,10 +159,30 @@ origin (`AUTH_URL`, `NEXTAUTH_URL` or `NEXT_PUBLIC_SITE_URL`; Vercel URL is the
 existing fallback). Missing email/origin configuration leaves events pending and
 recovery reports `disabled: true`. Redis is required to start the existing worker;
 the outbox recovery endpoint itself uses PostgreSQL independently of Redis.
-An external scheduler can call `GET /api/cron/booking-emails` with the existing
-CRON_SECRET Bearer header every minute. The route handles three due events and
-returns aggregate counts. This patch does not create a hosted schedule or change
-live credentials; verify a running worker or authenticated scheduler before launch.
+A static `booking-email-recovery` Vercel Schedules entry in `vercel.json` is
+prepared to call `GET /api/cron/booking-emails` every 15 minutes with the existing
+`CRON_SECRET` Bearer token. Schedules uses POST by default, so the explicit
+`requestMethod: "GET"` is required for the existing guarded route. The entry
+is separate from, and must never duplicate, the existing legacy Cron Jobs list.
+It handles three due records per run and returns aggregate counts. Fifteen-minute
+recovery is a *backstop*, not equivalent to the persistent worker's one-minute
+poll, not a provider delivery guarantee, and not sufficient if volume exceeds
+three due events per run.
+
+Vercel Schedules is a public beta; do not assume a committed configuration is
+active. On the exact target deployment, verify the schedule exists, is enabled
+in the intended environment, receives an authenticated 200, processes seeded
+noncustomer Preview events, and handles duplicate/outage recovery. Check schedule
+run history and the admin booking-email queue. Monitor failures, disabled sender,
+PENDING/REVIEW backlog and provider receipts. Validate plan caps and commercial
+hosting before production: Hobby's beta schedule interval is 15 minutes minimum,
+but paid commercial Ganges Healers hosting requires an owner-approved commercial
+plan. Never weaken the endpoint authentication or run live sends solely because
+the schedule appears configured.
+
+Alternatively, a separately deployed trusted scheduler or persistent worker can
+use the same endpoint/database. No runtime environment, billing, provider or
+production change is made by adding the configuration.
 
 Monitor delivery state without exposing recipient payloads:
 
