@@ -32,7 +32,8 @@ test('sitemap includes only reachable roots and no missing /about page', async (
   expect(urls).toContain(canonicalOf('/') + '/')
   expect(urls).toContain(canonicalOf('/services'))
   expect(urls).toContain(canonicalOf('/programs'))
-  expect(urls).not.toContain(canonicalOf('/about'))
+  expect(urls).toContain(canonicalOf('/about'))
+  expect(urls).toContain(canonicalOf('/contact'))
 })
 
 test('public service, program and healer listings apply the publication rules', async () => {
