@@ -66,11 +66,14 @@ export async function getHealerAvailability(
     where: { id: healerId },
     select: {
       availability: true,
-      isActive: true
+      isActive: true,
+      isVerified: true
     }
   })
   
-  if (!healer || !healer.isActive) {
+  // Retain private rescheduling for previously booked sessions, but never
+  // advertise new public appointment slots for an unverified practitioner.
+  if (!healer || !healer.isActive || (!excludeBookingId && !excludeProgramSessionId && !healer.isVerified)) {
     return {
       date,
       slots: []
@@ -148,7 +151,7 @@ async function validateReservationSlot(
   // Get healer and service
   const healer = await client.healer.findUnique({
     where: { id: healerId },
-    select: { availability: true, isActive: true }
+    select: { availability: true, isActive: true, isVerified: true }
   })
   
   const service = serviceId ? await client.service.findUnique({
@@ -156,8 +159,10 @@ async function validateReservationSlot(
     select: { duration: true, isActive: true }
   }) : null
   
-  if (!healer || !healer.isActive) {
-    return { valid: false, error: 'Healer not found or inactive' }
+  // Existing paid appointments and program fulfillment can be rescheduled;
+  // a brand-new customer booking must use a currently approved practitioner.
+  if (!healer || !healer.isActive || (serviceId && !options.excludeBookingId && !healer.isVerified)) {
+    return { valid: false, error: 'Healer not found or unavailable for new bookings' }
   }
   
   if (serviceId && (!service || !service.isActive)) {
