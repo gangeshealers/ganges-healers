@@ -167,7 +167,7 @@ export const emailService = {
     }, 'booking-reminder/' + data.bookingId + '/' + data.scheduledAtIso)
   },
 
-  ,async sendInvoiceEmail(data: { to: string; invoiceNumber: string; amountPaise: number; link: string }) {
+  async sendInvoiceEmail(data: { to: string; invoiceNumber: string; amountPaise: number; link: string }) {
     if (disabled || !resend) {
       console.warn('[invoice][generate][email_skipped]', { invoiceNumber: data.invoiceNumber })
       return { success: false, disabled: true }
