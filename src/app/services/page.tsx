@@ -11,8 +11,8 @@ import { canonicalOf } from '@/config/site'
 import Breadcrumbs from '@/components/seo/Breadcrumbs'
 import BreadcrumbsLd from '@/components/seo/BreadcrumbsLd'
 import { makeServicesIndexCrumbs } from '@/lib/seo/breadcrumbs'
-import { parseCatalogPage, parseCatalogPrice, parseMinimumServiceRating, parseServiceCatalogSort } from '@/lib/services/catalog-filters'
-import { Prisma } from '@prisma/client'
+import { parseCatalogPage, parseCatalogPrice, parseMinimumServiceRating, parseServiceCatalogSort, parseServiceFormat } from '@/lib/services/catalog-filters'
+import { Prisma, ServiceMode } from '@prisma/client'
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -34,6 +34,7 @@ interface RawService {
   image: string | null
   price: number
   duration: number
+  mode: ServiceMode
   _count: { bookings: number }
 }
 
@@ -46,6 +47,7 @@ interface UiService {
   image?: string
   price: number
   duration: number
+  mode: ServiceMode
   averageRating: number | null
   totalSessions: number
   totalReviews: number
@@ -64,6 +66,7 @@ async function getServices(
   const maxPrice = parseCatalogPrice(params.maxPrice)
   const requestedPage = parseCatalogPage(params.page)
   const sort = parseServiceCatalogSort(params.sort)
+  const format = parseServiceFormat(params.format)
   const orderBy: Prisma.ServiceOrderByWithRelationInput[] = sort === 'popular'
     ? [{ popularity: 'desc' }, { name: 'asc' }, { id: 'asc' }]
     : sort === 'price_asc'
@@ -72,6 +75,8 @@ async function getServices(
         ? [{ price: 'desc' }, { name: 'asc' }, { id: 'asc' }]
         : [{ createdAt: 'desc' }, { id: 'desc' }]
   const where: Prisma.ServiceWhereInput = { isActive: true }
+  if (format === 'online') where.mode = { in: [ServiceMode.ONLINE, ServiceMode.BOTH] }
+  if (format === 'in_person') where.mode = { in: [ServiceMode.OFFLINE, ServiceMode.BOTH] }
 
   if (category) where.category = category
   if (minPrice !== undefined || maxPrice !== undefined) {
@@ -114,6 +119,7 @@ async function getServices(
       image: true,
       price: true,
       duration: true,
+      mode: true,
       _count: { select: { bookings: true } },
     },
   }) : []
@@ -136,6 +142,7 @@ async function getServices(
     image: service.image ?? undefined,
     price: service.price,
     duration: service.duration,
+    mode: service.mode,
     averageRating: ratings.get(service.id)?._avg.rating ?? null,
     totalSessions: service._count.bookings,
     totalReviews: ratings.get(service.id)?._count.rating ?? 0,
@@ -156,8 +163,9 @@ export default async function ServicesPage({
   ])
   const categories = categoryRows.map(row => row.category).filter(Boolean)
   const sort = parseServiceCatalogSort(params.sort)
+  const format = parseServiceFormat(params.format)
   const filterKeys = ['category', 'search', 'q', 'minPrice', 'maxPrice'] as const
-  const hasFilters = sort !== 'newest' || minimumRating !== undefined || filterKeys.some(key => Boolean(params[key]))
+  const hasFilters = format !== 'all' || sort !== 'newest' || minimumRating !== undefined || filterKeys.some(key => Boolean(params[key]))
   const { items: services, total, page, totalPages } = catalog
   const pageHref = (nextPage: number) => {
     const query = new URLSearchParams()
@@ -166,6 +174,7 @@ export default async function ServicesPage({
       if (typeof value === 'string' && value.trim()) query.set(key, value.trim())
     }
     if (sort !== 'newest') query.set('sort', sort)
+    if (format !== 'all') query.set('format', format)
     if (nextPage > 1) query.set('page', String(nextPage))
     return `/services${query.size ? `?${query}` : ''}`
   }
@@ -194,7 +203,7 @@ export default async function ServicesPage({
           {/* Filters Sidebar */}
           <aside className="lg:w-64">
             <Suspense fallback={<div>Loading filters...</div>}>
-              <ServicesFilter key={JSON.stringify([...filterKeys.map(key => params[key]), minimumRating, sort])} categories={categories} minimumRating={minimumRating} />
+              <ServicesFilter key={JSON.stringify([...filterKeys.map(key => params[key]), minimumRating, sort, format])} categories={categories} minimumRating={minimumRating} />
             </Suspense>
           </aside>
           
