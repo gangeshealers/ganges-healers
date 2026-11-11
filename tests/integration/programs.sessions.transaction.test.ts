@@ -35,8 +35,8 @@ beforeAll(async () => {
   const createUser = (role: 'ADMIN' | 'USER' | 'HEALER') => prisma.user.create({ data: { email: `program-session-${randomUUID()}@example.test`, role, name: role } })
   adminId = (await createUser('ADMIN')).id; ownerId = (await createUser('USER')).id; outsiderId = (await createUser('USER')).id
   staffId = (await createUser('HEALER')).id; otherStaffId = (await createUser('HEALER')).id
-  healerId = (await prisma.healer.create({ data: { userId: staffId, availability: allDay } })).id
-  otherHealerId = (await prisma.healer.create({ data: { userId: otherStaffId, availability: allDay } })).id
+  healerId = (await prisma.healer.create({ data: { userId: staffId, availability: allDay, isVerified: true } })).id
+  otherHealerId = (await prisma.healer.create({ data: { userId: otherStaffId, availability: allDay, isVerified: true } })).id
   serviceId = (await prisma.service.create({ data: { slug: `session-conflict-${randomUUID()}`, name: 'Booking Conflict', category: 'test', description: 'Test', price: 250, duration: 60 } })).id
 })
 beforeEach(() => { mockUserId = adminId; mockRole = 'ADMIN' })
