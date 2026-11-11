@@ -9,7 +9,7 @@ import { trackClientEvent } from '@/lib/analytics/track-client-event'
 
 jest.mock('@/components/store/AddToCartButton', () => ({
   __esModule: true,
-  default: () => <div data-testid="add-to-cart" />,
+  default: ({ stockStatus }: { stockStatus: string }) => <div data-testid="add-to-cart" data-stock={stockStatus} />,
 }))
 
 jest.mock('@/lib/store/queries', () => ({
@@ -35,6 +35,23 @@ describe('ProductDetailPage smoke', () => {
     expect(trackClientEvent).toHaveBeenCalledWith('product_view', expect.objectContaining({
       metadata: { productId: '1', title: 'Oil 1', pricePaise: 19900 },
     }))
+  })
+
+  test.each([
+    { count: 0, status: 'IN_STOCK', expected: 'Out of stock', passedToCart: 'OUT' },
+    { count: null, status: 'IN_STOCK', expected: 'In stock', passedToCart: 'IN_STOCK' },
+    { count: 3, status: 'IN_STOCK', expected: 'Only 3 left', passedToCart: 'IN_STOCK' },
+  ] as const)('shows truthful availability for quantity $count', async ({ count, status, expected, passedToCart }) => {
+    jest.mocked(getProductBySlug).mockResolvedValueOnce({
+      id: 'stock-check', slug: 'oil-stock', title: 'Stock Test Oil',
+      shortDescription: 'Product for stock test', longDescription: 'Long desc',
+      pricePaise: 1000, imageUrl: null, ratingAvg: null, stockStatus: status,
+      stockCount: count, isConsecrated: false, chakra: null, category: null,
+    })
+    render(await Page({ params: Promise.resolve({ slug: 'oil-stock' }), searchParams: Promise.resolve({}) }))
+    expect(screen.getByText(expected, { exact: true })).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-cart')).toHaveAttribute('data-stock', passedToCart)
+    expect(screen.queryByText(/selling fast|few pieces available/i)).not.toBeInTheDocument()
   })
 
   test.each(['A', 'B'] as const)('renders the assigned %s headline variant without changing the product price', async variant => {
