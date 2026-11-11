@@ -58,6 +58,7 @@ export default async function AdminPage() {
         <Button asChild variant="outline"><Link href="/admin/audio">Manage Audio</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/products">Manage Products</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/orders">Manage Orders</Link></Button>
+        <Button asChild variant="outline"><Link href="/admin/bookings">Booking Operations</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/booking-emails">Booking Emails</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/programs">Manage Programs</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/program-enrollments">Program Enrollments</Link></Button>
