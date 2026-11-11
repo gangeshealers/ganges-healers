@@ -9,6 +9,7 @@ jest.mock('@/lib/prisma', () => ({
 }))
 
 jest.mock('@/lib/store/queries', () => ({
+  parseProductSort: (value: unknown) => value === 'price_asc' || value === 'price_desc' ? value : 'default',
   listProducts: jest.fn(async () => ({ items: [], nextCursor: null }))
 }))
 
