@@ -95,7 +95,7 @@ test('administrators can record booking email reviews without exposing or changi
     await expectPrivateResponse(privateLease)
 
     await page.goto(`${path}?booking=one&booking=two`)
-    await expect(page.getByRole('alert')).toHaveText('Enter one valid booking reference.')
+    await expect(page.getByRole('alert').filter({ hasText: 'Enter one valid booking reference.' })).toHaveText('Enter one valid booking reference.')
     await expect(activity).toHaveCount(0)
 
     await page.goto(`${path}?booking=${bookingIds[0]}`)
