@@ -1,4 +1,5 @@
 import { SITE_URL, canonicalOf, siteOrigin } from '@/config/site'
+import robots from '@/app/robots'
 
 describe('public canonical origin', () => {
   test('prefers the approved HTTPS site origin over a deployment hostname', () => {
@@ -26,4 +27,16 @@ describe('public canonical origin', () => {
     expect(url.searchParams.get('ref')).toBe('profile')
     expect(value).not.toContain('<your-prod-domain>')
   })
+})
+
+
+test('Vercel Preview blocks crawlers even without an explicit robots override', () => {
+  const previous = process.env.VERCEL_ENV
+  try {
+    process.env.VERCEL_ENV = 'preview'
+    expect(robots().rules).toEqual([{ userAgent: '*', disallow: '/' }])
+  } finally {
+    if (previous === undefined) delete process.env.VERCEL_ENV
+    else process.env.VERCEL_ENV = previous
+  }
 })
