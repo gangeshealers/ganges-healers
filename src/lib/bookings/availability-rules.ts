@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
 
 export const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 export type WeekDay = typeof WEEK_DAYS[number]
@@ -56,7 +57,7 @@ export function getWeeklyScheduleCue(availability: unknown, now = new Date()): s
   if (!schedule) return null
 
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', weekday: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    timeZone: BOOKING_TIME_ZONE, weekday: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(now)
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value ?? ''
   const day = get('weekday').toLowerCase() as WeekDay
