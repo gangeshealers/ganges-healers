@@ -32,6 +32,17 @@ test('customers filter and page orders, inspect totals, and cannot view another 
       shippingAddress: { name: 'Order Test Customer', line1: 'Private practice address', city: 'Rishikesh', state: 'Uttarakhand', postalCode: '249201' },
     })) })
     await db.orderItem.create({ data: { orderId: paidIds[0], productId, quantity: 3, pricePaise: 120000 } })
+    const payment = await db.payment.create({ data: {
+      userId: ownerId, type: 'STORE', gateway: 'razorpay', status: 'success', statusEnum: 'SUCCESS',
+      amountPaise: 120000, gatewayPaymentId: 'pay_receipt_' + token, metadata: { orderId: paidIds[0] },
+    } })
+    await db.order.update({ where: { id: paidIds[0] }, data: { paymentId: payment.id } })
+    const receiptNumber = 'INV-ORDER-' + token
+    await db.invoice.create({ data: {
+      paymentId: payment.id, invoiceNumber: receiptNumber, billTo: {},
+      lineItems: [], subtotalPaise: 120000, taxPaise: 0, totalPaise: 120000,
+      pdfUrl: 'https://example.test/order-receipt.pdf',
+    } })
     const shipped = await db.order.create({ data: { userId: ownerId, status: 'shipped', totalPaise: 40000 } })
     const foreign = await db.order.create({ data: { userId: otherId, status: 'paid', totalPaise: 99900 } })
 
@@ -59,6 +70,8 @@ test('customers filter and page orders, inspect totals, and cannot view another 
     await expect(page.getByText('₹1,200.00', { exact: true })).toHaveCount(2)
     await expect(page.getByText('Private practice address', { exact: true })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Order progress' }).locator('[aria-current="step"]')).toContainText('Paid')
+    await expect(page.getByRole('link', { name: 'View order invoice' })).toHaveAttribute('href', '/invoices/' + receiptNumber + '/view')
+    await expect(page.getByRole('link', { name: 'View all billing history' })).toHaveAttribute('href', '/dashboard/billing')
 
     const stranger = await other.newPage()
     await stranger.goto(`/dashboard/orders/${paidIds[0]}`)
