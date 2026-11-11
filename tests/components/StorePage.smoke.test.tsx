@@ -11,6 +11,7 @@ jest.mock('@/lib/prisma', () => ({
 }))
 
 jest.mock('@/lib/store/queries', () => ({
+  parseProductSort: (value: unknown) => value === 'price_asc' || value === 'price_desc' ? value : 'default',
   listProducts: jest.fn(async () => ({
     items: [
       { id: '1', slug: 'oil-1', title: 'Oil 1', shortDescription: 'Nice oil', pricePaise: 19900, imageUrl: null, ratingAvg: 4.7, stockStatus: 'IN_STOCK', category: { slug: 'oils', title: 'Oils' } },
