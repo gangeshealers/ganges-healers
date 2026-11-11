@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { readOrderTracking, shippingAddressSchema } from "@/lib/store/order-shipping"
 import { OrderPaymentButton } from "@/components/store/OrderPaymentButton"
+import { ownedStoreInvoiceHref } from "@/lib/store/order-invoice"
 
 export const dynamic = "force-dynamic"
 
@@ -43,6 +44,7 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
       status: true,
       totalPaise: true,
       createdAt: true,
+      paymentId: true,
       shippingAddress: true,
       trackingInfo: true,
       items: {
@@ -57,6 +59,7 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
   })
 
   if (!order) notFound()
+  const receiptHref = await ownedStoreInvoiceHref(session.user.id, order.id, order.paymentId)
   const addressResult = shippingAddressSchema.safeParse(order.shippingAddress)
   const address = addressResult.success ? addressResult.data : null
   const tracking = readOrderTracking(order.status, order.trackingInfo)
@@ -158,6 +161,22 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
           <span>{formatPaise(order.totalPaise)}</span>
         </div>
       </Card>
+
+      {order.status !== 'pending_payment' && (
+        <Card className="space-y-3 p-5">
+          <h2 className="text-lg font-semibold">Receipt and billing</h2>
+          {receiptHref ? (
+            <p className="text-sm">
+              <Link href={receiptHref} className="font-semibold text-primary underline-offset-4 hover:underline">View order invoice</Link>
+            </p>
+          ) : (
+            <p role="status" className="text-sm text-muted-foreground">
+              An issued invoice is not available for this order yet. Check your billing history or contact support if a paid receipt is missing.
+            </p>
+          )}
+          <Link href="/dashboard/billing" className="inline-flex rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted">View all billing history</Link>
+        </Card>
+      )}
 
       <Card className="space-y-3 p-5">
         <h2 className="text-lg font-semibold">Shipping Address</h2>
