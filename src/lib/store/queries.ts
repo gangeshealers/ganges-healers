@@ -1,4 +1,12 @@
 import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
+
+export type ProductSort = 'default' | 'price_asc' | 'price_desc'
+
+/** Invalid sort query values must not alter the public catalog's existing order. */
+export function parseProductSort(value: unknown): ProductSort {
+  return value === 'price_asc' || value === 'price_desc' ? value : 'default'
+}
 
 export type ProductCategoryRef = { slug: string; title: string }
 
@@ -26,12 +34,17 @@ export type ProductDetail = ProductListItem & {
   service?: { slug: string; title: string } | null
 }
 
-export async function listProducts(params?: { categorySlug?: string; chakra?: string; q?: string; limit?: number; cursor?: string }): Promise<{ items: ProductListItem[]; nextCursor: string | null }> {
+export async function listProducts(params?: { categorySlug?: string; chakra?: string; q?: string; limit?: number; cursor?: string; sort?: ProductSort }): Promise<{ items: ProductListItem[]; nextCursor: string | null }> {
   const limit = Math.max(1, Math.min(params?.limit ?? 20, 50))
   const q = params?.q?.trim()
   const categorySlug = params?.categorySlug?.trim()
   const chakra = params?.chakra?.trim()
   const cursor = params?.cursor ? { id: params.cursor } : undefined
+  const orderBy: Prisma.ProductOrderByWithRelationInput[] = params?.sort === 'price_asc'
+    ? [{ pricePaise: 'asc' }, { id: 'asc' }]
+    : params?.sort === 'price_desc'
+      ? [{ pricePaise: 'desc' }, { id: 'asc' }]
+      : [{ id: 'asc' }]
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = { isActive: true }
@@ -50,7 +63,7 @@ export async function listProducts(params?: { categorySlug?: string; chakra?: st
 
   const rows = await prisma.product.findMany({
     where,
-    orderBy: { id: 'asc' },
+    orderBy,
     ...(cursor ? { cursor, skip: 1 } : {}),
     // Fetch an extra row to avoid advertising a next page that is empty.
     take: limit + 1,

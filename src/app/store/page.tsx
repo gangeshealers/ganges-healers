@@ -2,7 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { canonicalOf } from '@/config/site'
 import type { Metadata } from 'next'
-import { listProducts } from '@/lib/store/queries'
+import { listProducts, parseProductSort } from '@/lib/store/queries'
 import { prisma } from '@/lib/prisma'
 import Breadcrumbs from '@/components/seo/Breadcrumbs'
 import BreadcrumbsLd from '@/components/seo/BreadcrumbsLd'
@@ -26,6 +26,7 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
   const q = typeof sp.q === 'string' ? sp.q.trim().slice(0, 120) : undefined
   const categorySlug = typeof sp.categorySlug === 'string' ? sp.categorySlug.trim() : undefined
   const chakra = typeof sp.chakra === 'string' ? sp.chakra.trim() : undefined
+  const sort = parseProductSort(sp.sort)
   const cursor = typeof sp.cursor === 'string' && /^[A-Za-z0-9_-]{1,180}$/.test(sp.cursor) ? sp.cursor : undefined
 
   const CHAKRAS = [
@@ -38,8 +39,8 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
     { value: 'Crown', label: 'Crown' },
   ] as const
 
-  const { items, nextCursor } = await listProducts({ q, categorySlug, chakra, limit: 20, cursor })
-  const firstPageHref = (() => { const p = new URLSearchParams(); if (q) p.set('q', q); if (categorySlug) p.set('categorySlug', categorySlug); if (chakra) p.set('chakra', chakra); return `/store${p.size ? `?${p}` : ''}` })()
+  const { items, nextCursor } = await listProducts({ q, categorySlug, chakra, sort, limit: 20, cursor })
+  const firstPageHref = (() => { const p = new URLSearchParams(); if (q) p.set('q', q); if (categorySlug) p.set('categorySlug', categorySlug); if (chakra) p.set('chakra', chakra); if (sort !== 'default') p.set('sort', sort); return `/store${p.size ? `?${p}` : ''}` })()
 
   const categories = await prisma.productCategory.findMany({
     select: { slug: true, title: true, _count: { select: { products: { where: { isActive: true } } } } },
@@ -68,8 +69,15 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
         </p>
       </section>
 
-      <form className="flex gap-2" action="/store" method="get">
-        <input name="q" defaultValue={q} placeholder="Search products" className="border px-3 py-2 rounded w-full focus-ring" />
+      <form className="flex flex-col gap-2 sm:flex-row" action="/store" method="get" role="search" aria-label="Find store products">
+        <label htmlFor="product-search" className="sr-only">Search store products</label>
+        <input id="product-search" name="q" type="search" defaultValue={q} maxLength={120} placeholder="Search products" className="min-w-0 flex-1 border px-3 py-2 rounded focus-ring" />
+        <label htmlFor="store-sort" className="sr-only">Sort products</label>
+        <select id="store-sort" name="sort" defaultValue={sort} className="min-w-0 rounded border bg-background px-3 py-2 text-sm focus-ring">
+          <option value="default">Default order</option>
+          <option value="price_asc">Price: low to high</option>
+          <option value="price_desc">Price: high to low</option>
+        </select>
         {categorySlug ? <input type="hidden" name="categorySlug" value={categorySlug} /> : null}
         {chakra ? <input type="hidden" name="chakra" value={chakra} /> : null}
         <button className="px-4 py-2 bg-primary text-primary-foreground rounded focus-ring" type="submit">Search</button>
@@ -80,14 +88,14 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
         <p className="text-sm font-medium text-muted-foreground mb-2">Filter by Chakra</p>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={(() => { const p = new URLSearchParams(); if (q) p.set('q', q); if (categorySlug) p.set('categorySlug', categorySlug); return '/store' + (p.toString() ? `?${p.toString()}` : '') })()}
+            href={(() => { const p = new URLSearchParams(); if (q) p.set('q', q); if (categorySlug) p.set('categorySlug', categorySlug); if (sort !== 'default') p.set('sort', sort); return '/store' + (p.toString() ? `?${p.toString()}` : '') })()}
             className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${!chakra ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted border-border'}`}
           >
             All
           </Link>
           {CHAKRAS.map((c) => {
             const active = chakra?.toLowerCase() === c.value.toLowerCase()
-            const href = (() => { const p = new URLSearchParams(); if (q) p.set('q', q); if (categorySlug) p.set('categorySlug', categorySlug); p.set('chakra', c.value); return `/store?${p.toString()}` })()
+            const href = (() => { const p = new URLSearchParams(); if (q) p.set('q', q); if (categorySlug) p.set('categorySlug', categorySlug); if (sort !== 'default') p.set('sort', sort); p.set('chakra', c.value); return `/store?${p.toString()}` })()
             return (
               <Link
                 key={c.value}
@@ -112,6 +120,7 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
                 const p = new URLSearchParams()
                 if (q) p.set('q', q)
                 if (chakra) p.set('chakra', chakra)
+                if (sort !== 'default') p.set('sort', sort)
                 if (!isActive) p.set('categorySlug', cat.slug)
                 return '/store' + (p.toString() ? `?${p.toString()}` : '')
               })()
@@ -180,10 +189,10 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
           title="No products found"
           subtitle="Try a different search or category."
           action={(() => {
-            const hasFilters = Boolean(q || categorySlug || chakra || cursor)
+            const hasFilters = Boolean(q || categorySlug || chakra || cursor || sort !== 'default')
             if (!hasFilters) return null
-            const qs = new URLSearchParams(Object.entries({ q: q || '', categorySlug: categorySlug || '', chakra: chakra || '' }).filter(([,v]) => v))
-            const href = clearSearchParams('/store' + (qs.toString() ? `?${qs.toString()}` : ''), ['q','categorySlug','chakra'])
+            const qs = new URLSearchParams(Object.entries({ q: q || '', categorySlug: categorySlug || '', chakra: chakra || '', sort: sort !== 'default' ? sort : '' }).filter(([,v]) => v))
+            const href = clearSearchParams('/store' + (qs.toString() ? `?${qs.toString()}` : ''), ['q','categorySlug','chakra','sort'])
             return <Link href={href}><Button variant="secondary">Clear filters</Button></Link>
           })()}
         />
@@ -227,6 +236,7 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
           {q ? <input type="hidden" name="q" value={q} /> : null}
           {categorySlug ? <input type="hidden" name="categorySlug" value={categorySlug} /> : null}
           {chakra ? <input type="hidden" name="chakra" value={chakra} /> : null}
+          {sort !== 'default' ? <input type="hidden" name="sort" value={sort} /> : null}
           <input type="hidden" name="cursor" value={nextCursor} />
           <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded focus-ring">Next products</button>
         </form>
