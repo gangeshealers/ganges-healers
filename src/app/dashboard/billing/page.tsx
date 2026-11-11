@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import Link from 'next/link'
 import { invoiceViewerHref } from '@/lib/invoices/viewer-link'
-import { BILLING_PAGE_SIZE, BILLING_MAX_PAGE, BILLING_TYPES, billingPageHref, parseBillingFilters, type BillingSearchParams } from '@/lib/invoices/billing-filters'
+import { BILLING_PAGE_SIZE, BILLING_MAX_PAGE, BILLING_TYPES, billingPageHref, billingExportHref, parseBillingFilters, type BillingSearchParams } from '@/lib/invoices/billing-filters'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,6 +68,13 @@ export default async function BillingPage({ searchParams }: { searchParams?: Pro
         <button type="submit" className="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90">Apply filters</button>
         <Link href="/dashboard/billing" className="inline-flex h-10 items-center justify-center rounded-md border px-4 text-sm font-semibold hover:bg-muted">Clear</Link>
       </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">Export includes all matching issued invoices, not only this page (up to 1,000).</p>
+        <a href={billingExportHref(filters)} download className="inline-flex rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Download billing CSV
+        </a>
+      </div>
 
       {visible.length === 0 ? (
         <section role="status" className="space-y-3 rounded-xl border border-dashed p-8 text-center">
