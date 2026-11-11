@@ -192,7 +192,7 @@ describe('API /api/services integration', () => {
       const customer = await prisma.user.create({ data: { email: `private-customer-${token}@example.test` } })
       const practitioner = await prisma.user.create({ data: { email: `private-healer-${token}@example.test`, name: 'Public Privacy Test Practitioner', role: 'HEALER' } })
       try {
-        const healer = await prisma.healer.create({ data: { userId: practitioner.id, bio: 'Public biography', availability: { private: 'schedule' } } })
+        const healer = await prisma.healer.create({ data: { userId: practitioner.id, bio: 'Public biography', isVerified: true, availability: { private: 'schedule' } } })
         const booking = await prisma.booking.create({ data: {
           userId: customer.id, healerId: healer.id, serviceId: testService.id, status: 'COMPLETED',
           scheduledAt: new Date(Date.now() - 86400000), durationMin: 60, pricePaise: 12345, meetingLink: 'https://example.test/private-meeting',
