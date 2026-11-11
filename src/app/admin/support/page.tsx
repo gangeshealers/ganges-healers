@@ -128,12 +128,12 @@ export default async function AdminSupportPage({
       </form>
 
       <nav aria-label="Filter support requests" className="flex flex-wrap gap-2">
-        {[
+        {([
           { value: 'OPEN', label: 'Received' },
           { value: 'IN_PROGRESS', label: 'In review' },
           { value: 'RESOLVED', label: 'Resolved' },
           { value: 'ALL', label: 'All requests' },
-        ].map(item => (
+        ] as const).map(item => (
           <Link
             key={item.value} href={filterHref(item.value)}
             aria-current={status === item.value ? 'page' : undefined}
