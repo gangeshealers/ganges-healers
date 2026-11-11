@@ -71,7 +71,7 @@ test('review shows saved payment, refund and email statuses without provider tok
   expect(screen.getByText('Reiki Care')).toBeInTheDocument()
   expect(screen.getByText(/Member One \(member@example\.test\)/)).toBeInTheDocument()
   expect(screen.getByText('Confirmed for delivery')).toBeInTheDocument()
-  expect(screen.getByText('₹250.00')).toBeInTheDocument()
+  expect(screen.getAllByText('₹250.00')).toHaveLength(2)
   expect(screen.getByText(/₹50.00 · PENDING/)).toBeInTheDocument()
   expect(screen.getByText(/CONFIRMED · PENDING · 1 attempts/)).toBeInTheDocument()
   expect(screen.getByText('Not confirmed sent')).toBeInTheDocument()
