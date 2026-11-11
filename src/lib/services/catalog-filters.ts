@@ -26,3 +26,11 @@ export function parseServiceCatalogSort(value: SearchValue): ServiceCatalogSort 
   if (value === 'popular' || value === 'price_asc' || value === 'price_desc') return value
   return 'newest'
 }
+
+/** Match a preferred session format, including services capable of either format. */
+export type ServiceFormatFilter = 'all' | 'online' | 'in_person'
+
+export function parseServiceFormat(value: SearchValue): ServiceFormatFilter {
+  if (value === 'online' || value === 'in_person') return value
+  return 'all'
+}
