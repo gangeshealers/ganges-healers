@@ -41,7 +41,8 @@ export function adminSupportWhere(status: AdminSupportStatus, q: string): Prisma
 /** Only allow known queue paths and bounded query fields in return navigation. */
 export function adminSupportHref(status: AdminSupportStatus, q: string, page = 1, notice?: { updated?: boolean; error?: string }) {
   const params = new URLSearchParams()
-  if (status !== 'ALL') params.set('status', status)
+  // Explicit ALL must survive navigation; an absent status defaults to OPEN.
+  params.set('status', status)
   if (q) params.set('q', q)
   if (page > 1) params.set('page', String(page))
   if (notice?.updated) params.set('updated', '1')
