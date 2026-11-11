@@ -15,11 +15,11 @@ const dateFormat = new Intl.DateTimeFormat('en-IN', { timeZone: BOOKING_TIME_ZON
 const statusLabels: Record<string, string> = { pending_payment: 'Payment pending', active: 'Active', completed: 'Completed', paused: 'Paused', cancelled: 'Cancelled' }
 function dateLabel(value: string) { return `${dateFormat.format(new Date(value))} IST` }
 
-export default function ProgramWorkspace({ items, healers = [] }: { items: ProgramEnrollmentView[]; healers?: HealerOption[] }) {
+export default function ProgramWorkspace({ items, healers = [], showOwnedCalendar = false }: { items: ProgramEnrollmentView[]; healers?: HealerOption[]; showOwnedCalendar?: boolean }) {
   if (!items.length) return <Card className="p-6"><p>No program enrollments found.</p><Link href="/programs" className="mt-2 inline-block underline">Browse programs</Link></Card>
-  return <div className="space-y-6">{items.map(row => <ProgramCard key={`${row.id}:${row.healer?.id ?? ''}:${row.status}`} enrollment={row} healers={healers} />)}</div>
+  return <div className="space-y-6">{items.map(row => <ProgramCard key={`${row.id}:${row.healer?.id ?? ''}:${row.status}`} enrollment={row} healers={healers} showOwnedCalendar={showOwnedCalendar} />)}</div>
 }
-function ProgramCard({ enrollment: row, healers }: { enrollment: ProgramEnrollmentView; healers: HealerOption[] }) {
+function ProgramCard({ enrollment: row, healers, showOwnedCalendar }: { enrollment: ProgramEnrollmentView; healers: HealerOption[]; showOwnedCalendar: boolean }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
@@ -41,6 +41,14 @@ function ProgramCard({ enrollment: row, healers }: { enrollment: ProgramEnrollme
     <div className="flex flex-wrap justify-between gap-3"><div><h2 className="text-xl font-semibold"><Link href={`/programs/${encodeURIComponent(row.program.slug)}`}>{row.program.title}</Link></h2><p className="text-sm text-muted-foreground">{statusLabels[row.status] ?? row.status}{row.pricePaise !== null && ` · ₹${(row.pricePaise / 100).toFixed(2)}`}</p></div>{row.status === 'pending_payment' && <Button asChild variant="outline"><Link href={`/programs/${encodeURIComponent(row.program.slug)}`}>Continue checkout</Link></Button>}</div>
     {row.canManage && <p className="text-sm">Customer: {row.customerName}{row.customerEmail ? ` · ${row.customerEmail}` : ''}</p>}
     <p className="text-sm">Practitioner: {row.healer?.name ?? 'Awaiting assignment'}</p>
+    {showOwnedCalendar && row.status === 'active' && row.sessions.some(session => session.status === 'scheduled') &&
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 p-3">
+        <p className="flex-1 text-sm text-muted-foreground">Save your confirmed program appointments to a calendar. This file is a snapshot; download it again after schedule changes.</p>
+        <a href={'/api/program-enrollments/' + encodeURIComponent(row.id) + '/calendar'} download="ganges-healers-upcoming.ics"
+          className="inline-flex rounded-md border bg-background px-4 py-2 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Download upcoming program calendar
+        </a>
+      </div>
     {row.canAssign && row.status === 'active' && <div className="flex flex-wrap items-end gap-2"><div className="grid gap-1 text-sm"><label htmlFor={`practitioner-${row.id}`}>Assign practitioner</label><select id={`practitioner-${row.id}`} value={healerId} onChange={event => setHealerId(event.target.value)} disabled={pending} className="h-10 rounded-md border bg-background px-3"><option value="">Choose practitioner</option>{row.healer && !healers.some(healer => healer.id === row.healer?.id) && <option value={row.healer.id}>{row.healer.name}</option>}{healers.map(healer => <option key={healer.id} value={healer.id}>{healer.name} · {healer.id.slice(-6)}</option>)}</select></div><Button variant="outline" disabled={pending || !healerId} onClick={() => act({ action: 'assign', healerId })}>Assign practitioner</Button></div>}
     {row.needsReview ? <p role="alert" className="text-destructive">This enrollment’s purchased schedule needs staff review.</p> : row.totalSessions > 0 && <div><p className="text-sm">{row.completedSessions} of {row.totalSessions} sessions completed · {row.progressPercent}%</p><progress aria-label={`${row.program.title} progress`} value={row.completedSessions} max={row.totalSessions} className="mt-2 h-2 w-full accent-purple-600" /></div>}
     {row.canManage && (row.status === 'active' || row.status === 'paused') && <Button variant="outline" disabled={pending || row.status === 'active' && row.sessions.some(session => session.status === 'scheduled')} onClick={() => act({ action: row.status === 'paused' ? 'resume' : 'pause' })}>{row.status === 'paused' ? 'Resume program' : 'Pause program'}</Button>}
