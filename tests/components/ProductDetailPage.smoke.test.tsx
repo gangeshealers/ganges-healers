@@ -31,10 +31,21 @@ describe('ProductDetailPage smoke', () => {
     expect(await screen.findByRole('heading', { level: 1, name: /Oil 1/i })).toBeInTheDocument()
     expect(screen.getByText('₹199.00')).toBeInTheDocument()
     expect(screen.getByText(/In stock/i)).toBeInTheDocument()
+    expect(screen.queryByText(/only a few pieces available/i)).not.toBeInTheDocument()
     expect(trackClientEvent).toHaveBeenCalledTimes(1)
     expect(trackClientEvent).toHaveBeenCalledWith('product_view', expect.objectContaining({
       metadata: { productId: '1', title: 'Oil 1', pricePaise: 19900 },
     }))
+  })
+
+  test('zero inventory displays Out of stock even with a stale IN_STOCK flag', async () => {
+    jest.mocked(getProductBySlug).mockResolvedValueOnce({
+      id: '1', slug: 'oil-1', title: 'Oil 1', shortDescription: 'Nice oil', longDescription: 'Long desc',
+      pricePaise: 19900, imageUrl: null, ratingAvg: null, stockStatus: 'IN_STOCK',
+      stockCount: 0, isConsecrated: false, chakra: null, category: null,
+    })
+    render(await Page({ params: Promise.resolve({ slug: 'oil-1' }), searchParams: Promise.resolve({}) }))
+    expect(screen.getByRole('status')).toHaveTextContent('Out of stock')
   })
 
   test.each(['A', 'B'] as const)('renders the assigned %s headline variant without changing the product price', async variant => {
