@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
+import { healerActivityStart } from "@/lib/healer/payment-activity"
 
 export const dynamic = "force-dynamic"
 
@@ -42,10 +43,10 @@ export default async function HealerDashboardPage() {
   })
 
   // Earnings
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthStart = healerActivityStart('month', now)!
 
   const totalAgg = await prisma.payment.aggregate({
-    where: { booking: { healerId: healer.id }, statusEnum: "SUCCESS" },
+    where: { booking: { healerId: healer.id }, statusEnum: "SUCCESS", currency: "INR" },
     _sum: { amountPaise: true },
     _count: { id: true },
   })
@@ -54,6 +55,7 @@ export default async function HealerDashboardPage() {
     where: {
       booking: { healerId: healer.id },
       statusEnum: "SUCCESS",
+      currency: "INR",
       createdAt: { gte: monthStart },
     },
     _sum: { amountPaise: true },
@@ -91,7 +93,7 @@ export default async function HealerDashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Earnings
+              Gross Session Collections
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -104,7 +106,7 @@ export default async function HealerDashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              This Month
+              Collected This Month (IST)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -127,6 +129,11 @@ export default async function HealerDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Gross successful session payments shown above are not practitioner payouts or net compensation.
+        <Link href="/healer/payments" className="ml-2 font-semibold text-primary underline-offset-4 hover:underline">View payment activity</Link>
+      </p>
 
       {/* Upcoming Bookings */}
       <div>
@@ -197,10 +204,10 @@ export default async function HealerDashboardPage() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/dashboard/settings">
+        <Link href="/healer/payments">
           <Card className="hover:border-primary/50 transition-colors cursor-pointer">
             <CardContent className="py-4 text-center text-sm font-medium">
-              Account Settings
+              Session Payments
             </CardContent>
           </Card>
         </Link>
