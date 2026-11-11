@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import {
   ORDER_HISTORY_PAGE_SIZE,
   ORDER_HISTORY_MAX_PAGE,
+  ORDER_HISTORY_MAX_QUERY_LENGTH,
   orderHistoryHref,
   orderHistoryWhere,
   orderStatusFilters,
@@ -71,7 +72,7 @@ export default async function OrdersPage({
             id="order-history-search"
             name="q"
             type="search"
-            maxLength={80}
+            maxLength={ORDER_HISTORY_MAX_QUERY_LENGTH}
             defaultValue={q}
             placeholder="Product name or exact order ID"
             className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm focus-ring"
