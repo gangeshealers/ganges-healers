@@ -159,10 +159,30 @@ origin (`AUTH_URL`, `NEXTAUTH_URL` or `NEXT_PUBLIC_SITE_URL`; Vercel URL is the
 existing fallback). Missing email/origin configuration leaves events pending and
 recovery reports `disabled: true`. Redis is required to start the existing worker;
 the outbox recovery endpoint itself uses PostgreSQL independently of Redis.
-An external scheduler can call `GET /api/cron/booking-emails` with the existing
-CRON_SECRET Bearer header every minute. The route handles three due events and
-returns aggregate counts. This patch does not create a hosted schedule or change
-live credentials; verify a running worker or authenticated scheduler before launch.
+The committed `vercel.json` schedules `GET /api/cron/booking-emails` **every five
+minutes (UTC)**, independently of the Redis-backed worker. Each invocation uses
+Vercel's existing `CRON_SECRET` Bearer header; the route processes at most three
+due events and returns aggregate counts. This is a recovery safety net for
+interrupted request-lifetime email dispatch, not guaranteed real-time delivery.
+
+**Hosting requirement:** this schedule needs a Vercel plan supporting sub-daily
+cron jobs (Pro or Enterprise); Vercel Hobby permits at most a daily invocation
+and will not deploy the five-minute schedule. Verify the actual target project's
+plan before promotion. If it cannot support the schedule, arrange a separately
+authorized persistent worker or external scheduler with `CRON_SECRET` and adjust
+the committed configuration as a reviewed release decision. Never disable cron
+authentication to work around missing configuration.
+
+Before production acceptance, confirm the deployed cron appears in the Vercel
+Cron Jobs view, that `CRON_SECRET` is present in the target deployment, that
+the trusted email origin and Resend sender are configured, and that actual
+`BookingEmail` provider receipts reach SENT. Observe /admin/booking-emails
+for PENDING/REVIEW and test interrupted delivery recovery with a deliberately
+authorized, non-customer fixture. Config presence alone is **not** evidence of
+a successful send. The existing worker may run alongside this cron; the
+PostgreSQL lease/idempotency guards prevent two claimants from sending the same
+outbox event simultaneously. No live credentials are created by this source
+configuration.
 
 Monitor delivery state without exposing recipient payloads:
 
@@ -182,7 +202,9 @@ and atomic audits, and fence late worker replies. They do not send another email
 On a stale/unknown result, use **Reload message** and review the returned snapshot
 before deciding again. Background refreshes preserve active drafts/dialogs.
 
-No hosted schedule, credential or schema change accompanies this workspace.
+That administrative workspace added no scheduler; the separate `vercel.json`
+cron entry described above now configures hosted recovery. No schema or
+credential change accompanies the admin review workspace.
 Rollback its UI/actions together if needed; retain recorded outcomes and audits.
 Existing workers already recognize SENT/SKIPPED and will not replay these events.
 Live provider acceptance and appropriate staff access still require launch checks.
