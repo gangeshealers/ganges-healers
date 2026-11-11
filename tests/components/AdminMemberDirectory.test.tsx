@@ -7,6 +7,7 @@ import { requireCurrentAdmin } from '@/lib/admin/auth'
 import AdminPage from '@/app/admin/page'
 
 jest.mock('@/lib/auth', () => ({ auth: jest.fn() }))
+jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }))
 jest.mock('@/lib/admin/auth', () => ({ requireCurrentAdmin: jest.fn() }))
 jest.mock('@/lib/prisma', () => ({
   prisma: {
