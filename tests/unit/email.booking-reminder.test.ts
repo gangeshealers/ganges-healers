@@ -34,3 +34,18 @@ test('a provider refusal is not reported as a sent reminder', async () => {
   })
   expect(result.success).toBe(false)
 })
+
+test('legacy queued reminders without scheduledAtIso retain a stable, bounded provider key', async () => {
+  const notice = jest.spyOn(emailService, 'sendBookingNotice').mockResolvedValue({ success: true, id: 'accepted' })
+  const legacy = {
+    to: 'member@example.test', userName: 'Member', serviceName: 'Yoga', healerName: 'Healer',
+    date: '13 November 2026', time: '10:00 am IST', bookingId: 'saved_booking',
+  }
+  await emailService.sendBookingReminder(legacy)
+  await emailService.sendBookingReminder(legacy)
+  const originalKey = notice.mock.calls[0][1]
+  expect(originalKey).toMatch(/^booking-reminder\/saved_booking\/legacy-[a-f0-9]{64}$/)
+  expect(notice.mock.calls[1][1]).toBe(originalKey)
+  await emailService.sendBookingReminder({ ...legacy, time: '11:00 am IST' })
+  expect(notice.mock.calls[2][1]).not.toBe(originalKey)
+})
