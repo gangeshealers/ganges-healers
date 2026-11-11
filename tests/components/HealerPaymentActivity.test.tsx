@@ -55,7 +55,7 @@ test('shows owner-scoped gross successful INR payments and clearly distinguishes
     take: 20, skip: 0,
   }))
   expect(screen.getByRole('heading', { name: 'Session payment activity' })).toBeInTheDocument()
-  expect(screen.getByText('₹385.00')).toBeInTheDocument()
+  expect(screen.getAllByText('₹385.00')).toHaveLength(2)
   expect(screen.getByText('Private Reiki Session')).toBeInTheDocument()
   expect(screen.getByText(/not your payable earnings/)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Download payment CSV' }))
