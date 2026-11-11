@@ -38,7 +38,7 @@ describe('upcoming iCalendar feed', () => {
       ...event('escape'),
       title: 'Yoga;\r\nBEGIN:VEVENT\nFAKE:1, ok\\backslash ' + '🌊'.repeat(50),
     }])
-    expect(output.match(/BEGIN:VEVENT/g)).toHaveLength(1)
+    expect(output.split('\r\n').filter(line => line === 'BEGIN:VEVENT')).toHaveLength(1)
     expect(output).toContain('Yoga\\;\\nBEGIN:VEVENT\\nFAKE:1\\, ok\\\\backslash')
     expect(output.split('\r\n').filter(Boolean).every(line => Buffer.byteLength(line, 'utf8') <= 75)).toBe(true)
   })
