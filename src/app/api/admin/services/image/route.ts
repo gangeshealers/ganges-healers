@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     if (!hasProductImageSignature(buffer, type)) {
       return NextResponse.json({ error: 'The file contents do not match its image type' }, { status: 400, headers })
     }
-    const blob = await put(`service-images/${randomUUID()}.${extensions[type]}`, buffer, {
+    const blob = await put(`service-images/${randomUUID()}.${extensions[type]}`, Buffer.from(buffer), {
       access: 'public',
       contentType: type,
       token,
