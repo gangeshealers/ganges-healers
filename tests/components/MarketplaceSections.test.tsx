@@ -8,7 +8,8 @@ jest.mock('@/lib/prisma', () => ({ prisma: {
   communityPost: { count: jest.fn() }, membershipPlan: { findMany: jest.fn() },
   productCategory: { findMany: jest.fn() }, product: { findMany: jest.fn() },
 } }))
-jest.mock('@/lib/store/queries', () => ({ listProducts: jest.fn(async () => ({ items: [], nextCursor: null })) }))
+jest.mock('@/lib/store/queries', () => ({
+  parseProductSort: (value: unknown) => value === 'price_asc' || value === 'price_desc' ? value : 'default', listProducts: jest.fn(async () => ({ items: [], nextCursor: null })) }))
 
 const db = jest.requireMock<{ prisma: {
   healer: { count: jest.Mock }; service: { count: jest.Mock }; audioTrack: { count: jest.Mock };
