@@ -305,6 +305,8 @@ test('reviewed program catalog saves retain mobile drafts and preserve paid acce
     expect(await db.programEnrollment.findUniqueOrThrow({ where: { id: enrollment.id } })).toEqual(enrollment)
     expect(await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment)
     const availability = article.locator('form').filter({ has: page.getByRole('button', { name: 'Deactivate', exact: true }) })
+    // The invalid-field check relies on the client action's inline error state, not the native pre-hydration fallback.
+    await expect(availability).toHaveAttribute('data-hydrated', 'true', { timeout: 30_000 })
     // Mutate the hidden field and submit in the same browser task. Otherwise
     // a concurrent React refresh may restore the legitimate value between steps.
     await availability.locator('input[name="isActive"]').evaluate(element => {
