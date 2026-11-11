@@ -43,6 +43,14 @@ export default function MetaPixelScript({ pixelId = process.env.NEXT_PUBLIC_META
     }
   }, [configured])
 
+  // A client-side transition into account/authentication pages must revoke the
+  // already-loaded pixel as well; removing <Script> alone cannot unload it.
+  useEffect(() => {
+    if (!configured || choice !== 'allowed') return
+    const privatePage = pathname?.startsWith('/auth/') || pathname === '/register'
+    window.fbq?.('consent', privatePage ? 'revoke' : 'grant')
+  }, [configured, choice, pathname])
+
   function decide(next: Exclude<MarketingConsent, null>) {
     if (next === 'denied') window.fbq?.('consent', 'revoke')
     if (next === 'allowed' && choice === 'denied') window.fbq?.('consent', 'grant')
