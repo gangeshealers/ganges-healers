@@ -1,4 +1,4 @@
-import { parseCatalogPage, parseServiceCatalogSort } from '@/lib/services/catalog-filters'
+import { parseCatalogPage, parseServiceCatalogSort, parseServiceFormat } from '@/lib/services/catalog-filters'
 
 describe('public services catalog page parser', () => {
   test('defaults safely for missing, repeated and malformed values', () => {
@@ -22,5 +22,15 @@ describe('public service catalog sort parser', () => {
   test.each([undefined, null, '', 'rating', 'POPULAR', 'price_ascending', ['popular', 'price_asc']])(
     'defaults to newest for malformed, unknown and repeated sorts (%j)',
     value => expect(parseServiceCatalogSort(value)).toBe('newest'),
+  )
+})
+
+describe('public service format filter parser', () => {
+  test.each(['online', 'in_person'])('accepts supported session format (%s)', value => {
+    expect(parseServiceFormat(value)).toBe(value)
+  })
+  test.each([undefined, null, '', 'all', 'ONLINE', 'offline', ['online', 'in_person']])(
+    'defaults to all formats for invalid or repeated values (%j)',
+    value => expect(parseServiceFormat(value)).toBe('all'),
   )
 })
