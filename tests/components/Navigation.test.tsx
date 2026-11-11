@@ -231,9 +231,13 @@ test.each(['active-session', 'failed-session-read', 'malformed-client-result'])(
   if (outcome === 'malformed-client-result') auth.signOut.mockResolvedValue({ error: 'Failed' })
   render(tree())
   await userEvent.click(within(await openAccount()).getByRole('button', { name: 'Sign out' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('Sign out could not be confirmed')
+  // An active account must remain blocked while all nine bounded server checks
+  // run. Wait for their genuine failure rather than treating the old <1s poll
+  // deadline as a UI contract; navigation must still never report success.
+  const alert = await screen.findByRole('alert', {}, { timeout: outcome === 'active-session' ? 8_000 : 1_000 })
+  expect(alert).toHaveTextContent('Sign out could not be confirmed')
   expect(router.replace).not.toHaveBeenCalled()
-})
+}, 12_000)
 
 test('successful sign-out verifies the session, prevents duplicate submissions, and returns home', async () => {
   let finish!: (value: { url: string }) => void
