@@ -5,7 +5,7 @@ import {
 
 describe('practitioner session payment activity', () => {
   test('filters only confirmed INR payments attached to the requesting healer', () => {
-    const now = new Date('2026-11-11T18:29:00.000Z') // already Nov 12 in IST
+    const now = new Date('2026-11-11T18:31:00.000Z') // already Nov 12 in IST
     expect(healerActivityStart('month', now)?.toISOString()).toBe('2026-10-31T18:30:00.000Z')
     expect(healerActivityWhere('healer-1', 'month', now)).toEqual({
       booking: { healerId: 'healer-1' },
