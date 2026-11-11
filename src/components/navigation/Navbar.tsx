@@ -83,7 +83,9 @@ export function Navbar({ className }: NavigationV2NavbarProps) {
     logoutInFlight.current = true; setLogoutPending(true); setLogoutError(null);
     try {
       await signOutCurrentSession('/');
-      if (owner.current && (owner.current !== uid || accountEpoch.current !== epoch)) return;
+      // A successfully verified sign-out may update the session epoch while
+      // the old account menu is still open; only a different owner can fence it.
+      if (owner.current && owner.current !== uid) return;
       closePanels(); router.replace('/'); router.refresh();
     } catch {
       if (owner.current === uid && accountEpoch.current === epoch) setLogoutError('Sign out could not be confirmed. Please try again.');
