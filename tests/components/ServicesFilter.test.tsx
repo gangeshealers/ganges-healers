@@ -63,3 +63,29 @@ test('home service discovery paths use supported search fields rather than nonex
     expect(destination.searchParams.has('category')).toBe(false)
   }
 })
+
+test('price and popularity sort selections round-trip with search filters, and clear resets sort', async () => {
+  mockParams = new URLSearchParams({ search: 'yoga', category: 'Movement', sort: 'price_desc' })
+  const user = userEvent.setup()
+  render(<ServicesFilter categories={['Movement']} />)
+  expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('price_desc')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'popular')
+  await user.click(screen.getByRole('button', { name: 'Apply Filters' }))
+  const destination = new URL(mockPush.mock.lastCall?.[0], 'https://example.test')
+  expect(destination.pathname).toBe('/services')
+  expect(destination.searchParams.get('sort')).toBe('popular')
+  expect(destination.searchParams.get('category')).toBe('Movement')
+  expect(destination.searchParams.get('search')).toBe('yoga')
+  await user.click(screen.getByRole('button', { name: 'Clear all' }))
+  expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('newest')
+  expect(mockPush).toHaveBeenLastCalledWith('/services')
+})
+
+test('unsupported sort URL values are ignored and the default is not added to submitted links', async () => {
+  mockParams = new URLSearchParams({ sort: 'untrusted', search: 'sound' })
+  const user = userEvent.setup()
+  render(<ServicesFilter categories={[]} />)
+  expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('newest')
+  await user.click(screen.getByRole('button', { name: 'Apply Filters' }))
+  expect(mockPush).toHaveBeenLastCalledWith('/services?search=sound')
+})
