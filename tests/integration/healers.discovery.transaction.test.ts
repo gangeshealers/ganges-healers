@@ -16,8 +16,8 @@ beforeAll(async () => {
     services.push(service.id)
     if (isActive) activeSlug = service.slug; else inactiveSlug = service.slug
   }
-  for (let index = 0; index < 23; index++) {
-    const row = await prisma.healer.create({ data: { isActive: index !== 22, specializations: [`Directory ${index !== 21} ${token}`], user: { create: { name: `Directory ${token} ${index}`, email: `directory-${token}-${index}@example.test`, role: 'HEALER' } } } })
+  for (let index = 0; index < 24; index++) {
+    const row = await prisma.healer.create({ data: { isActive: index !== 22, isVerified: index !== 23, specializations: [`Directory ${index !== 21} ${token}`], user: { create: { name: `Directory ${token} ${index}`, email: `directory-${token}-${index}@example.test`, role: 'HEALER' } } } })
     users.push(row.userId)
   }
 })
@@ -53,6 +53,13 @@ test.each(['missing', 'inactive'])('a %s service cannot silently return the broa
   const response = await GET(new NextRequest(`http://localhost/api/healers?q=${token}&serviceSlug=${state === 'inactive' ? inactiveSlug : `missing-${token}`}`))
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual({ items: [], nextCursor: null })
+})
+
+test('an unverified account does not appear in public discovery', async () => {
+  const result = await read('&limit=50')
+  expect(result.items).toHaveLength(21)
+  const unverified = await prisma.healer.findFirstOrThrow({ where: { userId: { in: users }, isVerified: false }, select: { id: true } })
+  expect(result.items.some(row => row.id === unverified.id)).toBe(false)
 })
 
 test('deactivation is visible on the next request without a stale service-option cache', async () => {
