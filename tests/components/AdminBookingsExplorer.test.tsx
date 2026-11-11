@@ -68,6 +68,7 @@ test('read-only operations view shows verified delivery signals without meeting 
   expect(screen.getByText('Delivery confirmed')).toBeInTheDocument()
   expect(screen.getByText('Matching captured payment')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Payment reconciliation' })).toHaveAttribute('href', '/admin/payments')
+  expect(screen.getByRole('link', { name: 'Review booking record' })).toHaveAttribute('href', '/admin/bookings/saved-booking-1')
   expect(screen.queryByRole('button', { name: /refund|cancel|confirm/i })).not.toBeInTheDocument()
   expect(screen.queryByText(/https:\/\//)).not.toBeInTheDocument()
 })
