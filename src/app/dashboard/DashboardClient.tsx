@@ -140,11 +140,9 @@ export default function DashboardClient({ bookings, recentPosts = [], courseEnro
             <Button asChild variant="outline" size="sm">
               <Link href="/courses">Browse Courses</Link>
             </Button>
-            {courseEnrollments.length > 0 && (
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/courses/enrolled">View All →</Link>
-              </Button>
-            )}
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/courses/enrolled">View All →</Link>
+            </Button>
           </div>
         </div>
 
