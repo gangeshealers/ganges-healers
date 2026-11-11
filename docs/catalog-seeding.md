@@ -21,6 +21,22 @@ pnpm seed:catalog --apply --confirm-host=<your-development-database-host>
 
 This inserts missing rows for 10 sample services, 6 sample programs, 8 sample courses, and 41 sample lesson outlines. It is idempotent for catalog slugs and existing lesson slots: existing catalog data, activity flags, prices, enrollments, payment records, and real lesson content are left unchanged. All catalog writes occur in one transaction, and failures roll back that transaction.
 
+## Optional development Store catalog
+
+The repository also defines four product categories and 15 **sample** store products. To include them in an isolated development branch, use the explicit opt-in flag:
+
+```bash
+# Inspection only: does not connect or write
+pnpm seed:catalog --with-products
+
+# Only after verifying this is an isolated development database:
+pnpm seed:catalog --with-products --apply --confirm-host=<your-development-database-host>
+```
+
+The product opt-in shares the existing store fixtures used by `pnpm seed` and inserts only **missing** categories and product slugs. Existing products retain their descriptions, active status, prices and stock values. No carts, customer orders, payments, shipping events or supplier inventory are fabricated. The default `pnpm seed:catalog` command remains unchanged (services, programs, courses).
+
+These listings are demonstration content, **not verified merchandise or real stock**. Keep them in a disposable development database only. Do not use them to accept real payments or claim product fulfilment. Approved products, prices, stock and product images must be managed through the admin product workspace before launch.
+
 ## Safety boundaries
 
 - Never run this with production credentials or against the default/production Neon branch. The explicit hostname confirms your intended target but **cannot prove** the branch identity; verify it in Neon before running.
