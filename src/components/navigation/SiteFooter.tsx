@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import PrivacyChoicesButton from '@/components/analytics/PrivacyChoicesButton'
 
 const footerGroups = [
   {
@@ -77,6 +78,7 @@ export default function SiteFooter() {
                       </Link>
                     </li>
                   ))}
+                  {group.title === 'Information' && <li><PrivacyChoicesButton /></li>}
                 </ul>
               </div>
             ))}
