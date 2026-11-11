@@ -37,3 +37,38 @@ export function bookingHistoryWhere(userId: string, status: BookingHistoryFilter
     ...(query ? { service: { name: { contains: query, mode: 'insensitive' } } } : {}),
   }
 }
+
+
+export const BOOKING_HISTORY_EXPORT_LIMIT = 1000
+
+export type BookingHistoryExportRow = {
+  id: string
+  scheduledAt: Date
+  durationMin: number
+  status: string
+  service: { name: string }
+  healer: { user: { name: string | null } }
+}
+function csvCell(value: string) {
+  // Spreadsheet clients must not execute imported text as a formula.
+  const escaped = /^[\s\u0000-\u001f]*[=+\-@]/.test(value) ? "'" + value : value
+  return '"' + escaped.replace(/"/g, '""') + '"'
+}
+
+/** Owner-readable booking metadata only; intentionally omits member PII and meeting URLs. */
+export function bookingHistoryCsv(rows: BookingHistoryExportRow[]) {
+  const header = ['Appointment At (UTC)', 'Service', 'Practitioner', 'Status', 'Duration (minutes)', 'Booking Reference']
+  const data = rows.map(row => [
+    row.scheduledAt.toISOString(), row.service.name, row.healer.user.name || 'Practitioner',
+    row.status, String(row.durationMin), row.id,
+  ].map(csvCell).join(','))
+  return '\uFEFF' + [header.map(csvCell).join(','), ...data].join('\r\n') + '\r\n'
+}
+
+export function bookingHistoryExportHref(status: BookingHistoryFilter, query: string) {
+  const params = new URLSearchParams()
+  if (status !== 'all') params.set('status', status)
+  if (query) params.set('q', query)
+  const suffix = params.toString()
+  return '/api/bookings/history/export' + (suffix ? '?' + suffix : '')
+}
