@@ -162,7 +162,7 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
         </div>
       </Card>
 
-      {order.status !== 'pending_payment' && (
+      {(['paid', 'shipped', 'delivered'].includes(order.status) || (order.status === 'cancelled' && Boolean(order.paymentId))) && (
         <Card className="space-y-3 p-5">
           <h2 className="text-lg font-semibold">Receipt and billing</h2>
           {receiptHref ? (
