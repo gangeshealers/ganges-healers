@@ -29,3 +29,12 @@ export function billingPageHref(filters: ReturnType<typeof parseBillingFilters>,
   const query = params.toString()
   return '/dashboard/billing' + (query ? '?' + query : '')
 }
+
+/** Export the complete matching history, not just the visible pagination window. */
+export function billingExportHref(filters: ReturnType<typeof parseBillingFilters>): string {
+  const params = new URLSearchParams()
+  if (filters.type !== 'ALL') params.set('type', filters.type)
+  if (filters.query) params.set('q', filters.query)
+  const query = params.toString()
+  return '/api/invoices/me/export' + (query ? '?' + query : '')
+}
