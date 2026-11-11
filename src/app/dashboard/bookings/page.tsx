@@ -242,6 +242,10 @@ export default function MyBookingsPage() {
             ))}
           </TabsContent>
           <TabsContent value="past" className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+              <p className="text-sm text-muted-foreground">Search and browse older appointments without loading everything at once.</p>
+              <Link href="/dashboard/bookings/history" className="rounded-md border bg-background px-4 py-2 text-sm font-semibold hover:bg-muted">Browse booking history</Link>
+            </div>
             {past.length === 0 ? (
               <Card className="space-y-3 p-6">
                 <p className="text-sm text-muted-foreground">No past bookings.</p>
