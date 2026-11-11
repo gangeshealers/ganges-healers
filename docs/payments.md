@@ -195,3 +195,32 @@ Provider notes include only string/number values; nullable fulfillment bindings
 remain in canonical database metadata. The original API response fields and
 payment fulfillment checks remain in place. Program retries are described in
 [the API contracts](./contracts.md#program-checkout-recovery).
+
+
+## Admin payment CSV exports
+
+The payments analytics dashboard offers **Payments CSV** and **Refunds CSV** actions
+for the currently selected UTC date range (7, 30 or 90 days) and payment type.
+Both use the new, read-only GET /api/admin/payments/export endpoint:
+
+- kind=payments|refunds (defaults to payments)
+- from=YYYY-MM-DD&to=YYYY-MM-DD (both or neither; inclusive UTC dates; at most 366 days)
+- type=ALL|SESSION|PROGRAM|MEMBERSHIP|STORE|COURSE (defaults to ALL)
+
+The export requires the existing administrator session and returns 403
+{ "error": "forbidden" } otherwise. Payment CSVs include **successful**
+payments only and honor the payment-type filter. Refund CSVs always include
+refunds within the date range regardless of payment type, consistent with
+the existing analytics dashboard. Money is exported as fixed-decimal INR
+values converted from persisted integer paise. Download responses are
+UTF-8 CSV with Content-Disposition: attachment, Cache-Control: private, no-store
+and X-Content-Type-Options: nosniff; spreadsheet-formula-like string cells
+are escaped to text.
+
+Exports are intentionally capped at **5,000 rows**, with a query limited to
+5,001 to detect oversize reports without exporting a misleading subset.
+Larger exports return 413 { "error": "export-too-large", "maxRows": 5000 };
+choose a shorter date range in that case. Unsupported filters/dates return
+400 and data-access failures return 500 { "error": "export-unavailable" }.
+No financial records are changed. Existing metrics, timeseries, latest,
+refunds, payment, invoice, and webhook endpoints keep their contracts.

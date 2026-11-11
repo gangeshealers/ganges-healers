@@ -44,3 +44,30 @@ test.describe('Admin Payments Dashboard', () => {
     await expect(anyTable.first()).toBeVisible({ timeout: 30000 });
   });
 });
+
+
+test('exports the current payment and refund date filters as downloadable CSV', async ({ page }) => {
+  test.setTimeout(120000)
+  await page.goto('/admin/payments')
+  await expect(page.locator('[data-test="payments-analytics-root"]')).toBeVisible({ timeout: 30000 })
+  await page.locator('[data-test="filter-type"]').selectOption('STORE')
+
+  const paymentResponse = page.waitForResponse((res) => {
+    const url = new URL(res.url())
+    return url.pathname === '/api/admin/payments/export' &&
+      url.searchParams.get('kind') === 'payments' && url.searchParams.get('type') === 'STORE'
+  })
+  const paymentDownload = page.waitForEvent('download')
+  await page.locator('[data-test="export-payments-csv"]').click()
+  expect((await paymentResponse).ok()).toBe(true)
+  expect((await paymentDownload).suggestedFilename()).toMatch(/^ganges-healers-payments-.*\.csv$/)
+
+  const refundResponse = page.waitForResponse((res) => {
+    const url = new URL(res.url())
+    return url.pathname === '/api/admin/payments/export' && url.searchParams.get('kind') === 'refunds'
+  })
+  const refundDownload = page.waitForEvent('download')
+  await page.locator('[data-test="export-refunds-csv"]').click()
+  expect((await refundResponse).ok()).toBe(true)
+  expect((await refundDownload).suggestedFilename()).toMatch(/^ganges-healers-refunds-.*\.csv$/)
+})
