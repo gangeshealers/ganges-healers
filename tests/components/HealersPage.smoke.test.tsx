@@ -2,6 +2,7 @@
 import { render, screen } from '@testing-library/react'
 
 jest.mock('@/lib/healers/queries', () => ({
+  parseHealerDirectorySort: (value: unknown) => value === 'experience' ? 'experience' : 'default',
   getHealerServiceOptions: jest.fn(async () => [{ slug: 'yoga-healing', name: 'Yoga Therapy' }, { slug: 'reiki-healing', name: 'Reiki Healing' }]),
   listHealers: jest.fn(async () => ({
     items: [
