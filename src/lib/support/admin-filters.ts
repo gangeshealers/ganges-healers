@@ -19,13 +19,14 @@ export function parseAdminSupportFilters(params: AdminSupportParams) {
   return { status, q, page }
 }
 
-function escapeLike(value: string) {
+/** Escape SQL LIKE wildcard tokens before passing a literal search to Prisma. */
+export function escapeSupportTextSearch(value: string) {
   return value.replace(/[\\%_]/g, '\\$&')
 }
 
 /** Admin authorization is required *before* calling this read-only predicate. */
 export function adminSupportWhere(status: AdminSupportStatus, q: string): Prisma.SupportTicketWhereInput {
-  const text = escapeLike(q)
+  const text = escapeSupportTextSearch(q)
   return {
     ...(status === 'ALL' ? {} : { status: status as SupportTicketStatus }),
     ...(q ? {
