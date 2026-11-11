@@ -73,7 +73,7 @@ export default function DashboardClient({ bookings, recentPosts = [], courseEnro
                   )}
                 </div>
                 {(b.status === 'PENDING' || b.status === 'CONFIRMED') && (
-                  <BookingActions bookingId={b.id} scheduledAt={new Date(b.scheduledAt).toISOString()} />
+                  <BookingActions bookingId={b.id} />
                 )}
               </CardContent>
             </Card>
