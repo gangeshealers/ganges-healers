@@ -63,7 +63,7 @@ test('read-only operations view shows verified delivery signals without meeting 
   }))
   expect(screen.getByRole('heading', { name: 'Booking operations' })).toBeInTheDocument()
   expect(screen.getByText('Meditation Session')).toBeInTheDocument()
-  expect(screen.getByText(/1 Dec 2026/)).toHaveTextContent('IST · 60 min')
+  expect(screen.getByText(/1 Dec,? 2026/)).toHaveTextContent('IST · 60 min')
   expect(screen.getByText(/Member: Member One/)).toHaveTextContent('Practitioner: Practitioner A')
   expect(screen.getByText('Delivery confirmed')).toBeInTheDocument()
   expect(screen.getByText('Matching captured payment')).toBeInTheDocument()
