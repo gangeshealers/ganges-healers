@@ -11,7 +11,7 @@ import { canonicalOf } from '@/config/site'
 import Breadcrumbs from '@/components/seo/Breadcrumbs'
 import BreadcrumbsLd from '@/components/seo/BreadcrumbsLd'
 import { makeServicesIndexCrumbs } from '@/lib/seo/breadcrumbs'
-import { parseCatalogPage, parseCatalogPrice, parseMinimumServiceRating } from '@/lib/services/catalog-filters'
+import { parseCatalogPage, parseCatalogPrice, parseMinimumServiceRating, parseServiceCatalogSort } from '@/lib/services/catalog-filters'
 import { Prisma } from '@prisma/client'
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -63,6 +63,14 @@ async function getServices(
   const minPrice = parseCatalogPrice(params.minPrice)
   const maxPrice = parseCatalogPrice(params.maxPrice)
   const requestedPage = parseCatalogPage(params.page)
+  const sort = parseServiceCatalogSort(params.sort)
+  const orderBy: Prisma.ServiceOrderByWithRelationInput[] = sort === 'popular'
+    ? [{ popularity: 'desc' }, { name: 'asc' }, { id: 'asc' }]
+    : sort === 'price_asc'
+      ? [{ price: 'asc' }, { name: 'asc' }, { id: 'asc' }]
+      : sort === 'price_desc'
+        ? [{ price: 'desc' }, { name: 'asc' }, { id: 'asc' }]
+        : [{ createdAt: 'desc' }, { id: 'desc' }]
   const where: Prisma.ServiceWhereInput = { isActive: true }
 
   if (category) where.category = category
@@ -94,7 +102,7 @@ async function getServices(
 
   const services: RawService[] = total ? await prisma.service.findMany({
     where: filteredWhere,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    orderBy,
     skip: (page - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
     select: {
@@ -147,8 +155,9 @@ export default async function ServicesPage({
     prisma.service.findMany({ where: { isActive: true }, select: { category: true }, distinct: ['category'], orderBy: { category: 'asc' } }),
   ])
   const categories = categoryRows.map(row => row.category).filter(Boolean)
+  const sort = parseServiceCatalogSort(params.sort)
   const filterKeys = ['category', 'search', 'q', 'minPrice', 'maxPrice'] as const
-  const hasFilters = minimumRating !== undefined || filterKeys.some(key => Boolean(params[key]))
+  const hasFilters = sort !== 'newest' || minimumRating !== undefined || filterKeys.some(key => Boolean(params[key]))
   const { items: services, total, page, totalPages } = catalog
   const pageHref = (nextPage: number) => {
     const query = new URLSearchParams()
@@ -156,6 +165,7 @@ export default async function ServicesPage({
       const value = params[key]
       if (typeof value === 'string' && value.trim()) query.set(key, value.trim())
     }
+    if (sort !== 'newest') query.set('sort', sort)
     if (nextPage > 1) query.set('page', String(nextPage))
     return `/services${query.size ? `?${query}` : ''}`
   }
@@ -184,7 +194,7 @@ export default async function ServicesPage({
           {/* Filters Sidebar */}
           <aside className="lg:w-64">
             <Suspense fallback={<div>Loading filters...</div>}>
-              <ServicesFilter key={JSON.stringify([...filterKeys.map(key => params[key]), minimumRating])} categories={categories} minimumRating={minimumRating} />
+              <ServicesFilter key={JSON.stringify([...filterKeys.map(key => params[key]), minimumRating, sort])} categories={categories} minimumRating={minimumRating} />
             </Suspense>
           </aside>
           

@@ -4,6 +4,7 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, type FormEvent } from 'react'
 import { Filter } from 'lucide-react'
+import { parseServiceCatalogSort, type ServiceCatalogSort } from '@/lib/services/catalog-filters'
 
 export default function ServicesFilter({ categories, minimumRating }: { categories: string[]; minimumRating?: number }) {
   const router = useRouter()
@@ -14,7 +15,8 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
     minPrice: searchParams.get('minPrice') || '',
     maxPrice: searchParams.get('maxPrice') || '',
     minRating: minimumRating?.toString() ?? '',
-    search: searchParams.get('search') || searchParams.get('q') || ''
+    search: searchParams.get('search') || searchParams.get('q') || '',
+    sort: parseServiceCatalogSort(searchParams.get('sort'))
   })
   
   function applyFilters(event: FormEvent<HTMLFormElement>) {
@@ -22,7 +24,7 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
     const params = new URLSearchParams()
     
     Object.entries(filters).forEach(([key, value]) => {
-      if (value) params.set(key, value)
+      if (value && !(key === 'sort' && value === 'newest')) params.set(key, value)
     })
     
     router.push(params.size ? `/services?${params.toString()}` : '/services')
@@ -34,12 +36,13 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
       minPrice: '',
       maxPrice: '',
       minRating: '',
-      search: ''
+      search: '',
+      sort: 'newest'
     })
     router.push('/services')
   }
   
-  const hasActiveFilters = Object.values(filters).some(v => v !== '')
+  const hasActiveFilters = Object.entries(filters).some(([key, value]) => key === 'sort' ? value !== 'newest' : value !== '')
   
   return (
     <form onSubmit={applyFilters} className="bg-white rounded-xl shadow-sm p-6">
@@ -138,6 +141,23 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
         />
       </div>
       
+      <div className="mb-6">
+        <label htmlFor="service-sort" className="block text-sm font-medium text-gray-700 mb-2">
+          Sort by
+        </label>
+        <select
+          id="service-sort"
+          value={filters.sort}
+          onChange={event => setFilters({ ...filters, sort: event.target.value as ServiceCatalogSort })}
+          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+        >
+          <option value="newest">Newest first</option>
+          <option value="popular">Most popular</option>
+          <option value="price_asc">Price: low to high</option>
+          <option value="price_desc">Price: high to low</option>
+        </select>
+      </div>
+
       {/* Apply Button */}
       <button
         type="submit"

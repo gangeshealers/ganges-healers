@@ -18,3 +18,11 @@ export function parseCatalogPage(value: SearchValue): number {
   const page = Number(value.trim())
   return Number.isSafeInteger(page) && page <= 1000 ? page : 1
 }
+
+/** Public catalog sort options, shared by the server query and filter UI. */
+export type ServiceCatalogSort = 'newest' | 'popular' | 'price_asc' | 'price_desc'
+
+export function parseServiceCatalogSort(value: SearchValue): ServiceCatalogSort {
+  if (value === 'popular' || value === 'price_asc' || value === 'price_desc') return value
+  return 'newest'
+}

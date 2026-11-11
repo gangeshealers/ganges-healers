@@ -52,3 +52,41 @@ test.each(['Infinity', '0', '5.1', '4.51', ['4', '5']].map(minRating => ({ minRa
   render(await ServicesPage({ searchParams: Promise.resolve({ minRating }) }))
   expect(screen.getByRole('heading', { name: 'Meditation' })).toBeVisible()
 })
+
+test.each([
+  ['newest', [{ createdAt: 'desc' }, { id: 'desc' }]],
+  ['popular', [{ popularity: 'desc' }, { name: 'asc' }, { id: 'asc' }]],
+  ['price_asc', [{ price: 'asc' }, { name: 'asc' }, { id: 'asc' }]],
+  ['price_desc', [{ price: 'desc' }, { name: 'asc' }, { id: 'asc' }]],
+])('sorts the complete services query before applying catalog pagination (%s)', async (sort, orderBy) => {
+  await ServicesPage({ searchParams: Promise.resolve({ sort, category: 'Therapy', search: 'yoga' }) })
+  expect(prisma.service.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    orderBy,
+    skip: 0,
+    take: 12,
+    where: expect.objectContaining({ category: 'Therapy' }),
+  }))
+})
+
+test('preserves a validated sort, search, and category in next-page links', async () => {
+  jest.mocked(prisma.service.count).mockResolvedValueOnce(25)
+  render(await ServicesPage({ searchParams: Promise.resolve({ sort: 'price_asc', search: 'yoga', category: 'Therapy' }) }))
+  const next = screen.getByRole('link', { name: 'Next services' })
+  const href = new URL(next.getAttribute('href')!, 'https://example.test')
+  expect(href.pathname).toBe('/services')
+  expect(Object.fromEntries(href.searchParams)).toEqual({
+    category: 'Therapy',
+    search: 'yoga',
+    sort: 'price_asc',
+    page: '2',
+  })
+})
+
+test('unknown sort inputs fall back to newest ordering and never round-trip into pagination', async () => {
+  jest.mocked(prisma.service.count).mockResolvedValueOnce(25)
+  render(await ServicesPage({ searchParams: Promise.resolve({ sort: ['popular', 'price_desc'] }) }))
+  expect(prisma.service.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  }))
+  expect(screen.getByRole('link', { name: 'Next services' })).toHaveAttribute('href', '/services?page=2')
+})
