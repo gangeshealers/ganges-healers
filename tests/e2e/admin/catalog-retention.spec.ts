@@ -305,8 +305,15 @@ test('reviewed program catalog saves retain mobile drafts and preserve paid acce
     expect(await db.programEnrollment.findUniqueOrThrow({ where: { id: enrollment.id } })).toEqual(enrollment)
     expect(await db.payment.findUniqueOrThrow({ where: { id: payment.id } })).toEqual(payment)
     const availability = article.locator('form').filter({ has: page.getByRole('button', { name: 'Deactivate', exact: true }) })
-    await availability.locator('input[name="isActive"]').evaluate(element => { (element as HTMLInputElement).value = 'invalid' })
-    await availability.getByRole('button', { name: 'Deactivate', exact: true }).click()
+    // Mutate the hidden field and submit in the same browser task. Otherwise
+    // a concurrent React refresh may restore the legitimate value between steps.
+    await availability.locator('input[name="isActive"]').evaluate(element => {
+      const form = element.closest('form')
+      const button = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
+      if (!form || !button) throw new Error('Missing program availability form')
+      ;(element as HTMLInputElement).value = 'invalid'
+      form.requestSubmit(button)
+    })
     await expect(availability.getByRole('alert')).toHaveText('Reload and review this program before saving.')
     expect((await db.program.findUniqueOrThrow({ where: { id: program.id } })).isActive).toBe(true)
     await availability.locator('input[name="isActive"]').evaluate(element => { (element as HTMLInputElement).value = 'true' })

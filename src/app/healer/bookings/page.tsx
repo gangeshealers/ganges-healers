@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -92,6 +93,10 @@ export default function HealerBookingsPage() {
         className="inline-flex h-9 items-center rounded-md border bg-background px-4 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         Download upcoming schedule
       </a>}
+      {ownerId && <Link href="/healer/bookings/history"
+        className="inline-flex h-9 items-center rounded-md border bg-background px-4 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Browse booking history
+      </Link>}
       <Button variant="outline" disabled={!!acting || loading} onClick={() => void fetchBookings()}>Reload saved bookings</Button>
     </div></div>
     {error && <div role="alert" className="rounded border p-4 space-y-2"><p>{error}</p><Button variant="outline" onClick={() => void fetchBookings()}>Retry bookings</Button></div>}

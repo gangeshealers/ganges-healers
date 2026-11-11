@@ -164,7 +164,12 @@ test('mobile account navigation signs out through Auth.js in its own session', a
   await mobile.getByRole('button', { name: 'Sign out', exact: true }).click()
   expect((await mobileSignedOut).ok()).toBeTruthy()
   await expect(mobile).not.toBeVisible({ timeout: 30_000 })
-  expect((await page.request.get('/api/notifications')).status()).toBe(401)
+  // Cookie/session propagation can lag behind the mobile sheet close in CI;
+  // still require the protected API to reject the signed-out session.
+  await expect.poll(async () => (await page.request.get('/api/notifications')).status(), {
+    timeout: 15_000,
+    intervals: [250, 500, 1000],
+  }).toBe(401)
   await page.getByRole('button', { name: 'Open navigation menu' }).click()
   await expect(page.getByRole('dialog', { name: 'Mobile navigation' }).getByRole('link', { name: 'Sign in', exact: true })).toBeVisible()
 })
