@@ -94,7 +94,7 @@ export default async function HealerPaymentsPage({ searchParams }: { searchParam
         <div className="overflow-x-auto rounded-xl border">
           <table className="w-full min-w-[600px] text-left text-sm">
             <thead className="border-b bg-muted/50">
-              <tr><th scope="col" className="px-4 py-3">Paid (IST)</th><th scope="col" className="px-4 py-3">Session (IST)</th><th scope="col" className="px-4 py-3">Service</th><th scope="col" className="px-4 py-3 text-right">Gross amount</th></tr>
+              <tr><th scope="col" className="px-4 py-3">Payment record (IST)</th><th scope="col" className="px-4 py-3">Session (IST)</th><th scope="col" className="px-4 py-3">Service</th><th scope="col" className="px-4 py-3 text-right">Gross amount</th></tr>
             </thead>
             <tbody className="divide-y">
               {rows.map(row => (
