@@ -25,10 +25,21 @@ describe('StorePage smoke', () => {
     const ui = await Page({ searchParams: Promise.resolve({ q: 'Oil', categorySlug: 'oils', cursor: 'next_prod_1' }) })
     render(ui)
     expect(listProducts).toHaveBeenCalledWith({
-      q: 'Oil', categorySlug: 'oils', chakra: undefined, limit: 20, cursor: 'next_prod_1',
+      q: 'Oil', categorySlug: 'oils', chakra: undefined, sort: 'default', limit: 20, cursor: 'next_prod_1',
     })
     expect(screen.getByRole('link', { name: 'Back to first page' }))
       .toHaveAttribute('href', '/store?q=Oil&categorySlug=oils')
+  })
+
+  test('price sorting survives active category and chakra selections and first-page return', async () => {
+    const ui = await Page({ searchParams: Promise.resolve({ q: 'Oil', categorySlug: 'oils', chakra: 'Heart', sort: 'price_asc', cursor: 'next_prod_1' }) })
+    render(ui)
+    expect(listProducts).toHaveBeenCalledWith({
+      q: 'Oil', categorySlug: 'oils', chakra: 'Heart', sort: 'price_asc', limit: 20, cursor: 'next_prod_1',
+    })
+    expect(screen.getByRole('combobox', { name: 'Sort products' })).toHaveValue('price_asc')
+    expect(screen.getByRole('link', { name: 'Back to first page' })).toHaveAttribute('href', '/store?q=Oil&categorySlug=oils&chakra=Heart&sort=price_asc')
+    expect(screen.getByRole('link', { name: 'All', exact: true })).toHaveAttribute('href', '/store?q=Oil&categorySlug=oils&sort=price_asc')
   })
 
   test('renders product cards', async () => {
