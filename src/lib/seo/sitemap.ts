@@ -16,12 +16,15 @@ export async function getSitemapItems(): Promise<SitemapItem[]> {
 
   const [services, programs, healers, courses, products, blogPosts, audioTracks] = await Promise.all([
     safe(() => prisma.service.findMany({
+      where: { isActive: true },
       select: { slug: true, updatedAt: true },
     })) as Promise<Array<{ slug?: string; updatedAt?: Date | null }>>,
     safe(() => prisma.program.findMany({
+      where: { isActive: true },
       select: { slug: true, updatedAt: true },
     })) as Promise<Array<{ slug?: string; updatedAt?: Date | null }>>,
     safe(() => prisma.healer.findMany({
+      where: { isActive: true, isVerified: true },
       select: { id: true, updatedAt: true },
     })),
     safe(() => prisma.course.findMany({
