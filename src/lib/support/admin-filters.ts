@@ -21,9 +21,7 @@ export function parseAdminSupportFilters(params: AdminSupportParams) {
 
 /** Escape SQL LIKE wildcard tokens before passing a literal search to Prisma. */
 export function escapeSupportTextSearch(value: string) {
-  return value.replace(/[\\%_]/g, '\\function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, '\\$&')
-}')
 }
 
 /** Admin authorization is required *before* calling this read-only predicate. */
