@@ -4,6 +4,8 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import SupportTicketForm from '@/components/support/SupportTicketForm'
 import { isSupportDeskEnabled } from '@/lib/support/availability'
+import { escapeSupportTextSearch, ADMIN_SUPPORT_MAX_QUERY } from '@/lib/support/admin-filters'
+import type { Prisma } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,7 +18,7 @@ const statusLabels = {
 const PAGE_SIZE = 20
 const MAX_PAGE = 1000
 const statusFilters = ['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED'] as const
-type MemberSupportFilters = { status?: string | string[]; page?: string | string[] }
+type MemberSupportFilters = { status?: string | string[]; page?: string | string[]; q?: string | string[] }
 
 export default async function MemberSupportPage({
   searchParams,
@@ -39,9 +41,18 @@ export default async function MemberSupportPage({
   const query = (await searchParams) ?? {}
   const requestedStatus = typeof query.status === 'string' ? query.status : ''
   const status = statusFilters.find(value => value === requestedStatus) ?? 'ALL'
+  const q = (typeof query.q === 'string' ? query.q : '').trim().slice(0, ADMIN_SUPPORT_MAX_QUERY)
   const requestedPage = typeof query.page === 'string' && /^[1-9][0-9]{0,3}$/.test(query.page) ? Number(query.page) : 1
   const page = Math.min(requestedPage, MAX_PAGE)
-  const filters = { userId: session.user.id, ...(status !== 'ALL' ? { status } : {}) }
+  const text = escapeSupportTextSearch(q)
+  const filters: Prisma.SupportTicketWhereInput = {
+    userId: session.user.id,
+    ...(status !== 'ALL' ? { status } : {}),
+    ...(q ? { OR: [
+      { subject: { contains: text, mode: 'insensitive' as const } },
+      { message: { contains: text, mode: 'insensitive' as const } },
+    ] } : {}),
+  }
   const rows = await prisma.supportTicket.findMany({
     where: filters,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -55,9 +66,10 @@ export default async function MemberSupportPage({
 
   const hasNext = page < MAX_PAGE && rows.length > PAGE_SIZE
   const tickets = rows.slice(0, PAGE_SIZE)
-  const href = (nextStatus: typeof status, nextPage = 1) => {
+  const href = (nextStatus: typeof status, nextPage = 1, nextQuery = q) => {
     const params = new URLSearchParams()
     if (nextStatus !== 'ALL') params.set('status', nextStatus)
+    if (nextQuery) params.set('q', nextQuery)
     if (nextPage > 1) params.set('page', String(nextPage))
     const query = params.toString()
     return '/dashboard/support' + (query ? '?' + query : '')
@@ -74,6 +86,16 @@ export default async function MemberSupportPage({
       <SupportTicketForm />
       <section aria-labelledby="support-history" className="space-y-4">
         <h2 id="support-history" className="text-xl font-semibold">Your support requests</h2>
+        <form action="/dashboard/support" method="get" role="search" className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
+          {status !== 'ALL' ? <input type="hidden" name="status" value={status} /> : null}
+          <div className="min-w-0 flex-1 space-y-2">
+            <label htmlFor="member-support-query" className="block text-sm font-medium">Find one of your requests</label>
+            <input id="member-support-query" type="search" name="q" maxLength={ADMIN_SUPPORT_MAX_QUERY} defaultValue={q}
+              placeholder="Search subject or message" className="w-full rounded-md border px-3 py-2 text-sm" />
+          </div>
+          <button type="submit" className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800">Search requests</button>
+          {q ? <Link href={href(status, 1, '')} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50">Clear search</Link> : null}
+        </form>
         <nav aria-label="Filter your support requests" className="flex flex-wrap gap-2">
           {statusFilters.map(item => (
             <Link key={item} href={href(item)} aria-current={status === item ? 'page' : undefined}
@@ -84,7 +106,7 @@ export default async function MemberSupportPage({
         </nav>
         {tickets.length === 0 ? (
           <p className="rounded-lg border border-dashed bg-white p-6 text-sm text-muted-foreground">
-            {page > 1 ? 'No requests on this page. Go to a previous page.' : status !== 'ALL' ? 'No requests match this status.' : 'You haven’t sent any support requests yet.'}
+            {page > 1 ? 'No requests on this page. Go to a previous page.' : q ? 'No requests match this search.' : status !== 'ALL' ? 'No requests match this status.' : 'You haven’t sent any support requests yet.'}
           </p>
         ) : (
           <div className="space-y-4">
