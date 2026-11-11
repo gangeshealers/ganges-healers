@@ -36,6 +36,7 @@ declare global {
 
 function getFbq(): FbqFn | undefined {
   if (typeof window === 'undefined' || !hasMarketingConsent()) return undefined
+  if (window.location.pathname.startsWith('/auth/') || window.location.pathname === '/register') return undefined
   return window.fbq
 }
 
