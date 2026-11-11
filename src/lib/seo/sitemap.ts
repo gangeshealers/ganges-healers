@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { canonicalOf } from '@/config/site'
-import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/publication'
+import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/routes'
 
 export type SitemapItem = {
   url: string
