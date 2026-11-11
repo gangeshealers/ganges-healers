@@ -161,7 +161,10 @@ async function validateReservationSlot(
   
   // Existing paid appointments and program fulfillment can be rescheduled;
   // a brand-new customer booking must use a currently approved practitioner.
-  if (!healer || !healer.isActive || (serviceId && !options.excludeBookingId && !healer.isVerified)) {
+  if (!healer || !healer.isActive) {
+    return { valid: false, error: 'Healer not found or inactive' }
+  }
+  if (serviceId && !options.excludeBookingId && !healer.isVerified) {
     return { valid: false, error: 'Healer not found or unavailable for new bookings' }
   }
   
