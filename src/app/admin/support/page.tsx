@@ -8,6 +8,7 @@ import { SupportTicketError, updateAdminSupportTicket } from '@/lib/support/tick
 import { isSupportDeskEnabled } from '@/lib/support/availability'
 import {
   ADMIN_SUPPORT_PAGE_SIZE,
+  ADMIN_SUPPORT_MAX_QUERY,
   type AdminSupportStatus,
   adminSupportHref,
   adminSupportWhere,
@@ -116,10 +117,10 @@ export default async function AdminSupportPage({
       <form action="/admin/support" method="get" role="search" aria-label="Search support requests" className="rounded-lg border bg-white p-4 space-y-2">
         <label htmlFor="support-search" className="block text-sm font-medium">Find a request</label>
         <div className="flex flex-wrap items-center gap-2">
-          <input id="support-search" name="q" type="search" maxLength={80} defaultValue={q}
+          <input id="support-search" name="q" type="search" maxLength={ADMIN_SUPPORT_MAX_QUERY} defaultValue={q}
             placeholder="Subject, member name or email"
             className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-violet-600" />
-          {status !== 'ALL' && <input type="hidden" name="status" value={status} />}
+          <input type="hidden" name="status" value={status} />
           <button type="submit" className="rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Find requests</button>
           {q ? <Link href={adminSupportHref(status, '')} className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50">Clear search</Link> : null}
         </div>
