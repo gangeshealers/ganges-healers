@@ -22,11 +22,13 @@ export default async function DashboardPage() {
       include: { service: true, healer: { include: { user: true } }, payment: true },
     }),
     prisma.communityPost.findMany({
+      // Dashboard previews must follow the same moderation boundary as the public feed.
+      where: { deletedAt: null },
       orderBy: { createdAt: "desc" },
       take: 3,
       include: {
         user: { select: { name: true, image: true } },
-        _count: { select: { comments: true, likes: true } },
+        _count: { select: { comments: { where: { deletedAt: null } }, likes: true } },
       },
     }),
     prisma.courseEnrollment.findMany({
