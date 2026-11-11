@@ -92,7 +92,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               <ul className="space-y-2">
                 {payment.refunds.map(refund => (
                   <li key={refund.id} className="rounded-lg border p-3 text-sm">
-                    {money(refund.amountPaise)} · {refund.status || 'Status unavailable'} · recorded {ist.format(refund.createdAt)} IST
+                    {payment.currency && payment.currency !== 'INR' ? refund.amountPaise + ' minor units (' + payment.currency + ')' : money(refund.amountPaise)} · {refund.status || 'Status unavailable'} · recorded {ist.format(refund.createdAt)} IST
                   </li>
                 ))}
               </ul>
@@ -111,7 +111,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             {booking.emails.map(email => (
               <li key={email.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
                 <span>{email.kind} · {email.status} · {email.attempts} attempts</span>
-                <span className="text-muted-foreground">{email.sentAt ? 'Sent at ' + ist.format(email.sentAt) + ' IST' : 'Not confirmed sent'}</span>
+                <span className="text-muted-foreground">{email.sentAt ? 'Sent at ' + ist.format(email.sentAt) + ' IST' : 'Not confirmed sent · next attempt ' + ist.format(email.nextAttemptAt) + ' IST'}</span>
               </li>
             ))}
           </ul>
