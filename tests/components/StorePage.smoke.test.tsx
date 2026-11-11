@@ -1,6 +1,7 @@
 import React from 'react'
 import { render, screen } from '@testing-library/react'
 import Page from '@/app/store/page'
+import { listProducts } from '@/lib/store/queries'
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -20,6 +21,16 @@ jest.mock('@/lib/store/queries', () => ({
 }))
 
 describe('StorePage smoke', () => {
+  test('subsequent pages send the cursor and preserve the active search when returning to first page', async () => {
+    const ui = await Page({ searchParams: Promise.resolve({ q: 'Oil', categorySlug: 'oils', cursor: 'next_prod_1' }) })
+    render(ui)
+    expect(listProducts).toHaveBeenCalledWith({
+      q: 'Oil', categorySlug: 'oils', chakra: undefined, limit: 20, cursor: 'next_prod_1',
+    })
+    expect(screen.getByRole('link', { name: 'Back to first page' }))
+      .toHaveAttribute('href', '/store?q=Oil&categorySlug=oils')
+  })
+
   test('renders product cards', async () => {
     const ui = (await Page({ searchParams: Promise.resolve({}) })) as unknown as React.ReactElement
     render(ui)
