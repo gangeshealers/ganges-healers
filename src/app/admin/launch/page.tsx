@@ -16,7 +16,7 @@ export default async function AdminLaunchReadinessPage() {
   await requireCurrentAdmin()
 
   const [
-    services, healers, programs, courses, audio, products, articles,
+    services, healers, programs, courses, audio, products, articles, publishedPolicies,
   ] = await Promise.all([
     prisma.service.count({ where: { isActive: true } }),
     prisma.healer.count({ where: { isActive: true, isVerified: true } }),
@@ -25,6 +25,10 @@ export default async function AdminLaunchReadinessPage() {
     prisma.audioTrack.count({ where: { isPublished: true } }),
     prisma.product.count({ where: { isActive: true } }),
     prisma.blogPost.count({ where: { published: true } }),
+    prisma.blogPost.findMany({
+      where: { published: true, slug: { in: ['privacy-policy', 'terms-of-service'] } },
+      select: { slug: true },
+    }),
   ])
 
   const catalogs = [
@@ -36,11 +40,17 @@ export default async function AdminLaunchReadinessPage() {
     { label: 'Products', count: products, href: '/admin/products' },
     { label: 'Published articles', count: articles, href: '/admin/blog' },
   ]
+  const policyChecks = [
+    { name: 'Privacy Policy', slug: 'privacy-policy', href: '/privacy' },
+    { name: 'Terms of Service', slug: 'terms-of-service', href: '/terms' },
+  ].map(item => ({ ...item, published: publishedPolicies.some(row => row.slug === item.slug) }))
+
   // Inspect values on the server and pass only presence booleans into React.
   const integrations = inspectLaunchIntegrations(process.env)
 
   const manualChecks = [
     'Approve final service, course, program, audio and store content and confirm licensed media.',
+    'Publish legally reviewed Privacy Policy and Terms of Service; verify the public routes and business contact details.',
     'Complete a real, intentionally authorized payment and a signed webhook callback; reconcile duplicate and refund cases.',
     'Verify email/SMS delivery, bounces, OAuth account linking and actual uploaded media and invoices.',
     'Confirm the booking-email outbox is consumed by a persistent worker or deployed scheduler.',
@@ -88,6 +98,33 @@ export default async function AdminLaunchReadinessPage() {
             </Card>
           ))}
         </div>
+      </section>
+
+      <section aria-labelledby="launch-policy-title" className="space-y-4">
+        <h2 id="launch-policy-title" className="text-xl font-semibold">Public policies</h2>
+        <p className="text-sm text-muted-foreground">
+          Policies are edited in Manage Articles using reserved URL slugs. Publishing exposes the text on its public policy page,
+          but does not itself prove legal review or business approval.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {policyChecks.map(item => (
+            <Card key={item.slug}>
+              <CardContent className="space-y-3 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">{item.name}</h3>
+                  <span className={item.published ? 'text-sm font-semibold text-emerald-800' : 'text-sm font-semibold text-amber-800'}>
+                    {item.published ? 'Published — confirm approval' : 'Not published — blocks launch'}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">Required article slug: <code>{item.slug}</code></p>
+                <Link href={item.href} className="text-sm font-medium text-primary hover:underline">View public page</Link>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Link href="/admin/blog" className="inline-flex text-sm font-semibold text-primary underline-offset-4 hover:underline">
+          Manage policy drafts and publications
+        </Link>
       </section>
 
       <section aria-labelledby="launch-integrations-title" className="space-y-4">

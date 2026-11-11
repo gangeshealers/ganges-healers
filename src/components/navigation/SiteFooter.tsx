@@ -21,6 +21,15 @@ const footerGroups = [
     ],
   },
   {
+    title: 'Information',
+    links: [
+      { label: 'About Ganges Healers', href: '/about' },
+      { label: 'Contact and support', href: '/contact' },
+      { label: 'Privacy Policy', href: '/privacy' },
+      { label: 'Terms of Service', href: '/terms' },
+    ],
+  },
+  {
     title: 'Your journey',
     links: [
       { label: 'View your bookings', href: '/dashboard/bookings' },
@@ -36,7 +45,7 @@ export default function SiteFooter() {
   return (
     <footer className="border-t border-neutral-800 bg-neutral-950 text-neutral-200">
       <div className="container mx-auto px-4 py-12 md:py-14">
-        <div className="grid gap-10 lg:grid-cols-[1.2fr_2fr]">
+        <div className="grid gap-10 lg:grid-cols-[1fr_3fr]">
           <div className="max-w-sm space-y-4">
             <Link
               href="/"
@@ -53,7 +62,7 @@ export default function SiteFooter() {
             </p>
           </div>
 
-          <nav aria-label="Footer navigation" className="grid gap-8 sm:grid-cols-3">
+          <nav aria-label="Footer navigation" className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
             {footerGroups.map(group => (
               <div key={group.title}>
                 <h2 className="mb-4 text-sm font-semibold tracking-wide text-white">{group.title}</h2>

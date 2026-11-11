@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { canonicalOf } from '@/config/site'
 import sitemap from '@/app/sitemap'
 import { getSitemapItems } from '@/lib/seo/sitemap'
+import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/publication'
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -31,7 +32,8 @@ test('sitemap includes only reachable roots and no missing /about page', async (
   expect(urls).toContain(canonicalOf('/') + '/')
   expect(urls).toContain(canonicalOf('/services'))
   expect(urls).toContain(canonicalOf('/programs'))
-  expect(urls).not.toContain(canonicalOf('/about'))
+  expect(urls).toContain(canonicalOf('/about'))
+  expect(urls).toContain(canonicalOf('/contact'))
 })
 
 test('public service, program and healer listings apply the publication rules', async () => {
@@ -54,6 +56,6 @@ test('existing course, store, blog and audio publication scopes are preserved', 
   await getSitemapItems()
   expect(prisma.course.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true } }))
   expect(prisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true } }))
-  expect(prisma.blogPost.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { published: true } }))
+  expect(prisma.blogPost.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { published: true, slug: { notIn: LEGAL_DOCUMENT_SLUGS } } }))
   expect(prisma.audioTrack.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { isPublished: true } }))
 })

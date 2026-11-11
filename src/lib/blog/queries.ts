@@ -1,10 +1,11 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/routes'
 
 /** Fresh reads keep publication changes consistent across application instances. */
 export function getPublishedBlogSummaries(take?: number) {
   return prisma.blogPost.findMany({
-    where: { published: true }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    where: { published: true, slug: { notIn: LEGAL_DOCUMENT_SLUGS } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     ...(take ? { take } : {}),
     select: { id: true, slug: true, title: true, excerpt: true, imageUrl: true, createdAt: true },
   })
@@ -12,13 +13,14 @@ export function getPublishedBlogSummaries(take?: number) {
 
 /** Keep the existing ID-or-slug public lookup, always restricted to published content. */
 export function getPublishedBlogPost(slug: string) {
-  return prisma.blogPost.findFirst({ where: { OR: [{ id: slug }, { slug }], published: true } })
+  return prisma.blogPost.findFirst({ where: { OR: [{ id: slug }, { slug }], published: true, slug: { notIn: LEGAL_DOCUMENT_SLUGS } } })
 }
 
 /** Search published articles before paging; this never exposes draft content. */
 export async function getPublishedBlogPage({ q, page, pageSize = 9 }: { q: string; page: number; pageSize?: number }) {
   const where: Prisma.BlogPostWhereInput = {
     published: true,
+    slug: { notIn: LEGAL_DOCUMENT_SLUGS },
     ...(q ? {
       OR: [
         { title: { contains: q, mode: 'insensitive' as const } },

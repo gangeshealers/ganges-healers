@@ -23,8 +23,9 @@ describe('app sitemap route', () => {
       'https://example.com/programs/foundation-6-week',
       'https://example.com/healers/anita-sharma',
     ]))
-    // Do not publish the absent /about route to search engines.
-    expect(urls).not.toContain('https://example.com/about')
+    // About and Contact now have real public routes.
+    expect(urls).toContain('https://example.com/about')
+    expect(urls).toContain('https://example.com/contact')
     // No query params allowed
     expect(items.every(i => !i.url.includes('?'))).toBe(true)
     // Types check: each item must have url
