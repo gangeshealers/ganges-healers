@@ -20,11 +20,12 @@ function buildInvoiceNumber(date: Date) {
 export async function generateInvoiceForPayment(args: GenerateArgs) {
   const { paymentId, force, sendEmail = true } = args
   console.log('[invoice][generate][start]', { paymentId, force })
-  // Idempotency: legacy Payment.invoiceUrl fast path via raw SQL (column exists but not in Prisma model)
+  // Idempotency: the legacy column is optional; JSONB row lookup avoids missing-column errors.
   if (!force) {
     try {
       const rows: Array<{ invoiceUrl: string | null }> = await prisma.$queryRaw`
-        SELECT "invoiceUrl" FROM "Payment" WHERE "id" = ${paymentId} LIMIT 1
+        SELECT to_jsonb(p)->>'invoiceUrl' AS "invoiceUrl"
+        FROM "Payment" p WHERE p."id" = ${paymentId} LIMIT 1
       `
       const legacyUrl = rows?.[0]?.invoiceUrl
       if (legacyUrl) {

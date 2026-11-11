@@ -35,11 +35,11 @@ export async function POST(req: NextRequest) {
     })
     if (!p) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
-    // Attempt raw query for invoiceUrl fast path
+    // Read optional legacy invoiceUrl without assuming a physical column exists.
     let existingUrl: string | null = null
     try {
       const rows: Array<{ invoiceUrl: string | null }> = await prisma.$queryRaw`
-        SELECT "invoiceUrl" FROM "Payment" WHERE "id" = ${p.id} LIMIT 1`
+        SELECT to_jsonb(p)->>'invoiceUrl' AS "invoiceUrl" FROM "Payment" p WHERE p."id" = ${p.id} LIMIT 1`
       existingUrl = rows?.[0]?.invoiceUrl || null
     } catch {/* ignore raw read errors */}
 
