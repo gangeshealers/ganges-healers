@@ -21,8 +21,17 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function ProgramsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = (await searchParams) || {}
-  const q = typeof sp?.q === 'string' ? sp.q : undefined
-  const { items } = await listPrograms({ limit: 20, q })
+  const q = typeof sp?.q === 'string' ? sp.q.trim().slice(0, 120) : undefined
+  // Program IDs are opaque cursors supplied only by the previous listing.
+  const cursor = typeof sp.cursor === 'string' && /^[A-Za-z0-9_-]{1,180}$/.test(sp.cursor) ? sp.cursor : undefined
+  const { items, nextCursor } = await listPrograms({ limit: 20, q, cursor })
+  const linkTo = (next?: string) => {
+    const search = new URLSearchParams()
+    if (q) search.set('q', q)
+    if (next) search.set('cursor', next)
+    const qs = search.toString()
+    return `/programs${qs ? `?${qs}` : ''}`
+  }
   const crumbs = makeProgramsIndexCrumbs()
   return (
     <div className="min-h-screen bg-gray-50">
@@ -62,7 +71,7 @@ export default async function ProgramsPage({ searchParams }: { searchParams?: Pr
             title="No programs found"
             subtitle="Try a different search or check back soon."
             action={(() => {
-              const hasFilters = Boolean(sp?.q || sp?.serviceSlug)
+              const hasFilters = Boolean(sp?.q || sp?.serviceSlug || cursor)
               if (!hasFilters) return null
               const qs = new URLSearchParams(Object.entries(sp).flatMap(([k,v]) => Array.isArray(v) ? v.map((vv) => [k, String(vv)]) : v ? [[k, String(v)]] : []))
               const href = clearSearchParams('/programs' + (qs.toString() ? `?${qs.toString()}` : ''), ['q','serviceSlug'])
@@ -125,6 +134,20 @@ export default async function ProgramsPage({ searchParams }: { searchParams?: Pr
                 )
               })}
             </div>
+            {nextCursor || cursor ? (
+              <nav aria-label="Program pages" className="mt-8 flex items-center justify-between gap-3">
+                {cursor ? (
+                  <Link href={linkTo()} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                    Back to first page
+                  </Link>
+                ) : <span />}
+                {nextCursor ? (
+                  <Link href={linkTo(nextCursor)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                    Next programs <ArrowRight aria-hidden="true" className="size-4" />
+                  </Link>
+                ) : <span className="text-sm text-gray-500">End of results</span>}
+              </nav>
+            ) : null}
           </>
         )}
       </div>
