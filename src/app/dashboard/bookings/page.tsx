@@ -64,6 +64,7 @@ export default function MyBookingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [reloadVersion, setReloadVersion] = useState(0)
   const [activeTab, setActiveTab] = useState('upcoming')
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
   const [cancelId, setCancelId] = useState<string | null>(null)
@@ -73,7 +74,7 @@ export default function MyBookingsPage() {
 
   useEffect(() => {
     let mounted = true
-    setItems([]); setItemsOwner(''); setRescheduleId(null); setCancelId(null)
+    setItems([]); setItemsOwner(''); setRescheduleId(null); setCancelId(null); setActionNotice(null)
     if (authStatus === 'loading') { setLoading(true); return () => { mounted = false } }
     if (!userId) { setLoading(false); setError('Sign in to view your bookings.'); return () => { mounted = false } }
     ;(async () => {
@@ -122,6 +123,36 @@ export default function MyBookingsPage() {
     return () => { mounted = false }
   }, [userId, authStatus, reloadVersion])
 
+  // A dashboard shortcut is only an intention. Resolve the booking from this
+  // account's authenticated list, then open the existing version-bound dialog.
+  // Never trust a booking ID in the URL to authorize a mutation.
+  useEffect(() => {
+    if (loading || !userId || itemsOwner !== userId) return
+    const url = new URL(window.location.href)
+    const reschedule = url.searchParams.getAll('reschedule')
+    const cancel = url.searchParams.getAll('cancel')
+    if (!reschedule.length && !cancel.length) return
+
+    // Consume the one-time intent even when it is invalid. Refreshing must not
+    // unexpectedly reopen a destructive action after the user has dismissed it.
+    url.searchParams.delete('reschedule')
+    url.searchParams.delete('cancel')
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash)
+
+    const action = reschedule.length === 1 && cancel.length === 0 ? 'reschedule'
+      : cancel.length === 1 && reschedule.length === 0 ? 'cancel' : null
+    const id = action === 'reschedule' ? reschedule[0] : action === 'cancel' ? cancel[0] : ''
+    const booking = id.length <= 200 ? items.find(item => item.id === id) : undefined
+    if (!action || !booking || !(action === 'reschedule' ? booking.isReschedulable : booking.isCancelable)) {
+      setActionNotice('This booking cannot be changed from the shortcut. Review your current appointments below.')
+      return
+    }
+    setActionNotice(null)
+    setActiveTab('upcoming')
+    if (action === 'reschedule') setRescheduleId(booking.id)
+    else setCancelId(booking.id)
+  }, [loading, userId, itemsOwner, items])
+
   const { upcoming, past } = useMemo(() => {
     const now = Date.now()
     if (itemsOwner !== userId) return { upcoming: [], past: [] }
@@ -154,6 +185,7 @@ export default function MyBookingsPage() {
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-semibold mb-4">My Bookings</h1>
+      {actionNotice && <p role="status" className="mb-4 rounded-md border bg-muted/40 p-3 text-sm">{actionNotice}</p>}
 
       {loading ? (
         <Card aria-live="polite" className="p-6">Loading your bookings…</Card>
