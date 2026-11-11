@@ -9,7 +9,7 @@ test('wide desktop navigation includes Blog and Store without losing booking acc
   const desktop = page.getByRole('navigation', { name: 'Desktop navigation' })
   await expect(desktop.getByRole('link', { name: 'Blog', exact: true })).toBeVisible()
   await expect(desktop.getByRole('link', { name: 'Store', exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Book a Session', exact: true })).toBeVisible()
+  await expect(page.getByRole('banner').getByRole('link', { name: 'Book a Session', exact: true })).toBeVisible()
 })
 
 test('desktop and mobile header search real content and retain a working cart', async ({ page, browser, baseURL }) => {
