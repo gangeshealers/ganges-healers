@@ -49,6 +49,12 @@
   - `REFUNDS_ENABLED` is no longer used; eligible cancellations attempt a real
     Razorpay refund when the gateway credentials are configured.
 
+- Optional legacy `Payment.invoiceUrl` compatibility
+  - The current Prisma `Payment` model does not require a physical `invoiceUrl` column. Legacy invoice lookups use `to_jsonb(payment_row)->>'invoiceUrl'`, which safely returns null if that historical column is absent.
+  - The precedence remains **legacy URL first**, then `Payment.invoice.pdfUrl`, then direct `Invoice.pdfUrl`. No migration or backfill is needed for modern tables.
+  - The older invoice generator checks `information_schema.columns` before attempting a legacy-column write. Current databases no longer produce repetitive missing-column error logs during invoicing.
+  - `tests/integration/invoices.optional-legacy-column.test.ts` checks real PostgreSQL reads and an existing invoice's idempotent generator behavior. It does not call Blob storage or payment providers.
+
 - Tests that pin contracts
   - `invoices.public.route.precedence.test.ts`
   - `invoices.generator.idempotency.test.ts`
