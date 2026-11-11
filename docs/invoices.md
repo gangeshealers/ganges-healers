@@ -58,3 +58,9 @@
 - Tests that pin contracts
   - `invoices.public.route.precedence.test.ts`
   - `invoices.generator.idempotency.test.ts`
+
+## Customer billing history
+
+The authenticated `/dashboard/billing` page queries issued invoices for the current session's payment owner. Payment-type filtering (SESSION, PROGRAM, MEMBERSHIP, STORE, COURSE), an 80-character bounded invoice-number search and stable newest-first pages of up to 25 receipts replace the old unfiltered 100-record cap. Invalid or repeated query values safely reset to the default; page numbers are bounded to 1–1000, with a 26th row used only to determine whether the next page exists.
+
+The page links through the existing `invoiceViewerHref` helper to the invoice viewer, rather than rendering raw storage URLs. Filters survive Previous/Next links. Empty and filtered-out histories provide recovery navigation. This is a read-only customer interface; the existing `GET /api/invoices/me`, invoice lookup/redirect and generation endpoints retain their contracts. No migration, provider access or new dependency is needed.
