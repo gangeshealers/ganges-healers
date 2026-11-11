@@ -53,7 +53,7 @@ beforeAll(async () => {
   healerUserId = healerUser.id
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
   const availability = Object.fromEntries(days.map(d => [d, { start: '09:00', end: '20:00' }]))
-  healerId = (await prisma.healer.create({ data: { userId: healerUserId, availability } })).id
+  healerId = (await prisma.healer.create({ data: { userId: healerUserId, availability, isVerified: true } })).id
   serviceId = (await prisma.service.create({ data: {
     slug: `booking-race-${randomUUID()}`, name: 'Race Test', description: 'Test', category: 'Test', price: 100, duration: 90,
   } })).id
