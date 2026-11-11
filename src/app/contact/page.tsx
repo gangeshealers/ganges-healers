@@ -21,7 +21,7 @@ export default function ContactPage() {
       <header className="bg-gradient-to-r from-violet-800 to-indigo-700 px-4 py-14 text-white">
         <div className="container mx-auto max-w-4xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-violet-100">Contact Ganges Healers</p>
-          <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">We're here to help you find answers</h1>
+          <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">We&apos;re here to help you find answers</h1>
           <p className="mt-4 max-w-2xl text-lg leading-7 text-violet-100">
             Use your private support center for account-specific questions, or browse the Help Center for general guidance.
           </p>
