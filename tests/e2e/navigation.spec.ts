@@ -46,7 +46,7 @@ test('desktop and mobile header search real content and retain a working cart', 
     await palette.getByRole('textbox', { name: 'Search input' }).fill(term)
     await palette.getByRole('textbox', { name: 'Search input' }).press('Enter')
     await expect(page).toHaveURL(new RegExp(`/search\\?q=${term}$`), { timeout: 30_000 })
-    await expect(page.getByRole('heading', { name: 'Search Results', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Search Ganges Healers', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: new RegExp(title) })).toHaveAttribute('href', `/blog/${term}`, { timeout: 30_000 })
 
     const catalog = await page.request.get('/api/store/products?limit=50')
