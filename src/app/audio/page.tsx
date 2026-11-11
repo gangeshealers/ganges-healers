@@ -28,10 +28,11 @@ export default async function AudioLibraryPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const filters = parseAudioCatalogParams(await searchParams)
-  const { category, q, sort } = filters
+  const { category, q, sort, access } = filters
   const where: Prisma.AudioTrackWhereInput = {
     isPublished: true,
     ...(category ? { category } : {}),
+    ...(access !== 'all' ? { isPremium: access === 'premium' } : {}),
     ...(q ? { OR: [
       { title: { contains: q, mode: 'insensitive' } },
       { description: { contains: q, mode: 'insensitive' } },
@@ -107,6 +108,7 @@ export default async function AudioLibraryPage({
           <form className="flex flex-1 max-w-md gap-2" action="/audio" method="get" role="search">
             {category && <input type="hidden" name="category" value={category} />}
             {sort && <input type="hidden" name="sort" value={sort} />}
+            {access !== 'all' && <input type="hidden" name="access" value={access} />}
             <input
               type="search"
               name="q"
@@ -138,6 +140,24 @@ export default async function AudioLibraryPage({
           </div>
         </div>
 
+        <nav aria-label="Filter audio by access" className="mb-6 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-sm font-medium text-gray-700">Explore:</span>
+          {[
+            { value: 'all' as const, label: 'All tracks' },
+            { value: 'free' as const, label: 'Free tracks' },
+            { value: 'premium' as const, label: 'Premium tracks' },
+          ].map(option => (
+            <Link
+              key={option.value}
+              href={filterHref({ access: option.value })}
+              aria-current={access === option.value ? 'page' : undefined}
+              className={`rounded-full border px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 ${access === option.value ? 'border-violet-700 bg-violet-700 text-white' : 'bg-white text-gray-700 hover:border-violet-400'}`}
+            >
+              {option.label}
+            </Link>
+          ))}
+        </nav>
+
         {/* Category filter */}
         {categories.length > 1 && (
           <div className="flex flex-wrap gap-2 mb-8">
@@ -165,14 +185,14 @@ export default async function AudioLibraryPage({
 
         {/* Results count */}
         <p className="text-gray-600 mb-4 text-sm">
-          Showing {tracks.length} of {total} track{total !== 1 ? 's' : ''}{category ? ` in ${category}` : ''}{q ? ` matching "${q}"` : ''}
+          Showing {tracks.length} of {total} {access === 'all' ? '' : access === 'free' ? 'free ' : 'premium '}track{total !== 1 ? 's' : ''}{category ? ` in ${category}` : ''}{q ? ` matching "${q}"` : ''}
         </p>
 
         {tracks.length === 0 ? (
           <EmptyState
             title="No audio tracks found"
-            subtitle={q || category ? 'Try a different search or category.' : 'Check back soon — new tracks are being added.'}
-            action={q || category || sort !== 'newest' ? (
+            subtitle={q || category || access !== 'all' ? 'Try different search or access filters.' : 'Check back soon — new tracks are being added.'}
+            action={q || category || sort !== 'newest' || access !== 'all' ? (
               <Link href="/audio" className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
                 Clear filters
               </Link>
@@ -188,10 +208,12 @@ export default async function AudioLibraryPage({
                     <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur flex items-center justify-center group-hover:scale-110 transition-transform">
                       <Play className="w-7 h-7 text-white ml-1" />
                     </div>
-                    {track.isPremium && (
+                    {track.isPremium ? (
                       <span className="absolute top-3 right-3 text-xs font-semibold bg-amber-400 text-amber-900 px-2.5 py-0.5 rounded-full">
                         Premium
                       </span>
+                    ) : (
+                      <span className="absolute top-3 right-3 rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-semibold text-violet-950">Free</span>
                     )}
                   </div>
                   <CardContent className="pt-4 pb-5">
