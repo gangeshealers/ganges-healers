@@ -17,6 +17,7 @@ const footerGroups = [
       { label: 'Visit the healing store', href: '/store' },
       { label: 'Read wellness articles', href: '/blog' },
       { label: 'Explore community discussions', href: '/community' },
+      { label: 'Find help and answers', href: '/help' },
     ],
   },
   {
