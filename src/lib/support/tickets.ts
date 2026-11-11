@@ -53,16 +53,37 @@ export async function updateAdminSupportTicket(input: unknown) {
   const parsed = adminUpdate.safeParse(input)
   if (!parsed.success) throw new SupportTicketError('Review the response and reload the ticket.', 400, 'INVALID_INPUT')
   const { id, updatedAt, status, response } = parsed.data
-  const result = await prisma.supportTicket.updateMany({
-    where: { id, updatedAt: new Date(updatedAt) },
-    data: {
-      status,
-      response: response || null,
-      respondedAt: response ? new Date() : null,
-    },
+  return prisma.$transaction(async tx => {
+    const previous = await tx.supportTicket.findUnique({
+      where: { id },
+      select: { userId: true, response: true },
+    })
+    if (!previous) {
+      throw new SupportTicketError('This support request changed. Reload before saving.', 409, 'STALE_TICKET')
+    }
+    const result = await tx.supportTicket.updateMany({
+      where: { id, updatedAt: new Date(updatedAt) },
+      data: {
+        status,
+        response: response || null,
+        respondedAt: response ? new Date() : null,
+      },
+    })
+    if (!result.count) {
+      throw new SupportTicketError('This support request changed. Reload before saving.', 409, 'STALE_TICKET')
+    }
+    // Do not notify on a status-only edit, empty response, or replayed reply.
+    // Commit the member notification with the reviewed response or neither.
+    if (response && response !== previous.response) {
+      await tx.notification.create({
+        data: {
+          userId: previous.userId,
+          type: 'support_reply',
+          title: 'Your support request has a reply',
+          message: 'A member of the Ganges Healers team responded. Open your Support Center to read the response.',
+        },
+      })
+    }
+    return { success: true }
   })
-  if (!result.count) {
-    throw new SupportTicketError('This support request changed. Reload before saving.', 409, 'STALE_TICKET')
-  }
-  return { success: true }
 }
