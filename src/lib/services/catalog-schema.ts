@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isAllowedArticleImage } from '@/config/images'
 
 export const maxServicePrice = 21_474_836.47
 export const maxServiceDuration = 1440
@@ -14,6 +15,11 @@ const duration = numeric
 const mode = z.enum(['ONLINE', 'OFFLINE', 'BOTH'])
 const slug = z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
 
+/** Shared trusted image host policy for admin forms and catalog API updates. */
+export const serviceImageSchema = z.string().trim().max(2000)
+  .refine(isAllowedArticleImage, 'Use a supported HTTPS image URL, or leave it empty.')
+  .transform(value => value || null).nullable().optional()
+
 export const serviceFieldsSchema = z.object({
   name: requiredText,
   description: requiredText,
@@ -21,6 +27,7 @@ export const serviceFieldsSchema = z.object({
   price,
   duration,
   mode,
+  image: serviceImageSchema,
 })
 
 export const serviceFormSchema = serviceFieldsSchema.extend({ slug })
@@ -28,7 +35,6 @@ export const serviceFormSchema = serviceFieldsSchema.extend({ slug })
 const serviceCatalogSchema = serviceFieldsSchema.extend({
   slug,
   tagline: z.string().nullable().optional(),
-  image: z.string().nullable().optional(),
   benefits: z.array(z.string()).optional(),
 })
 
