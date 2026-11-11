@@ -9,6 +9,7 @@ import { UserBenefitsForm } from '@/components/admin/user-benefits-form'
 import { AdminCatalogOverview } from '@/components/admin/catalog-overview'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { updateUserBenefits, UserBenefitsError, userBenefitsSelect, userBenefitsVersion, type UserBenefitsInput, type UserBenefitsResult } from '@/lib/admin/user-benefits'
+import { ADMIN_MEMBERS_PAGE_SIZE, ADMIN_MEMBERS_MAX_PAGE, ADMIN_MEMBERS_ROLES, adminMembersHref, adminMembersWhere, parseAdminMembersQuery } from '@/lib/admin/member-directory'
 
 // Server action for VIP + credits update
 async function setVip(input: UserBenefitsInput): Promise<UserBenefitsResult> {
@@ -26,15 +27,26 @@ async function setVip(input: UserBenefitsInput): Promise<UserBenefitsResult> {
   }
 }
 
-export default async function AdminPage() {
+type MembersSearch = { role?: string | string[]; q?: string | string[]; page?: string | string[] }
+
+export default async function AdminPage({ searchParams }: { searchParams?: Promise<MembersSearch> } = {}) {
   const session = await auth()
   if (!session?.user?.id) redirect("/auth/signin")
   if (session.user.role !== "ADMIN") redirect("/")
+  await requireCurrentAdmin()
+
+  const { role, query, page: requestedPage } = parseAdminMembersQuery((await searchParams) ?? {})
+  const where = adminMembersWhere(query, role)
+  const accountCount = await prisma.user.count({ where })
+  const lastPage = Math.max(1, Math.ceil(accountCount / ADMIN_MEMBERS_PAGE_SIZE))
+  const page = Math.min(requestedPage, lastPage, ADMIN_MEMBERS_MAX_PAGE)
 
   const [users, activeServices, verifiedHealers, activePrograms, activeCourses, publishedAudio, activeProducts, publishedArticles] = await Promise.all([
     prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 50,
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (page - 1) * ADMIN_MEMBERS_PAGE_SIZE,
+      take: ADMIN_MEMBERS_PAGE_SIZE,
       select: { ...userBenefitsSelect, createdAt: true },
     }),
     prisma.service.count({ where: { isActive: true } }),
@@ -79,9 +91,41 @@ export default async function AdminPage() {
         { label: 'Articles', count: publishedArticles, href: '/admin/blog', meaning: 'Published blog articles' },
       ]} />
 
+      <section aria-labelledby="admin-members-title" className="space-y-4">
+        <div className="space-y-1">
+          <h2 id="admin-members-title" className="text-xl font-semibold">Find and manage member benefits</h2>
+          <p className="text-sm text-muted-foreground">Search all accounts, including older members. Changes remain version-checked and audited.</p>
+        </div>
+        <form action="/admin" method="get" role="search" aria-label="Search account benefits"
+          className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
+          {role !== 'all' && <input type="hidden" name="role" value={role} />}
+          <label htmlFor="member-benefits-search" className="sr-only">Search by email, name or exact account ID</label>
+          <input id="member-benefits-search" name="q" type="search" maxLength={100} defaultValue={query}
+            placeholder="Search email, name or account ID"
+            className="min-w-56 flex-1 rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          <button type="submit" className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Find accounts</button>
+          {(query || role !== 'all') && <Link href="/admin" className="rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted">Clear filters</Link>}
+        </form>
+        <nav aria-label="Account role filter" className="flex flex-wrap gap-2">
+          {ADMIN_MEMBERS_ROLES.map(value => (
+            <Link key={value} href={adminMembersHref(value, query)} aria-current={role === value ? 'page' : undefined}
+              className={'rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted ' + (role === value ? 'border-primary bg-muted' : '')}>
+              {value === 'all' ? 'All accounts' : value === 'user' ? 'Members' : value === 'healer' ? 'Practitioners' : 'Administrators'}
+            </Link>
+          ))}
+        </nav>
+        <p role="status" className="text-sm text-muted-foreground">
+          {accountCount} {accountCount === 1 ? 'account' : 'accounts'} match this search · Page {page} of {lastPage}
+        </p>
+      </section>
+
       <Card>
         <CardContent className="p-0">
           <div className="grid grid-cols-1 divide-y">
+            {users.length === 0 && <div className="space-y-3 p-6 text-center">
+              <p className="text-sm text-muted-foreground">No accounts match the selected search or role.</p>
+              <Link href="/admin" className="text-sm font-semibold text-primary hover:underline">Show all accounts</Link>
+            </div>}
             {users.map((u: AdminUser) => (
               <div key={u.id} className="p-4 flex flex-col md:flex-row md:items-center gap-4">
                 <div className="flex-1">
@@ -91,15 +135,24 @@ export default async function AdminPage() {
                   </div>
                 </div>
 
-                <UserBenefitsForm actorId={session.user.id} label={u.name ? `${u.name} (${u.email})` : u.email} user={{ id: u.id, vip: u.vip, freeSessionCredits: u.freeSessionCredits, version: userBenefitsVersion(u) }} onSave={setVip} />
+                <UserBenefitsForm actorId={session.user.id} reloadHref={adminMembersHref(role, query, page)} label={u.name ? `${u.name} (${u.email})` : u.email} user={{ id: u.id, vip: u.vip, freeSessionCredits: u.freeSessionCredits, version: userBenefitsVersion(u) }} onSave={setVip} />
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
 
+      {accountCount > ADMIN_MEMBERS_PAGE_SIZE && (
+        <nav aria-label="Member directory pages" className="flex items-center justify-between gap-3">
+          {page > 1 ? <Link href={adminMembersHref(role, query, page - 1)}
+            className="rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted">Previous accounts</Link> : <span />}
+          <span className="text-sm text-muted-foreground">Page {page} of {lastPage}</span>
+          {page < lastPage && page < ADMIN_MEMBERS_MAX_PAGE ? <Link href={adminMembersHref(role, query, page + 1)}
+            className="rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted">Next accounts</Link> : <span />}
+        </nav>
+      )}
       <p className="text-sm text-muted-foreground">
-        Tip: To test the VIP path quickly, set yourself to VIP with 2 credits, then book from a service page.
+        Manual VIP and session-credit edits are version-checked and require a reason. Subscription benefits are managed separately.
       </p>
     </div>
   )
