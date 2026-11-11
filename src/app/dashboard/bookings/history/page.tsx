@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import {
   BOOKING_HISTORY_PAGE_SIZE, BOOKING_HISTORY_MAX_PAGE, BOOKING_HISTORY_FILTERS,
-  parseBookingHistoryFilters, bookingHistoryHref, bookingHistoryWhere,
+  parseBookingHistoryFilters, bookingHistoryHref, bookingHistoryWhere, bookingHistoryExportHref,
 } from '@/lib/bookings/history'
 
 export const dynamic = 'force-dynamic'
@@ -70,7 +70,11 @@ export default async function BookingHistoryPage({ searchParams }: { searchParam
       </nav>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p role="status" className="text-sm text-muted-foreground">{total} historical {total === 1 ? 'booking' : 'bookings'} match</p>
-        <Link href="/dashboard/billing" className="text-sm font-semibold text-primary hover:underline">View invoices and billing</Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <a href={bookingHistoryExportHref(status, query)} download="ganges-healers-booking-history.csv"
+            className="rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted">Download history CSV</a>
+          <Link href="/dashboard/billing" className="text-sm font-semibold text-primary hover:underline">View invoices and billing</Link>
+        </div>
       </div>
       {bookings.length === 0 ? (
         <section className="space-y-3 rounded-xl border border-dashed p-8 text-center">
