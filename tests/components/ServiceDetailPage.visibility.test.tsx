@@ -20,7 +20,7 @@ test('public service page only reads active services and displays verified heale
     where: {
       isActive: true,
       isVerified: true,
-      specializations: { has: 'Yoga' },
+      specializations: { has: 'Yoga Healing' },
     },
   }))
 })
