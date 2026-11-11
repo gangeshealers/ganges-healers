@@ -60,3 +60,15 @@ test('loading, signed-out and non-administrator sessions cannot edit', () => {
   const { rerender } = render(<UserBenefitsForm {...props} />)
   for (const state of [{ status: 'loading', data: null }, { status: 'unauthenticated', data: null }, { status: 'authenticated', data: { user: { id: 'admin', role: 'USER' } } }]) { session.mockReturnValue(state); rerender(<UserBenefitsForm {...props} />); expect(screen.queryByRole('form')).not.toBeInTheDocument() }
 })
+
+
+test('stale account reload retains the current member-directory filters', async () => {
+  onSave.mockResolvedValue({ success: false, error: 'Balance changed.', code: 'USER_BENEFITS_CHANGED' })
+  render(<UserBenefitsForm {...props} reloadHref="/admin?role=user&q=old+member&page=3" />)
+  edit()
+  fireEvent.click(screen.getByRole('button', { name: 'Save benefits' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Balance changed')
+  expect(screen.getByRole('link', { name: 'Reload user list' }))
+    .toHaveAttribute('href', '/admin?role=user&q=old+member&page=3')
+  expect(screen.getByLabelText('Free credits')).toHaveValue(4)
+})
