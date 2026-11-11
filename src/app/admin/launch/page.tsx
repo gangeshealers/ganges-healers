@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { inspectLaunchIntegrations } from '@/lib/admin/launch-readiness'
+import { publicArticleCountWhere, isPolicyReadable } from '@/lib/admin/publication-readiness'
 import { prisma } from '@/lib/prisma'
 import { Card, CardContent } from '@/components/ui/card'
 import { CheckCircle2, AlertCircle, ArrowUpRight, ShieldCheck } from 'lucide-react'
@@ -24,10 +25,10 @@ export default async function AdminLaunchReadinessPage() {
     prisma.course.count({ where: { isActive: true } }),
     prisma.audioTrack.count({ where: { isPublished: true } }),
     prisma.product.count({ where: { isActive: true } }),
-    prisma.blogPost.count({ where: { published: true } }),
+    prisma.blogPost.count({ where: publicArticleCountWhere }),
     prisma.blogPost.findMany({
       where: { published: true, slug: { in: ['privacy-policy', 'terms-of-service'] } },
-      select: { slug: true },
+      select: { slug: true, content: true },
     }),
   ])
 
@@ -41,9 +42,13 @@ export default async function AdminLaunchReadinessPage() {
     { label: 'Published articles', count: articles, href: '/admin/blog' },
   ]
   const policyChecks = [
-    { name: 'Privacy Policy', slug: 'privacy-policy', href: '/privacy' },
-    { name: 'Terms of Service', slug: 'terms-of-service', href: '/terms' },
-  ].map(item => ({ ...item, published: publishedPolicies.some(row => row.slug === item.slug) }))
+    { name: 'Privacy Policy', slug: 'privacy-policy', href: '/privacy', kind: 'privacy' },
+    { name: 'Terms of Service', slug: 'terms-of-service', href: '/terms', kind: 'terms' },
+  ] as const
+  const readablePolicies = policyChecks.map(item => ({
+    ...item,
+    published: isPolicyReadable(publishedPolicies, item.kind),
+  }))
 
   // Inspect values on the server and pass only presence booleans into React.
   const integrations = inspectLaunchIntegrations(process.env)
@@ -107,7 +112,7 @@ export default async function AdminLaunchReadinessPage() {
           but does not itself prove legal review or business approval.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          {policyChecks.map(item => (
+          {readablePolicies.map(item => (
             <Card key={item.slug}>
               <CardContent className="space-y-3 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">

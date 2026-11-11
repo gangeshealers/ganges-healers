@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { UserBenefitsForm } from '@/components/admin/user-benefits-form'
 import { AdminCatalogOverview } from '@/components/admin/catalog-overview'
+import { publicArticleCountWhere } from '@/lib/admin/publication-readiness'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { updateUserBenefits, UserBenefitsError, userBenefitsSelect, userBenefitsVersion, type UserBenefitsInput, type UserBenefitsResult } from '@/lib/admin/user-benefits'
 import { ADMIN_MEMBERS_PAGE_SIZE, ADMIN_MEMBERS_MAX_PAGE, ADMIN_MEMBERS_ROLES, adminMembersHref, adminMembersWhere, parseAdminMembersQuery } from '@/lib/admin/member-directory'
@@ -55,7 +56,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: Promi
     prisma.course.count({ where: { isActive: true } }),
     prisma.audioTrack.count({ where: { isPublished: true } }),
     prisma.product.count({ where: { isActive: true } }),
-    prisma.blogPost.count({ where: { published: true } }),
+    prisma.blogPost.count({ where: publicArticleCountWhere }),
   ])
   type AdminUser = typeof users[number]
 
