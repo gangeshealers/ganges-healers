@@ -15,6 +15,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { trackInitiateCheckout, trackPurchase } from "@/lib/analytics/meta-pixel"
 import { readVariantClient } from "@/lib/experiments/client"
+import { staffShippingAddressSchema } from '@/lib/store/order-shipping'
 
 interface DynamicBundleData {
   bundle: {
@@ -58,6 +59,8 @@ export default function StoreCheckoutPage() {
   const [confirming, setConfirming] = useState(false)
   const [savedOrder, setSavedOrder] = useState<{ id: string; amountPaise?: number } | null>(null)
   const [upsellBundle, setUpsellBundle] = useState<DynamicBundleData | null>(null)
+  const [previousAddressPending, setPreviousAddressPending] = useState(false)
+  const [previousAddressNotice, setPreviousAddressNotice] = useState('')
 
   const [address, setAddress] = useState({
     name: session?.user?.name || "",
@@ -76,6 +79,8 @@ export default function StoreCheckoutPage() {
     verificationRef.current = null
     setConfirming(false)
     setSavedOrder(null)
+    setPreviousAddressPending(false)
+    setPreviousAddressNotice('')
     setAddress({ name: session?.user?.name || "", line1: "", line2: "", city: "", state: "", postalCode: "", phone: "" })
   }, [session?.user?.id, session?.user?.name])
 
@@ -103,7 +108,37 @@ export default function StoreCheckoutPage() {
   }, [items.length, quizContext.chakra])
 
   const handleField = (field: string, value: string) => {
+    setPreviousAddressNotice('')
     setAddress((prev) => ({ ...prev, [field]: value }))
+  }
+
+  async function loadPreviousAddress() {
+    const userId = session?.user?.id
+    if (!userId || sessionStatus !== 'authenticated' || loading || confirming || previousAddressPending) return
+    setPreviousAddressPending(true)
+    setPreviousAddressNotice('')
+    try {
+      const response = await fetch('/api/store/shipping-address', { cache: 'no-store' })
+      const data = await response.json().catch(() => null)
+      if (currentUser.current !== userId) return
+      if (!response.ok) throw new Error('Lookup unavailable')
+      if (data?.address === null) {
+        setPreviousAddressNotice('No complete shipping address was found on your recent paid orders. Enter your address below.')
+        return
+      }
+      const valid = staffShippingAddressSchema.safeParse(data?.address)
+      if (!valid.success) throw new Error('Invalid saved address')
+      // Replacing the form requires explicit customer action; do not persist
+      // address data to localStorage, sessionStorage or a new account's draft.
+      setAddress({ name: valid.data.name, line1: valid.data.line1,
+        line2: valid.data.line2 || '', city: valid.data.city, state: valid.data.state,
+        postalCode: valid.data.postalCode, phone: valid.data.phone || '' })
+      setPreviousAddressNotice('Previous shipping address loaded. Review or edit it before payment.')
+    } catch {
+      if (currentUser.current === userId) setPreviousAddressNotice('Could not load a previous address. You can still enter one manually.')
+    } finally {
+      if (currentUser.current === userId) setPreviousAddressPending(false)
+    }
   }
 
   const isAddressValid =
@@ -330,6 +365,15 @@ export default function StoreCheckoutPage() {
       {/* Shipping address */}
       <Card className="mt-6 p-4">
         <h2 className="font-medium mb-3">Shipping Address</h2>
+        {sessionStatus === 'authenticated' && session?.user?.id && (
+          <div className="mb-4 space-y-2">
+            <Button type="button" variant="outline" size="sm"
+              onClick={() => void loadPreviousAddress()} disabled={previousAddressPending || loading || confirming}>
+              {previousAddressPending ? 'Checking saved addresses…' : 'Use previous shipping address'}
+            </Button>
+            {previousAddressNotice && <p role="status" className="text-sm text-muted-foreground">{previousAddressNotice}</p>}
+          </div>
+        )}
         <div className="grid gap-3">
           <div>
             <Label htmlFor="name">Full Name *</Label>
