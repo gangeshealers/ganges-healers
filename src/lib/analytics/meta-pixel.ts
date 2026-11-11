@@ -1,3 +1,5 @@
+import { hasMarketingConsent } from '@/lib/analytics/consent'
+
 // Meta Pixel (Facebook Pixel) helper
 // All calls are no-ops when the pixel ID is missing or on the server
 
@@ -33,7 +35,7 @@ declare global {
 }
 
 function getFbq(): FbqFn | undefined {
-  if (typeof window === 'undefined') return undefined
+  if (typeof window === 'undefined' || !hasMarketingConsent()) return undefined
   return window.fbq
 }
 
