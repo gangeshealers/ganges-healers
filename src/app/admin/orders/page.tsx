@@ -94,7 +94,7 @@ export default async function AdminOrdersPage({
                   </p>
                 </div>
                 <Badge variant="secondary">
-                  {row.status === 'paid' ? 'Awaiting shipment' : row.status === 'fulfilled' ? 'Delivered' : row.status.replaceAll('_', ' ')}
+                  {row.status === 'paid' ? 'Awaiting shipment' : ['delivered', 'fulfilled'].includes(row.status) ? 'Delivered' : row.status.replaceAll('_', ' ')}
                 </Badge>
               </Card>
             </li>
