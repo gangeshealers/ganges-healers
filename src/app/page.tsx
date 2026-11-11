@@ -5,6 +5,7 @@ import SocialProofSection from "@/components/home/FeaturesSection"
 import FreeAudioExperience from "@/components/home/FreeAudioExperience"
 import ServicesPreview from "@/components/home/ServicesPreview"
 import FeaturedHealers from "@/components/home/FeaturedHealers"
+import ProductsPreview from "@/components/home/ProductsPreview"
 import ProgramsPreview from "@/components/home/ProgramsPreview"
 import CoursesPreview from "@/components/home/CoursesPreview"
 import CommunityHighlights from "@/components/home/CommunityHighlights"
@@ -41,6 +42,8 @@ export default function Home() {
       <ServicesPreview />
       {/* 6. Authority — verified healer profiles */}
       <FeaturedHealers />
+      {/* Store discovery — available products only */}
+      <ProductsPreview />
       {/* 7. Structured transformation — healing programs */}
       <ProgramsPreview />
       {/* 8. Learning — active courses with saved lesson counts */}
