@@ -19,7 +19,7 @@ interface MetricsResponse {
 interface SeriesPoint { date: string; grossPaise: number; refundsPaise: number; netPaise: number; byType: Record<string, number> }
 
 type RangeOpt = '7'|'30'|'90'
-type TypeFilter = 'ALL' | 'SESSION' | 'PROGRAM' | 'MEMBERSHIP'
+type TypeFilter = 'ALL' | 'SESSION' | 'PROGRAM' | 'MEMBERSHIP' | 'STORE' | 'COURSE'
 
 function formatINR(paise: number) { return `₹${(paise/100).toLocaleString('en-IN',{ minimumFractionDigits:2, maximumFractionDigits:2 })}` }
 
@@ -28,6 +28,8 @@ const TYPE_OPTIONS: Array<{label:string; value: TypeFilter}> = [
   { label: 'Session', value: 'SESSION' },
   { label: 'Program', value: 'PROGRAM' },
   { label: 'Membership', value: 'MEMBERSHIP' },
+  { label: 'Store', value: 'STORE' },
+  { label: 'Course', value: 'COURSE' },
 ]
 
 export default function MetricsDashboard() {
@@ -39,6 +41,7 @@ export default function MetricsDashboard() {
   const [payments, setPayments] = useState<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [refunds, setRefunds] = useState<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [tableLoading, setTableLoading] = useState(true)
+  const [exporting, setExporting] = useState<'payments' | 'refunds' | null>(null)
   const [paymentsSort, setPaymentsSort] = useState<{field:'createdAt'|'amountPaise'; dir:'asc'|'desc'}>({ field: 'createdAt', dir: 'desc' })
   const [refundsSort, setRefundsSort] = useState<{field:'createdAt'|'amountPaise'; dir:'asc'|'desc'}>({ field: 'createdAt', dir: 'desc' })
 
@@ -115,6 +118,34 @@ export default function MetricsDashboard() {
     setRefundsSort(s => s.field === field ? { field, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'desc' })
   }
 
+  async function downloadCsv(kind: 'payments' | 'refunds') {
+    if (exporting) return
+    setExporting(kind)
+    const { from, to } = dateRange
+    try {
+      const qs = new URLSearchParams({ kind, from, to, type })
+      const response = await fetch('/api/admin/payments/export?' + qs.toString(), { cache: 'no-store' })
+      if (!response.ok) {
+        if (response.status === 413) throw new Error('This report exceeds 5,000 rows. Select a shorter date range.')
+        throw new Error('Could not export ' + kind + '. Please try again.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = 'ganges-healers-' + kind + '-' + from + '-to-' + to + '.csv'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      console.error('[admin][payments][ui_error]', { action: 'export', kind })
+      toast.error(error instanceof Error ? error.message : 'Export failed')
+    } finally {
+      setExporting(null)
+    }
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 space-y-8" data-test="payments-analytics-root">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -131,6 +162,12 @@ export default function MetricsDashboard() {
           >
             {TYPE_OPTIONS.map(o=> <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+          <Button variant="outline" size="sm" disabled={exporting !== null} onClick={() => downloadCsv('payments')} data-test="export-payments-csv">
+            {exporting === 'payments' ? 'Exporting...' : 'Payments CSV'}
+          </Button>
+          <Button variant="outline" size="sm" disabled={exporting !== null} onClick={() => downloadCsv('refunds')} data-test="export-refunds-csv">
+            {exporting === 'refunds' ? 'Exporting...' : 'Refunds CSV'}
+          </Button>
         </div>
       </div>
 
