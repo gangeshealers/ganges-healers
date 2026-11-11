@@ -21,11 +21,12 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default async function StorePage({ searchParams }: { searchParams?: Promise<Record<string, string>> }) {
+export default async function StorePage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = (await searchParams) || {}
-  const q = sp.q
-  const categorySlug = sp.categorySlug
-  const chakra = sp.chakra
+  const q = typeof sp.q === 'string' ? sp.q.trim().slice(0, 120) : undefined
+  const categorySlug = typeof sp.categorySlug === 'string' ? sp.categorySlug.trim() : undefined
+  const chakra = typeof sp.chakra === 'string' ? sp.chakra.trim() : undefined
+  const cursor = typeof sp.cursor === 'string' && /^[A-Za-z0-9_-]{1,180}$/.test(sp.cursor) ? sp.cursor : undefined
 
   const CHAKRAS = [
     { value: 'Root', label: 'Root' },
@@ -37,7 +38,8 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
     { value: 'Crown', label: 'Crown' },
   ] as const
 
-  const { items, nextCursor } = await listProducts({ q, categorySlug, chakra, limit: 20 })
+  const { items, nextCursor } = await listProducts({ q, categorySlug, chakra, limit: 20, cursor })
+  const firstPageHref = (() => { const p = new URLSearchParams(); if (q) p.set('q', q); if (categorySlug) p.set('categorySlug', categorySlug); if (chakra) p.set('chakra', chakra); return `/store${p.size ? `?${p}` : ''}` })()
 
   const categories = await prisma.productCategory.findMany({
     select: { slug: true, title: true, _count: { select: { products: { where: { isActive: true } } } } },
@@ -178,7 +180,7 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
           title="No products found"
           subtitle="Try a different search or category."
           action={(() => {
-            const hasFilters = Boolean(q || categorySlug || chakra)
+            const hasFilters = Boolean(q || categorySlug || chakra || cursor)
             if (!hasFilters) return null
             const qs = new URLSearchParams(Object.entries({ q: q || '', categorySlug: categorySlug || '', chakra: chakra || '' }).filter(([,v]) => v))
             const href = clearSearchParams('/store' + (qs.toString() ? `?${qs.toString()}` : ''), ['q','categorySlug','chakra'])
@@ -217,13 +219,16 @@ export default async function StorePage({ searchParams }: { searchParams?: Promi
           ))}
         </div>
       )}
+      {cursor ? (
+        <Link href={firstPageHref} className="mt-6 inline-block rounded border px-4 py-2 text-sm font-medium hover:bg-muted focus-ring">Back to first page</Link>
+      ) : null}
       {nextCursor ? (
         <form className="mt-6" action="/store" method="get">
           {q ? <input type="hidden" name="q" value={q} /> : null}
           {categorySlug ? <input type="hidden" name="categorySlug" value={categorySlug} /> : null}
           {chakra ? <input type="hidden" name="chakra" value={chakra} /> : null}
           <input type="hidden" name="cursor" value={nextCursor} />
-          <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded focus-ring">Load more</button>
+          <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded focus-ring">Next products</button>
         </form>
       ) : null}
     </div>
