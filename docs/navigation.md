@@ -50,6 +50,14 @@ The header shows the existing cart provider's quantity total and opens the exist
 - Opening search, account, the menu, or cart closes an existing notification panel. Route changes and switches away from a known account close navigation surfaces; initial session hydration preserves public search/cart interactions already in progress.
 - The mobile sheet has a descriptive title, scrolls at short heights, closes after destination selection, and provides real guest/member account actions.
 
+## Shared footer and missing-page recovery
+
+The root application layout includes a responsive, keyboard-accessible footer after the main content. It links only to existing public and authenticated destinations, with distinct action labels so existing header and workspace selectors remain unambiguous. Account and bookings destinations still enforce their existing server-side sign-in and ownership checks; footer links do not grant access.
+
+The new global `src/app/not-found.tsx` provides a clear recovery screen for missing public routes and withdrawn catalog links, with working home, Services and Programs destinations. It does not reveal whether a private or archived record exists and does not change the underlying 404 response.
+
+The footer includes a general-wellness notice; it is not a substitute for legal or clinical copy approval. No new email address, support promise, privacy-policy link, or medical claim is invented.
+
 ## Validation and rollback
 
 Focused UI coverage exercises the mounted header, real shared cart state, debounce/cancellation races, stale responses, empty/error recovery, keyboard focus, session changes, role shortcuts, and confirmed/uncertain sign-out outcomes. Pure unit coverage validates public payloads and resource destinations. Browser coverage uses indexed published content, seeded store products, isolated test accounts, and actual Auth.js sign-out on desktop/mobile; it does not submit a payment.
