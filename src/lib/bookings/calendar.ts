@@ -26,7 +26,7 @@ function fold(value: string) {
 }
 function eventLines(event: CalendarEvent) {
   if (!Number.isFinite(event.start.getTime()) || !Number.isFinite(event.updatedAt.getTime()) ||
-    !Number.isSafeInteger(event.durationMin) || event.durationMin < 1 || event.durationMin > 1440) {
+    !Number.isSafeInteger(event.durationMin) || event.durationMin < 1) {
     throw new Error('Invalid calendar event')
   }
   const meeting = safeMeetingLink(event.meetingLink)
@@ -36,7 +36,7 @@ function eventLines(event: CalendarEvent) {
     'SEQUENCE:' + Math.max(0, Math.min(2147483647, Math.floor(event.updatedAt.getTime() / 1000) - 1577836800)),
     'DTSTART:' + utc(event.start), 'DTEND:' + utc(new Date(event.start.getTime() + event.durationMin * 60000)),
     'SUMMARY:' + calendarText(event.title), 'DESCRIPTION:' + calendarText(event.description), 'STATUS:' + event.status,
-    ...(meeting ? ['URL:' + calendarText(meeting)] : []), 'END:VEVENT',
+    ...(meeting ? ['URL:' + meeting] : []), 'END:VEVENT',
   ]
 }
 
