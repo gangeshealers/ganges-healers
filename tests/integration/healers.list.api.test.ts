@@ -14,7 +14,7 @@ const prismaMock = {
   },
   healer: {
     findMany: async (args: any) => {
-      let items = db.healers.filter((h) => h.isActive)
+      let items = db.healers.filter((h) => h.isActive && h.isVerified)
       // where filters
       if (args.where?.OR?.length) {
         const or = args.where.OR
@@ -53,9 +53,10 @@ describe('Healers list API', () => {
     db.services.push({ slug: 'yoga-healing', name: 'Yoga Therapy' })
     db.services.push({ slug: 'reiki-healing', name: 'Reiki Healing' })
     // seed healers
-    db.healers.push({ id: 'h1', user: { name: 'Alice' }, bio: 'Yoga expert', experienceYears: 5, rating: 4.8, specializations: ['Yoga'], isActive: true })
-    db.healers.push({ id: 'h2', user: { name: 'Bob' }, bio: 'Reiki specialist', experienceYears: 3, rating: 4.5, specializations: ['Reiki'], isActive: true })
-    db.healers.push({ id: 'h3', user: { name: 'Cara' }, bio: 'Mixed modalities', experienceYears: 10, rating: 4.9, specializations: ['Yoga','Reiki'], isActive: true })
+    db.healers.push({ id: 'h1', user: { name: 'Alice' }, bio: 'Yoga expert', experienceYears: 5, rating: 4.8, specializations: ['Yoga'], isActive: true, isVerified: true })
+    db.healers.push({ id: 'h2', user: { name: 'Bob' }, bio: 'Reiki specialist', experienceYears: 3, rating: 4.5, specializations: ['Reiki'], isActive: true, isVerified: true })
+    db.healers.push({ id: 'h3', user: { name: 'Cara' }, bio: 'Mixed modalities', experienceYears: 10, rating: 4.9, specializations: ['Yoga','Reiki'], isActive: true, isVerified: true })
+    db.healers.push({ id: 'h4', user: { name: 'Pending review' }, bio: 'Reiki', experienceYears: 4, rating: 5, specializations: ['Reiki'], isActive: true, isVerified: false })
   })
 
   test('GET /api/healers → returns items with shape and nextCursor', async () => {
@@ -78,6 +79,13 @@ describe('Healers list API', () => {
     expect('nextCursor' in json).toBe(true)
     expect(json.items).toHaveLength(3)
     expect(json.nextCursor).toBeNull()
+  })
+
+  test('active but unverified healers are not publicly discoverable', async () => {
+    const response = await List.GET(get('http://localhost/api/healers'))
+    const result = await response.json()
+    expect(result.items).toHaveLength(3)
+    expect(result.items.every((item: { id: string }) => item.id !== 'h4')).toBe(true)
   })
 
   test('q search filters by name/bio/spec', async () => {
