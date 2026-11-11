@@ -1,0 +1,11 @@
+# Practitioner booking history archive
+
+The practitioner workspace now provides `/healer/bookings/history`, a private server-rendered page for older assigned bookings. It is linked from **Manage Bookings** and supplements the interactive session-management list. The archive is **read only**: it never confirms, cancels, completes or modifies appointments, payments, meeting links or user contact details.
+
+Authentication uses `requireHealer()`, including the live HEALER role and its database-linked healer record. Every booking count and page query includes **`healerId` from the trusted session**, never a URL-supplied practitioner ID. The archive includes sessions whose saved start is in the past, plus completed or cancelled sessions regardless of future start. It excludes upcoming active appointments, which remain managed in `/healer/bookings`. Past sessions still in a nonterminal state are shown with that saved status rather than incorrectly labelled completed.
+
+Members' names appear to their assigned practitioner, but the page does **not** select or render member email, phone, address, payment data or private meeting links. Filters are All history, Completed, Cancelled and a case-insensitive service-name query of up to 80 characters. Repeat/malformed filters reset to safe defaults. Each page displays 20 records ordered by session time descending with a stable ID tie-breaker. Requested pages are clamped to the last available page and capped at page 1000 to bound large offsets. A very large history requires narrowing by service/status to navigate older records.
+
+Unit and UI regression tests verify role authorization, owner-bound filtering, date/status rules, search, paging, IST date formatting, empty states, and omission of direct member contact details. New endpoints, provider integration, database migrations, permissions, emails and payout activity are **not** introduced. Roll back by reverting the archive page/helper, navigation and tests while preserving saved sessions.
+
+**Scope limitation:** the interactive `/healer/bookings` client still fetches its operational booking list. This separate bounded historical view is an incremental archive workflow and is not an assertion that operational list pagination is finished.
