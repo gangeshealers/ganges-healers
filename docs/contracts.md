@@ -11,6 +11,17 @@
 
 This living document pins the repo’s public API contracts, HTTP headers, logging keys, database invariants, and environment variable behaviors. Changes to any item below require an explicit Patch Plan, updated tests, and reviewer approval per `docs/GUARDRAILS.md`.
 
+## Member support request contract
+
+- `SUPPORT_DESK_ENABLED` defaults off. When unset or not exactly `true`, support pages show an unavailable state and `POST /api/support/tickets` returns 503 without touching a missing support table. The admin response action also refuses writes. Enable only after applying the migration to that environment's database.
+
+
+- `POST /api/support/tickets` is an authenticated, JSON-only, same-origin request. The session supplies ownership; arbitrary client user IDs cannot select another account.
+- Requests use validated 5–120-character subjects and 20–3000-character messages, capped to five per member per rolling 24 hours under a transaction-scoped database lock.
+- A successful submission returns only the new ticket ID and status with private `no-store` caching. No support text, member email, or staff response is included in the API response.
+- The member support page always filters by the current user ID. The admin queue requires a current admin actor. Admin updates use the visible `updatedAt` revision so stale responses cannot overwrite newer ones.
+- Support messages are displayed inside the application, not emailed. The support table's schema migration must be deployed only after confirming the database branch and planning retention. See `docs/support-desk.md`.
+
 ## Scope
 
 - Public API endpoints, methods, status codes, and response shapes
