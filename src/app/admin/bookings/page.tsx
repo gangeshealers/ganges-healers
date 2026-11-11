@@ -118,6 +118,9 @@ export default async function AdminBookingsPage({ searchParams }: { searchParams
                   <span>{delivery.credit ? 'Session credit' : delivery.funded ? 'Matching captured payment' : delivery.free ? 'Free session' : 'Payment not verified for delivery'}</span>
                 </div>
                 <p className="break-all font-mono text-xs text-muted-foreground">Booking reference: {row.id}</p>
+                <Link href={'/admin/bookings/' + encodeURIComponent(row.id)} className="inline-flex text-sm font-semibold text-primary underline-offset-4 hover:underline">
+                  Review booking record
+                </Link>
               </article>
             )
           })}
