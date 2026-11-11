@@ -20,7 +20,7 @@ test('a completed session can be reviewed once and its actual rating appears on 
     await db.user.update({ where: { id: userId }, data: { name: 'Review Journey Customer' } })
     const healerUser = await db.user.create({ data: { email: `review-healer-${token}@example.test`, name: 'Review Journey Healer', role: 'HEALER' } })
     users.push(healerUser.id)
-    const healer = await db.healer.create({ data: { userId: healerUser.id, specializations: [`Review ${token}`] } })
+    const healer = await db.healer.create({ data: { userId: healerUser.id, isVerified: true, specializations: [`Review ${token}`] } })
     const service = await db.service.create({ data: { slug: `review-${token}`, name: `Review ${token}`, description: 'A review journey session.', category: 'Test', price: 100, duration: 60 } })
     serviceId = service.id
     const booking = await db.booking.create({ data: { userId, healerId: healer.id, serviceId, scheduledAt: new Date(Date.now() - 86400000), status: 'COMPLETED', durationMin: 60, pricePaise: 10000 } })
