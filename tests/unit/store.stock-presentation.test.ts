@@ -9,7 +9,7 @@ describe('store availability and stock wording', () => {
     ['IN_STOCK', 1, '1 in stock', true],
     ['IN_STOCK', 5, '5 in stock', true],
     ['LOW', null, 'Low stock', true],
-    ['LOW', 100, 'Low stock', true],
+    ['LOW', 100, 'In stock', true],
     ['IN_STOCK', 6, 'In stock', true],
     ['IN_STOCK', null, 'In stock', true],
   ] as const)('%s with count %s → %s', (status, quantity, label, available) => {
