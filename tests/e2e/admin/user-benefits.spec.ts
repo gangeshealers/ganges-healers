@@ -27,7 +27,6 @@ test('a real administrator reviews and audits manual benefits without overwritin
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30000 })
     expect((await (await page.request.get('/api/auth/session')).json()).user.role).toBe('ADMIN')
     await page.goto('/admin')
-    // The directory must find target accounts without relying on newest-50 ordering.
     await page.getByRole('searchbox', { name: 'Search by email, name or exact account ID' }).fill(customerEmail)
     await page.getByRole('button', { name: 'Find accounts', exact: true }).click()
     await expect(page).toHaveURL(/\/admin\?q=/)
@@ -54,25 +53,7 @@ test('a real administrator reviews and audits manual benefits without overwritin
     const audits = await db.activityLog.findMany({ where: { entityId: users[1], action: 'user_benefits_updated' } })
     expect(audits).toHaveLength(1); expect(audits[0]).toMatchObject({ userId: users[0], metadata: { before: { vip: false, freeSessionCredits: 1 }, after: { vip: true, freeSessionCredits: 4 }, reason: 'Reviewed service recovery' } })
     await page.getByRole('link', { name: 'View benefit audit' }).click()
-    await expect(page).toHaveURL(new RegExp('/admin/members/' + users[1] + '/benefits
-    expect(await db.sessionCredit.findUnique({ where: { id: ledger.id } })).toEqual(ledger)
-    expect(await db.payment.findUnique({ where: { id: paymentId } })).toEqual(payment)
-    const customer = await customerContext.newPage(); await customer.goto('/auth/signin')
-    await customer.getByLabel('Email', { exact: true }).fill(customerEmail); await customer.getByLabel('Password', { exact: true }).fill(password)
-    await customer.getByRole('button', { name: 'Sign In', exact: true }).click(); await expect(customer).toHaveURL(/\/dashboard$/, { timeout: 30000 })
-    expect((await (await customer.request.get('/api/auth/session')).json()).user).toMatchObject({ id: users[1], role: 'USER', freeSessionCredits: 4 })
-    await customer.goto('/admin'); await expect(customer).toHaveURL(new URL('/', baseURL).href, { timeout: 30000 })
-  } finally {
-    await customerContext.close()
-    try {
-      await db.activityLog.deleteMany({ where: { userId: { in: users } } })
-      if (paymentId) await db.payment.deleteMany({ where: { id: paymentId } })
-      await db.user.deleteMany({ where: { id: { in: users } } })
-      if (planId) await db.membershipPlan.deleteMany({ where: { id: planId } })
-    } finally { await db.$disconnect() }
-  }
-})
-), { timeout: 30000 })
+    await expect(page).toHaveURL(new URL('/admin/members/' + users[1] + '/benefits', baseURL).href, { timeout: 30000 })
     await expect(page.getByRole('heading', { name: 'Manual benefit change history' })).toBeVisible()
     await expect(page.getByText('1 → 4')).toBeVisible()
     await expect(page.getByText('No → Yes')).toBeVisible()
