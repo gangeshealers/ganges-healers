@@ -17,6 +17,7 @@ import { getSessionId } from '@/lib/analytics/session'
 import { auth } from '@/lib/auth'
 import BundleCard from '@/components/store/BundleCard'
 import DynamicBundleBanner from '@/components/store/DynamicBundleBanner'
+import { getStockPresentation } from '@/lib/store/stock-presentation'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
@@ -38,6 +39,7 @@ export default async function ProductDetailPage({ params, searchParams }: { para
   const variant = await getVariant('product_headline')
   const p = await getProductBySlug(slug)
   if (!p) return notFound()
+  const stock = getStockPresentation(p.stockStatus, p.stockCount)
   const crumbs = makeProductCrumbs(slug, p.title)
   const bundles = p.chakra ? await listBundles(p.chakra) : []
 
@@ -91,20 +93,9 @@ export default async function ProductDetailPage({ params, searchParams }: { para
               This consecrated tool is prepared in limited batches
             </p>
           ) : null}
-          <div className="mt-2">
-            {p.stockStatus === 'OUT' ? (
-              <span className="text-red-600">Out of stock</span>
-            ) : p.stockCount !== null && p.stockCount <= 5 ? (
-              <span className="text-amber-600 font-medium">Only {p.stockCount} left — selling fast</span>
-            ) : p.stockStatus === 'LOW' ? (
-              <span className="text-amber-600">Low stock</span>
-            ) : (
-              <>
-                <span className="text-green-600">In stock</span>
-                <span className="ml-2 text-sm text-amber-600">· Only a few pieces available</span>
-              </>
-            )}
-          </div>
+          <p role="status" className={stock.tone === 'out' ? 'mt-2 text-red-700' : stock.tone === 'low' ? 'mt-2 font-medium text-amber-700' : 'mt-2 text-green-700'}>
+            {stock.label}
+          </p>
           <AddToCartButton
             productId={p.id}
             slug={p.slug}
@@ -112,6 +103,7 @@ export default async function ProductDetailPage({ params, searchParams }: { para
             pricePaise={p.pricePaise}
             imageUrl={p.imageUrl}
             stockStatus={p.stockStatus}
+            stockCount={p.stockCount}
           />
           {p.service ? (
             <div className="mt-4 space-y-2">
