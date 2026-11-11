@@ -20,9 +20,17 @@ describe('HealersPage smoke', () => {
     expect(screen.getByRole('form', { name: 'Find healers' })).toHaveAttribute('action', '/healers')
     expect(screen.getByRole('textbox', { name: 'Search healers' })).toHaveValue('Yoga')
     expect(screen.getByRole('combobox', { name: 'Service' })).toHaveValue('yoga-healing')
+    expect(screen.getByRole('combobox', { name: 'Sort healers' })).toHaveValue('default')
     expect(screen.getByRole('option', { name: 'Yoga Therapy' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'All services' })).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('Service slug (optional)')).not.toBeInTheDocument()
+  })
+  test('sort selection survives a filtered search and uses the existing endpoint', async () => {
+    render(await HealersPage({ searchParams: Promise.resolve({ sort: 'experience', q: 'Yoga', serviceSlug: 'yoga-healing' }) }))
+    const form = screen.getByRole('form', { name: 'Find healers' }) as HTMLFormElement
+    expect(new FormData(form).get('sort')).toBe('experience')
+    expect(screen.getByRole('combobox', { name: 'Sort healers' })).toHaveValue('experience')
+    expect(new FormData(form).get('serviceSlug')).toBe('yoga-healing')
   })
   test('renders healer cards with names and ratings', async () => {
     const el = await (HealersPage as any)({ searchParams: Promise.resolve({}) })
