@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { createMemberSupportTicket, SupportTicketError } from '@/lib/support/tickets'
+import { isSupportDeskEnabled } from '@/lib/support/availability'
 
 const privateHeaders = { 'Cache-Control': 'no-store' }
 
@@ -8,6 +9,10 @@ export async function POST(request: NextRequest) {
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Sign in to contact support.', code: 'UNAUTHORIZED' }, { status: 401, headers: privateHeaders })
+  }
+
+  if (!isSupportDeskEnabled()) {
+    return NextResponse.json({ error: 'Support requests are not available yet. Please try again later.', code: 'NOT_ENABLED' }, { status: 503, headers: privateHeaders })
   }
 
   const origin = request.headers.get('origin')
