@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client'
 import { sampleServices, samplePrograms, sampleCourses } from '@/lib/catalog/sample-data'
 import { validateCatalogSeedTarget } from '@/lib/catalog/seed-guard'
 import { seedPublicSampleCatalog } from '@/lib/catalog/seed-public-samples'
+import { sampleProductCategories, sampleProducts } from '@/lib/catalog/sample-products'
 
 const host = 'ep-disposable-branch-pooler.neon.tech'
 const url = `postgresql://owner:secret@${host}/neondb?sslmode=require`
@@ -85,4 +86,38 @@ describe('safe public sample catalog', () => {
     await seedPublicSampleCatalog(prisma)
     expect(tx.courseLesson.create).not.toHaveBeenCalled()
   })
+  test('optional store fixtures contain 15 unique products in four existing categories', () => {
+    expect(sampleProductCategories).toHaveLength(4)
+    expect(sampleProducts).toHaveLength(15)
+    expect(new Set(sampleProducts.map(product => product.slug)).size).toBe(15)
+    const valid = new Set(sampleProductCategories.map(category => category.slug))
+    expect(sampleProducts.every(product => valid.has(product.categorySlug))).toBe(true)
+    expect(sampleProducts.find(product => product.slug === 'amethyst-cluster')).toMatchObject({ pricePaise: 249900 })
+  })
+
+  test('explicit withProducts adds only missing category and product rows, without touching sales', async () => {
+    const categoryUpsert = jest.fn(async ({ where }: { where: { slug: string } }) => ({ id: `category-${where.slug}` }))
+    const productUpsert = jest.fn().mockResolvedValue({ id: 'product-id' })
+    const tx = {
+      service: { upsert: jest.fn() },
+      program: { upsert: jest.fn() },
+      course: { upsert: jest.fn(async ({ where }: { where: { slug: string } }) => ({ id: where.slug })) },
+      courseLesson: { findFirst: jest.fn().mockResolvedValue({ id: 'existing' }), create: jest.fn() },
+      productCategory: { upsert: categoryUpsert },
+      product: { upsert: productUpsert },
+    }
+    const prisma = { $transaction: (work: (client: typeof tx) => Promise<unknown>) => work(tx) } as unknown as PrismaClient
+    const result = await seedPublicSampleCatalog(prisma, { withProducts: true })
+    expect(result).toMatchObject({ sampleProductCategories: 4, sampleProducts: 15 })
+    expect(categoryUpsert).toHaveBeenCalledTimes(4)
+    expect(productUpsert).toHaveBeenCalledTimes(15)
+    expect(productUpsert.mock.calls.every(([arg]) => Object.keys(arg.update).length === 0)).toBe(true)
+    expect(productUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { slug: 'amethyst-cluster' },
+      create: expect.objectContaining({ categoryId: 'category-crystals', pricePaise: 249900 }),
+      update: {},
+    }))
+    expect(tx.courseLesson.create).not.toHaveBeenCalled()
+  })
+
 })
