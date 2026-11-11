@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import ServicesPage from '@/app/services/page'
 
 jest.mock('@/lib/prisma', () => ({
-  prisma: { service: { findMany: jest.fn(async () => []) } }
+  prisma: { service: { findMany: jest.fn(async () => []), count: jest.fn(async () => 0) } }
 }))
 
 jest.mock('@/components/services/ServicesFilter', () => {
