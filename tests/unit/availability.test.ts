@@ -20,10 +20,11 @@ jest.mock('@/lib/prisma', () => ({
   prisma: {
     healer: {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
-        if (where.id === 'inactive') return { availability, isActive: false }
-        if (where.id === 'no-availability') return { availability: {}, isActive: true }
+        if (where.id === 'inactive') return { availability, isActive: false, isVerified: true }
+        if (where.id === 'unverified') return { availability, isActive: true, isVerified: false }
+        if (where.id === 'no-availability') return { availability: {}, isActive: true, isVerified: true }
         if (where.id === 'no-healer') return null
-        return { availability, isActive: true }
+        return { availability, isActive: true, isVerified: true }
       }),
     },
     service: {
@@ -39,7 +40,7 @@ jest.mock('@/lib/prisma', () => ({
   }
 }))
 
-import { getHealerAvailability, validateBookingSlot } from '@/lib/availability'
+import { getHealerAvailability, validateBookingSlot, validateProgramSessionSlot } from '@/lib/availability'
 
 // ------------------ Helpers ------------------
 function addBooking(iso: string, durationMin = 60) {
@@ -71,6 +72,12 @@ describe('getHealerAvailability', () => {
   it('a day off has no offered starts', async () => {
     const res = await getHealerAvailability('no-availability', '2025-09-29')
     expect(res.slots).toEqual([])
+  })
+
+  it('does not expose public time slots for an unverified practitioner, but preserves existing booking previews', async () => {
+    expect((await getHealerAvailability('unverified', '2025-09-29')).slots).toEqual([])
+    const existing = await getHealerAvailability('unverified', '2025-09-29', 60, 'existing_booking')
+    expect(existing.slots.length).toBeGreaterThan(0)
   })
 
   it('inactive healer returns []', async () => {
@@ -128,6 +135,33 @@ describe('getHealerAvailability', () => {
     addBooking('2025-09-29T11:00:00+05:30', 60)
     const anotherBooking = await getHealerAvailability('healer-1', '2025-09-29', 90, 'b0')
     expect(anotherBooking.slots.find(s => s.time === '10:30')?.available).toBe(false)
+  })
+})
+
+describe('verification at the new-booking boundary', () => {
+  const slot = new Date('2025-09-29T10:00:00+05:30')
+
+  it('refuses a new customer booking with an unverified healer', async () => {
+    expect(await validateBookingSlot('unverified', 'service-60', slot))
+      .toEqual({ valid: false, error: 'Healer not found or unavailable for new bookings' })
+  })
+
+  it('keeps confirmed legacy booking reschedules and paid program sessions possible', async () => {
+    expect(await validateBookingSlot('unverified', 'service-60', slot, { excludeBookingId: 'saved_booking' }))
+      .toEqual({ valid: true })
+    expect(await validateProgramSessionSlot('unverified', slot, 60))
+      .toEqual({ valid: true })
+  })
+
+  it('does not let TEST_MODE bypass verification of a new booking', async () => {
+    const old = process.env.TEST_MODE
+    process.env.TEST_MODE = '1'
+    try {
+      expect((await validateBookingSlot('unverified', 'service-60', slot)).valid).toBe(false)
+    } finally {
+      if (old === undefined) delete process.env.TEST_MODE
+      else process.env.TEST_MODE = old
+    }
   })
 })
 

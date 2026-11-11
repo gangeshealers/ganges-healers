@@ -26,7 +26,7 @@ test('staff assigns and reserves a program session; the customer sees it and onl
   try {
     const owner = await db.user.create({ data: { email: emails.owner, role: 'USER', name: 'Program Customer' } }); userIds.push(owner.id)
     for (const [key, role] of [['admin', 'ADMIN'], ['healer', 'HEALER'], ['outsider', 'USER']] as const) userIds.push((await db.user.create({ data: { email: emails[key], role, name: key === 'healer' ? 'Program Practitioner' : key } })).id)
-    const healer = await db.healer.create({ data: { userId: userIds[2], isActive: true, availability: Object.fromEntries(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(day => [day, { start: '10:00', end: '20:00' }])) } })
+    const healer = await db.healer.create({ data: { userId: userIds[2], isActive: true, isVerified: true, availability: Object.fromEntries(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(day => [day, { start: '10:00', end: '20:00' }])) } })
     const program = await db.program.create({ data: { slug: `program-journey-${suffix}`, title: 'Program Session Journey', description: 'Isolated browser fixture', pricePaise: 25000, totalSessions: 1, sessionsPerWeek: 1, durationMinutes: 60 } }); programId = program.id
     // This isolated active entitlement tests scheduling, not real provider payment delivery.
     const enrollment = await db.programEnrollment.create({ data: { userId: owner.id, programId, status: 'active', pricePaise: 25000, schedule: buildProgramSchedule(1, 1, 60, new Date()).sessions } })

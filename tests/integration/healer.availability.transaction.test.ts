@@ -18,8 +18,8 @@ beforeAll(async () => {
   userId = (await prisma.user.create({ data: { email: `availability-${randomUUID()}@example.test`, role: 'HEALER' } })).id
   otherId = (await prisma.user.create({ data: { email: `availability-other-${randomUUID()}@example.test`, role: 'HEALER' } })).id
   customerId = (await prisma.user.create({ data: { email: `availability-customer-${randomUUID()}@example.test` } })).id
-  healerId = (await prisma.healer.create({ data: { userId, availability: original } })).id
-  await prisma.healer.create({ data: { userId: otherId, availability: original } })
+  healerId = (await prisma.healer.create({ data: { userId, availability: original, isVerified: true } })).id
+  await prisma.healer.create({ data: { userId: otherId, availability: original, isVerified: true } })
   serviceId = (await prisma.service.create({ data: { slug: `availability-${randomUUID()}`, name: 'Availability test', description: 'Fixture', category: 'Test', duration: 60, price: 100 } })).id
 })
 beforeEach(async () => {
