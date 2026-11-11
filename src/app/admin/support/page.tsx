@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { SupportTicketError, updateAdminSupportTicket } from '@/lib/support/tickets'
+import { isSupportDeskEnabled } from '@/lib/support/availability'
 import { type Prisma, type SupportTicketStatus } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,18 @@ export default async function AdminSupportPage({
   if (!session?.user?.id) redirect('/auth/signin')
   if (session.user.role !== 'ADMIN') redirect('/')
   await requireCurrentAdmin()
+
+  if (!isSupportDeskEnabled()) {
+    return (
+      <div className="container mx-auto max-w-4xl space-y-4 px-4 py-12">
+        <h1 className="text-3xl font-semibold">Member support queue</h1>
+        <p role="status" className="rounded-xl border bg-white p-5 text-sm text-muted-foreground">
+          Support requests are disabled until the SupportTicket migration is applied and verified for this environment.
+        </p>
+        <Link href="/admin" className="inline-flex rounded-lg border px-4 py-2 text-sm font-medium">Back to admin dashboard</Link>
+      </div>
+    )
+  }
 
   const params = (await searchParams) ?? {}
   const rawStatus = typeof params.status === 'string' ? params.status : 'OPEN'
