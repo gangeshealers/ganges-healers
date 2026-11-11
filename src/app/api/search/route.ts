@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { POLICY_PAGES } from '@/lib/legal/routes'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,10 +54,10 @@ export async function GET(req: Request) {
 
     const freshBlog = prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; excerpt: string | null; createdAt: Date }>>(
       `SELECT id, slug, title, excerpt, "createdAt" FROM "BlogPost"
-       WHERE published = true AND "searchVector" @@ to_tsquery('english', $1)
+       WHERE published = true AND slug NOT IN ($2, $3) AND "searchVector" @@ to_tsquery('english', $1)
        ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
        LIMIT 10`,
-      tsquery,
+      tsquery, POLICY_PAGES.privacy.slug, POLICY_PAGES.terms.slug,
     )
     const freshCourses = prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; pricePaise: number; imageUrl: string | null }>>(
       `SELECT id, slug, title, "pricePaise", "imageUrl" FROM "Course"
