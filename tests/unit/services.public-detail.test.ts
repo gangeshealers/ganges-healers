@@ -65,7 +65,7 @@ test('public response never spreads booking, payment, private account or unexpec
 test('database selection does not load customer appointments or account secrets', async () => {
   await request()
   expect(getService).toHaveBeenCalledWith(expect.objectContaining({
-    select: expect.objectContaining({ bookings: { where: { status: 'COMPLETED', healer: { isActive: true } },
+    select: expect.objectContaining({ bookings: { where: { status: 'COMPLETED', healer: { isActive: true, isVerified: true } },
       distinct: ['healerId'], select: { healer: { select: {
         id: true, bio: true, experienceYears: true, rating: true, specializations: true, isVerified: true,
         user: { select: { name: true, image: true } },
@@ -104,9 +104,9 @@ test('database failures preserve the public error response', async () => {
   expect(await response.json()).toEqual({ error: 'Failed to fetch service' })
 })
 
-test('public healer detail only queries active practitioners', async () => {
+test('public healer detail only queries active, verified practitioners', async () => {
   await expect(getHealerBySlug('inactive')).resolves.toBeNull()
-  expect(prisma.healer.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'inactive', isActive: true } }))
+  expect(prisma.healer.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'inactive', isActive: true, isVerified: true } }))
   expect(prisma.service.findMany).not.toHaveBeenCalled()
 })
 
