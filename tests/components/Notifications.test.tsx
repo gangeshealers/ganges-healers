@@ -83,6 +83,17 @@ test('the mounted header hides live notifications and the member inbox link for 
   expect(global.fetch).not.toHaveBeenCalled()
 })
 
+test('a support-team reply links to the member Support Center without trusting message URLs', async () => {
+  rows = [item('support', {
+    type: 'support_reply',
+    title: 'Your support request has a reply',
+    message: 'Open your Support Center to read the response.',
+  })]
+  render(tree())
+  const article = await screen.findByRole('article', { name: 'Your support request has a reply' })
+  expect(within(article).getByRole('link', { name: 'Read support reply' })).toHaveAttribute('href', '/dashboard/support')
+})
+
 test('read, unread, and bulk actions keep the inbox and bell on one confirmed count', async () => {
   const user = userEvent.setup()
   render(tree())

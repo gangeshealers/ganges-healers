@@ -31,3 +31,9 @@ export function bookingNotificationDestination(type: string) {
     ? { href: '/dashboard/bookings', label: 'View my bookings' }
     : { href: '/healer/bookings', label: 'View practitioner bookings' }
 }
+
+/** Static routes for other account events; never trust a URL embedded in a message. */
+export function notificationDestination(type: string) {
+  if (type === 'support_reply') return { href: '/dashboard/support', label: 'Read support reply' }
+  return bookingNotificationDestination(type)
+}
