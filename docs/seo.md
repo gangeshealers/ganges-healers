@@ -13,7 +13,7 @@ SEO polish
 Sitemap
 
 - Helper: src/lib/seo/sitemap.ts builds absolute canonical URLs using canonicalOf.
-- Included pages: / (static root), public lists (/services, /programs, /healers, /courses, /store, /blog, /audio), and public detail pages. There is no /about route yet, so the sitemap does not advertise it.
+- Included pages: /, /about and /contact (public roots), published public lists (/services, /programs, /healers, /courses, /store, /blog, /audio), and accessible published detail pages. /about and /contact have routed public content. /privacy and /terms are not added to the sitemap until owner-approved publication is established; unpublished policy pages set noindex metadata.
 - Detail entries for services and programs require isActive; healer entries require isActive and isVerified, matching currently visible catalogs. Course, product, blog, and audio publication rules are retained.
 - Canonical-only policy: no query params (e.g., openBooking, programSlug) are ever emitted.
 - lastModified fallback: updatedAt if present, otherwise current date.
@@ -42,3 +42,5 @@ Canonical deployment origins
 - Without that variable, Vercel deployments use their actual `VERCEL_URL` hostname for canonical metadata, structured links and sitemap/robots rather than emitting the invalid `https://<your-prod-domain>` placeholder. Local development uses `http://localhost:3000`.
 - An invalid non-HTTPS public site URL falls back to a valid deployment host. Local HTTP is accepted only for localhost or 127.0.0.1. This does not certify the eventual production domain or remove Preview deployment protection.
 - Verify `/sitemap.xml`, `/robots.txt` and rendered canonical tags on the **exact merged Preview** before sign-off. Vercel Preview automatically emits `Disallow: /` regardless of the manual `NEXT_PUBLIC_ROBOTS` toggle; production still uses the existing private-route disallow policy or the explicit `disallow_all` override. This avoids indexing immutable Preview hostnames.
+
+- Approved policy article slugs are reserved (`privacy-policy` and `terms-of-service`). They render at `/privacy` and `/terms`, and are excluded from the wellness article list and `/blog/...` sitemap to avoid duplicates. See `docs/public-pages.md`.
