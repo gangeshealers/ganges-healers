@@ -156,8 +156,24 @@ export async function createAndStoreInvoicePdf(lookupId: string, opts?: { force?
     // Still return URL since PDF exists and was uploaded
   }
 
-  // Try to persist invoiceUrl column if it exists (ignore failure)
-  try { await prisma.$executeRawUnsafe(`UPDATE "Payment" SET "invoiceUrl" = $1 WHERE id = $2`, url, row.id) } catch (e) { console.warn('[invoices][gen][warn][persist_invoiceUrl]', { lookupId, paymentId: row.id, error: (e as Error).message }) }
+  // Legacy Payment.invoiceUrl exists on some old databases but is absent in the
+  // current Prisma schema. Probe before updating to avoid a PostgreSQL 42703 error
+  // on every successful invoice, while retaining compatibility with legacy rows.
+  try {
+    const column: Array<{ present: boolean }> = await prisma.$queryRaw`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'Payment'
+          AND column_name = 'invoiceUrl'
+      ) AS present
+    `
+    if (column[0]?.present) {
+      await prisma.$executeRawUnsafe(`UPDATE "Payment" SET "invoiceUrl" = $1 WHERE id = $2`, url, row.id)
+    }
+  } catch (e) {
+    console.warn('[invoices][gen][warn][persist_invoiceUrl]', { lookupId, paymentId: row.id, error: (e as Error).name })
+  }
   console.log('[invoices][gen][done]', { lookupId, paymentId: row.id, url, force: !!opts?.force })
   return url
 }
