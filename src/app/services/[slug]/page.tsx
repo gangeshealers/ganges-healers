@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, TrendingUp } from "lucide-react"
+import { Calendar, TrendingUp, Sparkles } from "lucide-react"
 import HealerCard from "@/components/features/services/HealerCard"
 import BookingAutoOpen from "@/components/features/booking/BookingAutoOpen"
 import ServiceHowItWorks from "@/components/features/services/ServiceHowItWorks"
@@ -198,12 +198,23 @@ export default async function ServiceDetailPage({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="overflow-hidden">
           <div className="relative h-64 w-full">
-            <Image
-              src={service.image ?? "/vercel.svg"}
-              alt={altText}
-              fill
-              className="object-cover"
-            />
+            {service.image?.trim() ? (
+              <Image
+                src={service.image}
+                alt={altText}
+                fill
+                className="object-cover"
+              />
+            ) : (
+              <div
+                data-testid="service-image-fallback"
+                aria-hidden="true"
+                className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-emerald-800 via-teal-700 to-cyan-700 text-white"
+              >
+                <Sparkles className="h-12 w-12 text-emerald-100" />
+                <span className="text-lg font-semibold tracking-wide">Ganges Healers</span>
+              </div>
+            )}
           </div>
           <CardContent className="p-6 space-y-4">
             <Link href="/services" className="text-sm text-purple-600 hover:underline">← Back to services</Link>
