@@ -74,7 +74,7 @@ test('review shows saved payment, refund and email statuses without provider tok
   expect(screen.getAllByText('₹250.00')).toHaveLength(2)
   expect(screen.getByText(/₹50.00 · PENDING/)).toBeInTheDocument()
   expect(screen.getByText(/CONFIRMED · PENDING · 1 attempts/)).toBeInTheDocument()
-  expect(screen.getByText('Not confirmed sent')).toBeInTheDocument()
+  expect(screen.getByText(/Not confirmed sent/)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Payment reconciliation' })).toHaveAttribute('href', '/admin/payments')
   expect(screen.queryByRole('button', { name: /refund|cancel|resend|confirm/i })).not.toBeInTheDocument()
   expect(screen.queryByText(/gatewayPaymentId|gatewaySignature|meetingLink/)).not.toBeInTheDocument()
