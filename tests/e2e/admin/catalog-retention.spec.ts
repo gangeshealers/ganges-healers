@@ -223,7 +223,9 @@ test('reviewed healer decisions retain stale drafts and reject changed staff acc
     await article.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(article.getByRole('status')).toHaveText('Healer profile saved.')
     expect(await db.healer.findUniqueOrThrow({ where: { id: healer.id } })).toMatchObject({ bio: 'Reviewed staff biography', experienceYears: 4, isActive: true, isVerified: true })
-    const verifyEditor = article.locator('form').filter({ has: article.getByRole('button', { name: 'Unverify', exact: true }) })
+    // Locate the form from its own submit button; a nested article-scoped `has` locator
+    // is evaluated relative to each form and cannot find the article ancestor again.
+    const verifyEditor = article.getByRole('button', { name: 'Unverify', exact: true }).locator('xpath=ancestor::form[1]')
     await expect(verifyEditor).toHaveAttribute('data-hydrated', 'true', { timeout: 30_000 })
     await article.getByRole('button', { name: 'Unverify', exact: true }).click()
     await expect(article.getByRole('button', { name: 'Verify', exact: true })).toBeVisible({ timeout: 30_000 })
