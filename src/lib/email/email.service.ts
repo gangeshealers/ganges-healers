@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Resend } from 'resend'
 import { BookingConfirmationEmail as BookingConfirmationEmailComponent } from './templates/booking-confirmation'
 import { QuizAlignmentEmail } from './templates/quiz-alignment'
@@ -12,6 +13,13 @@ const resend = disabled ? null : new Resend(resendApiKey)
 function safeLogError(scope: string, error: unknown) {
   // Avoid throwing in production paths due to email issues; just log.
   console.error(`[Email:${scope}]`, { type: error instanceof Error ? error.name : 'unknown' })
+}
+
+function escapeHtmlText(value: string): string {
+  const entities: Record<string, string> = {
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }
+  return value.replace(/[&<>"']/g, character => entities[character] || character)
 }
 
 export const emailService = {
@@ -132,6 +140,7 @@ export const emailService = {
     }
   },
 
+  /** Use the shared finite-timeout transport and a stable per-booking/slot provider key. */
   async sendBookingReminder(data: {
     to: string
     userName: string
@@ -140,35 +149,27 @@ export const emailService = {
     date: string
     time: string
     bookingId: string
+    scheduledAtIso?: string
   }) {
-    if (disabled || !resend) {
-      return { success: false, disabled: true }
-    }
-    try {
-      const result = await resend.emails.send({
-        from: 'Ganges Healers <noreply@gangeshealers.com>',
-        to: data.to,
-        subject: `Reminder: ${data.serviceName} tomorrow at ${data.time}`,
-        html: `
-          <h2>Session Reminder</h2>
-          <p>Hi ${data.userName},</p>
-          <p>This is a reminder about your upcoming ${data.serviceName} session:</p>
-          <ul>
-            <li>Date: ${data.date}</li>
-            <li>Time: ${data.time}</li>
-            <li>Healer: ${data.healerName}</li>
-          </ul>
-          <p>We look forward to seeing you!</p>
-        `
-      })
-      return { success: !result.error && Boolean(result.data?.id), id: result.data?.id }
-    } catch (error) {
-      safeLogError('sendBookingReminder', error)
-      return { success: false, error }
-    }
-  }
+    const html = [
+      '<h2>Session Reminder</h2>',
+      '<p>Hi ' + escapeHtmlText(data.userName) + ',</p>',
+      '<p>This is a reminder about your upcoming ' + escapeHtmlText(data.serviceName) + ' session:</p>',
+      '<ul><li>Date: ' + escapeHtmlText(data.date) + '</li>',
+      '<li>Time: ' + escapeHtmlText(data.time) + '</li>',
+      '<li>Healer: ' + escapeHtmlText(data.healerName) + '</li></ul>',
+      '<p>We look forward to seeing you!</p>',
+    ].join('')
+    return emailService.sendBookingNotice({
+      from: 'Ganges Healers <noreply@gangeshealers.com>',
+      to: data.to,
+      subject: 'Reminder: ' + data.serviceName + ' tomorrow at ' + data.time,
+      html,
+    }, 'booking-reminder/' + data.bookingId + '/' +
+      (data.scheduledAtIso || 'legacy-' + createHash('sha256').update(data.date + '\\0' + data.time).digest('hex')))
+  },
 
-  ,async sendInvoiceEmail(data: { to: string; invoiceNumber: string; amountPaise: number; link: string }) {
+  async sendInvoiceEmail(data: { to: string; invoiceNumber: string; amountPaise: number; link: string }) {
     if (disabled || !resend) {
       console.warn('[invoice][generate][email_skipped]', { invoiceNumber: data.invoiceNumber })
       return { success: false, disabled: true }
