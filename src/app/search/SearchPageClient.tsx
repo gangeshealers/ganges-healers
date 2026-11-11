@@ -61,7 +61,7 @@ export default function SearchPageClient() {
       )}
 
       {q.length < 2 && <p className="text-muted-foreground">Enter at least two characters to search, or browse the catalogs below.</p>}
-      {q.length >= 2 && status === 'success' && results && (
+      {q.length >= 2 && status === 'ready' && results && (
         <p className="mb-6 text-sm text-muted-foreground">Showing up to 10 matches in each category. Continue to a catalog to explore more.</p>
       )}
       {status === 'error' && <div role="alert" className="space-y-2 rounded border p-4"><p>Search could not be loaded. Please try again.</p><button type="button" onClick={retry} className="underline focus-ring">Try again</button></div>}
