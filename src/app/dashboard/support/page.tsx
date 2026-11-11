@@ -13,7 +13,14 @@ const statusLabels = {
   RESOLVED: 'Resolved',
 } as const
 
-export default async function MemberSupportPage() {
+const PAGE_SIZE = 20
+const MAX_PAGE = 1000
+const statusFilters = ['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED'] as const
+type MemberSupportFilters = { status?: string | string[]; page?: string | string[] }
+
+export default async function MemberSupportPage({
+  searchParams,
+}: { searchParams?: Promise<MemberSupportFilters> }) {
   const session = await auth()
   if (!session?.user?.id) redirect('/auth/signin')
 
@@ -29,16 +36,32 @@ export default async function MemberSupportPage() {
     )
   }
 
-  const tickets = await prisma.supportTicket.findMany({
-    where: { userId: session.user.id },
+  const query = (await searchParams) ?? {}
+  const requestedStatus = typeof query.status === 'string' ? query.status : ''
+  const status = statusFilters.find(value => value === requestedStatus) ?? 'ALL'
+  const requestedPage = typeof query.page === 'string' && /^[1-9][0-9]{0,3}$/.test(query.page) ? Number(query.page) : 1
+  const page = Math.min(requestedPage, MAX_PAGE)
+  const filters = { userId: session.user.id, ...(status !== 'ALL' ? { status } : {}) }
+  const rows = await prisma.supportTicket.findMany({
+    where: filters,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: 50,
+    skip: (page - 1) * PAGE_SIZE,
+    take: PAGE_SIZE + 1,
     select: {
       id: true, subject: true, message: true, status: true,
       response: true, respondedAt: true, createdAt: true,
     },
   })
 
+  const hasNext = page < MAX_PAGE && rows.length > PAGE_SIZE
+  const tickets = rows.slice(0, PAGE_SIZE)
+  const href = (nextStatus: typeof status, nextPage = 1) => {
+    const params = new URLSearchParams()
+    if (nextStatus !== 'ALL') params.set('status', nextStatus)
+    if (nextPage > 1) params.set('page', String(nextPage))
+    const query = params.toString()
+    return '/dashboard/support' + (query ? '?' + query : '')
+  }
   return (
     <div className="container mx-auto max-w-4xl space-y-8 px-4 py-10">
       <div className="space-y-2">
@@ -51,9 +74,17 @@ export default async function MemberSupportPage() {
       <SupportTicketForm />
       <section aria-labelledby="support-history" className="space-y-4">
         <h2 id="support-history" className="text-xl font-semibold">Your support requests</h2>
+        <nav aria-label="Filter your support requests" className="flex flex-wrap gap-2">
+          {statusFilters.map(item => (
+            <Link key={item} href={href(item)} aria-current={status === item ? 'page' : undefined}
+              className={`rounded-md border px-3 py-2 text-sm font-medium hover:bg-slate-50 ${status === item ? 'border-violet-600 bg-violet-50' : ''}`}>
+              {item === 'ALL' ? 'All requests' : statusLabels[item]}
+            </Link>
+          ))}
+        </nav>
         {tickets.length === 0 ? (
           <p className="rounded-lg border border-dashed bg-white p-6 text-sm text-muted-foreground">
-            You haven’t sent any support requests yet.
+            {page > 1 ? 'No requests on this page. Go to a previous page.' : status !== 'ALL' ? 'No requests match this status.' : 'You haven’t sent any support requests yet.'}
           </p>
         ) : (
           <div className="space-y-4">
@@ -83,6 +114,17 @@ export default async function MemberSupportPage() {
               </article>
             ))}
           </div>
+        )}
+        {(page > 1 || hasNext) && (
+          <nav aria-label="Your support request pages" className="flex flex-wrap items-center justify-between gap-3">
+            {page > 1
+              ? <Link href={href(status, page - 1)} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50">Previous requests</Link>
+              : <span />}
+            <span className="text-sm text-muted-foreground">Page {page}</span>
+            {hasNext
+              ? <Link href={href(status, page + 1)} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50">Next requests</Link>
+              : <span />}
+          </nav>
         )}
       </section>
     </div>
