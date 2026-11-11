@@ -75,9 +75,10 @@ export async function listPrograms(params?: { serviceSlug?: string; q?: string; 
   return { items, nextCursor }
 }
 
+/** Public program detail uses the same active-only publication rule as listPrograms. */
 export async function getProgramBySlug(slug: string): Promise<ProgramDetail | null> {
   const r = await prisma.program.findUnique({
-    where: { slug },
+    where: { slug, isActive: true },
     select: {
       id: true,
       slug: true,
