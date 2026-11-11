@@ -30,11 +30,16 @@ const prismaMock = {
         const has = args.where.AND.find((c: any) => c.specializations?.has)?.specializations?.has
         if (has) items = items.filter((h) => (h.specializations || []).includes(has))
       }
+      // Mirror Prisma's order-by-then-cursor behavior for both stable sorts.
+      items = items.sort((a: any, b: any) =>
+        args.orderBy?.[0]?.experienceYears === 'desc'
+          ? b.experienceYears - a.experienceYears || a.id.localeCompare(b.id)
+          : a.id.localeCompare(b.id))
       if (args.cursor?.id) {
         const idx = items.findIndex((h) => h.id === args.cursor.id)
         if (idx >= 0) items = items.slice(idx + 1)
       }
-      items = items.sort((a: any, b: any) => a.id.localeCompare(b.id)).slice(0, args.take)
+      items = items.slice(0, args.take)
       return items.map((h) => ({ id: h.id, bio: h.bio, experienceYears: h.experienceYears, rating: h.rating, specializations: h.specializations, user: h.user }))
     },
   },
@@ -114,6 +119,23 @@ describe('Healers list API', () => {
   test('an exact final page does not advertise an empty continuation', async () => {
     const response = await List.GET(get('http://localhost/api/healers?limit=3'))
     expect(await response.json()).toMatchObject({ items: [{ id: 'h1' }, { id: 'h2' }, { id: 'h3' }], nextCursor: null })
+  })
+
+  test('most-experienced order is stable across cursor pages and never lists unverified healers', async () => {
+    const first = await List.GET(get('http://localhost/api/healers?sort=experience&limit=2'))
+    expect(first.status).toBe(200)
+    const page1 = await first.json()
+    expect(page1.items.map((item: { id: string }) => item.id)).toEqual(['h3', 'h1'])
+    expect(page1.nextCursor).toBe('h1')
+    const second = await List.GET(get(`http://localhost/api/healers?sort=experience&limit=2&cursor=${page1.nextCursor}`))
+    const page2 = await second.json()
+    expect(page2.items.map((item: { id: string }) => item.id)).toEqual(['h2'])
+    expect(page2.nextCursor).toBeNull()
+  })
+
+  test('unknown sort input preserves the original stable default ordering', async () => {
+    const response = await List.GET(get('http://localhost/api/healers?sort=anything'))
+    expect((await response.json()).items.map((item: { id: string }) => item.id)).toEqual(['h1', 'h2', 'h3'])
   })
 
   test('a missing service filter cannot broaden into unrelated practitioners', async () => {
