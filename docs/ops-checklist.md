@@ -162,3 +162,25 @@ the suite has a fifteen-minute Playwright global timeout so reporters can finish
 and the overall browser job has a thirty-minute limit. A setup timeout is a
 failed check, never evidence that application journeys passed. These bounds
 require no provider credentials or hosting change.
+
+
+## Administrator launch readiness page
+
+Authenticated administrators can open `/admin/launch` from the Admin home to
+review active catalog counts, presence-only provider configuration and the
+manual launch acceptance checklist. The route reads current database counts and
+uses only **booleans** derived from runtime environment variables; no secret,
+URL, password or masked credential is sent to the page. Non-administrators
+cannot open it.
+
+The counts indicate whether listings are active or published, **not** whether
+content, prices, licensed media or real delivery are owner-approved. The
+integration labels say only "Variables present" or "Needs configuration review".
+They do not validate live/test-mode keys, OAuth callback URLs, Razorpay webhook
+signatures, refunds, actual email or SMS delivery, Sentry reports, Redis worker
+liveness or cron schedules. Blob uploads may use Vercel OIDC instead of a
+`BLOB_READ_WRITE_TOKEN`, so that flag is informational rather than definitive.
+
+An admin must complete the manual acceptance items in the deployment and
+operations runbooks before production promotion. This page does not execute
+provider requests, turn on payment events or write any application data.
