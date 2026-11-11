@@ -6,6 +6,15 @@ import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import {
+  ORDER_HISTORY_PAGE_SIZE,
+  ORDER_HISTORY_MAX_PAGE,
+  orderHistoryHref,
+  orderHistoryWhere,
+  orderStatusFilters,
+  parseOrderHistoryParams,
+  type OrderHistorySearchParams,
+} from "@/lib/store/order-history"
 
 export const dynamic = "force-dynamic"
 
@@ -17,47 +26,21 @@ const statusLabels: Record<string, { label: string; variant: "default" | "second
   cancelled: { label: "Cancelled", variant: "destructive" },
 }
 
-const PAGE_SIZE = 50
-const MAX_PAGE = 1000
-
-function orderPageHref(status: string, page: number): string {
-  const query = new URLSearchParams()
-  if (status !== "all") query.set("status", status)
-  if (page > 1) query.set("page", String(page))
-  const suffix = query.toString()
-  return `/dashboard/orders${suffix ? `?${suffix}` : ""}`
-}
-
-const orderFilters = [
-  { value: "all", label: "All orders" },
-  { value: "pending_payment", label: "Pending payment" },
-  { value: "paid", label: "Paid" },
-  { value: "shipped", label: "Shipped" },
-  { value: "delivered", label: "Delivered" },
-  { value: "cancelled", label: "Cancelled" },
-] as const
-
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string | string[]; page?: string | string[] }>
+  searchParams: Promise<OrderHistorySearchParams>
 }) {
   const session = await auth()
   if (!session?.user?.id) redirect("/auth/signin")
 
-  const { status: requestedStatus, page: requestedPage } = await searchParams
-  const selectedStatus = orderFilters.find(filter => filter.value === requestedStatus)?.value ?? "all"
-  const parsedPage = typeof requestedPage === "string" && /^\d+$/.test(requestedPage) ? Number(requestedPage) : 1
-  const selectedPage = Math.min(Math.max(parsedPage, 1), MAX_PAGE)
+  const { status: selectedStatus, q, page: selectedPage } = parseOrderHistoryParams(await searchParams)
 
   const orders = await prisma.order.findMany({
-    where: {
-      userId: session.user.id,
-      ...(selectedStatus === "all" ? {} : { status: selectedStatus }),
-    },
+    where: orderHistoryWhere(session.user.id, selectedStatus, q),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    skip: (selectedPage - 1) * PAGE_SIZE,
-    take: PAGE_SIZE + 1,
+    skip: (selectedPage - 1) * ORDER_HISTORY_PAGE_SIZE,
+    take: ORDER_HISTORY_PAGE_SIZE + 1,
     select: {
       id: true,
       status: true,
@@ -74,18 +57,41 @@ export default async function OrdersPage({
     },
   })
 
-  const hasNextPage = selectedPage < MAX_PAGE && orders.length > PAGE_SIZE
-  const visibleOrders = orders.slice(0, PAGE_SIZE)
+  const hasNextPage = selectedPage < ORDER_HISTORY_MAX_PAGE && orders.length > ORDER_HISTORY_PAGE_SIZE
+  const visibleOrders = orders.slice(0, ORDER_HISTORY_PAGE_SIZE)
 
   return (
     <div className="container mx-auto p-6 max-w-3xl">
       <h1 className="text-2xl font-semibold">My Orders</h1>
 
+      <form action="/dashboard/orders" method="get" role="search" className="mt-5 space-y-2">
+        <label htmlFor="order-history-search" className="block text-sm font-medium">Find an order</label>
+        <div className="flex flex-wrap gap-2">
+          <input
+            id="order-history-search"
+            name="q"
+            type="search"
+            maxLength={80}
+            defaultValue={q}
+            placeholder="Product name or exact order ID"
+            className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm focus-ring"
+          />
+          {selectedStatus !== "all" && <input type="hidden" name="status" value={selectedStatus} />}
+          <Button type="submit">Search orders</Button>
+          {q && (
+            <Button asChild variant="outline">
+              <Link href={orderHistoryHref(selectedStatus, "")}>Clear search</Link>
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">Search your purchases by product name or full order reference.</p>
+      </form>
+
       <nav aria-label="Filter orders by status" className="mt-5 flex flex-wrap gap-2">
-        {orderFilters.map(filter => (
+        {orderStatusFilters.map(filter => (
           <Button key={filter.value} asChild size="sm" variant={selectedStatus === filter.value ? "default" : "outline"}>
             <Link
-              href={filter.value === "all" ? "/dashboard/orders" : `/dashboard/orders?status=${filter.value}`}
+              href={orderHistoryHref(filter.value, q)}
               aria-current={selectedStatus === filter.value ? "page" : undefined}
             >
               {filter.label}
@@ -99,20 +105,23 @@ export default async function OrdersPage({
           <p className="text-muted-foreground">
             {selectedPage > 1
               ? "No orders found on this page."
-              : selectedStatus === "all"
-                ? "You haven't placed any orders yet."
-                : "No orders match this status."}
+              : q
+                ? "No orders match your search."
+                : selectedStatus === "all"
+                  ? "You haven't placed any orders yet."
+                  : "No orders match this status."}
           </p>
           <Button asChild className="mt-4" variant="outline">
             <Link href={selectedPage > 1
-              ? orderPageHref(selectedStatus, selectedPage - 1)
-              : selectedStatus === "all" ? "/store" : "/dashboard/orders"}>
-              {selectedPage > 1 ? "Previous page" : selectedStatus === "all" ? "Browse Store" : "Show all orders"}
+              ? orderHistoryHref(selectedStatus, q, selectedPage - 1)
+              : q ? orderHistoryHref(selectedStatus, "") : selectedStatus === "all" ? "/store" : "/dashboard/orders"}>
+              {selectedPage > 1 ? "Previous page" : q ? "Clear search" : selectedStatus === "all" ? "Browse Store" : "Show all orders"}
             </Link>
           </Button>
         </div>
       ) : (
         <div className="mt-6 space-y-4">
+          {q && <p role="status" className="text-sm text-muted-foreground">Showing orders matching “{q}”</p>}
           {visibleOrders.map((order) => {
             const s = statusLabels[order.status] || { label: order.status, variant: "outline" as const }
             return (
@@ -172,13 +181,13 @@ export default async function OrdersPage({
           <nav aria-label="Order history pages" className="flex items-center justify-between gap-3 pt-3">
             {selectedPage > 1 ? (
               <Button asChild variant="outline" size="sm">
-                <Link href={orderPageHref(selectedStatus, selectedPage - 1)}>Previous page</Link>
+                <Link href={orderHistoryHref(selectedStatus, q, selectedPage - 1)}>Previous page</Link>
               </Button>
             ) : <span />}
             <span className="text-sm text-muted-foreground">Page {selectedPage}</span>
             {hasNextPage ? (
               <Button asChild variant="outline" size="sm">
-                <Link href={orderPageHref(selectedStatus, selectedPage + 1)}>Next page</Link>
+                <Link href={orderHistoryHref(selectedStatus, q, selectedPage + 1)}>Next page</Link>
               </Button>
             ) : <span />}
           </nav>
