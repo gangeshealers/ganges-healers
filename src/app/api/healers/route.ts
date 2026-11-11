@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listHealers } from '@/lib/healers/queries'
+import { listHealers, parseHealerDirectorySort } from '@/lib/healers/queries'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -8,8 +8,9 @@ export async function GET(req: NextRequest) {
   const rawLimit = searchParams.get('limit')
   const limit = rawLimit?.trim() ? Number(rawLimit) : undefined
   const cursor = searchParams.get('cursor') || undefined
+  const sort = parseHealerDirectorySort(searchParams.get('sort'))
   try {
-    const data = await listHealers({ q, serviceSlug, limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined, cursor })
+    const data = await listHealers({ q, serviceSlug, sort, limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined, cursor })
     return NextResponse.json(data)
   } catch (e) {
     console.error('[healers][list][error]', e)
