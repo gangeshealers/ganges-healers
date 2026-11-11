@@ -250,6 +250,17 @@ test('successful sign-out verifies the session, prevents duplicate submissions, 
   expect(router.refresh).toHaveBeenCalled()
 })
 
+test('verified sign-out also closes the mobile account sheet', async () => {
+  setAccount({ id: 'alice', email: 'alice@example.test' })
+  render(tree())
+  await userEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+  const mobile = screen.getByRole('dialog', { name: 'Mobile navigation' })
+  await userEvent.click(within(mobile).getByRole('button', { name: 'Sign out' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Mobile navigation' })).not.toBeInTheDocument())
+  expect(auth.signOut).toHaveBeenCalledWith({ redirect: false, redirectTo: '/' })
+  expect(router.replace).toHaveBeenCalledWith('/')
+})
+
 test('cart controls use the real shared provider and drawer for quantities and checkout access', async () => {
   render(tree(true))
   await userEvent.click(screen.getByRole('button', { name: 'Add fixture product' }))
