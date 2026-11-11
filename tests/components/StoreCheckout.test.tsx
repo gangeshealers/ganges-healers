@@ -1,6 +1,6 @@
 import { webcrypto } from 'node:crypto'
 import { TextEncoder } from 'node:util'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useSession } from 'next-auth/react'
 import { useCart } from '@/components/store/CartProvider'
@@ -147,4 +147,66 @@ test('rapid repeated clicks prepare only one checkout while browser storage is u
   await user.click(screen.getByRole('button', { name: 'Pay ₹100.00' }))
   await waitFor(() => expect(checkoutCalls(fetch)).toHaveLength(2))
   expect(checkoutCalls(fetch)[0].checkoutKey).toBe(checkoutCalls(fetch)[1].checkoutKey)
+})
+
+
+
+test('saved shipping details are applied only after explicit buyer action and remain editable', async () => {
+  const previous = {
+    name: 'Past Recipient', line1: 'Saved Lane', city: 'Rishikesh',
+    state: 'Uttarakhand', postalCode: '249201', phone: '8888888888',
+  }
+  const fetch = jest.spyOn(globalThis, 'fetch').mockImplementation(async url =>
+    response(url === '/api/store/shipping-address' ? { address: previous } : {}))
+  const user = userEvent.setup()
+  render(<StoreCheckout />)
+  expect(fetch.mock.calls.filter(([url]) => url === '/api/store/shipping-address')).toHaveLength(0)
+  expect(screen.getByLabelText('Address Line 1 *')).toHaveValue('')
+  await user.click(screen.getByRole('button', { name: 'Use previous shipping address' }))
+  expect(await screen.findByText('Previous shipping address loaded. Review or edit it before payment.')).toBeInTheDocument()
+  expect(screen.getByLabelText('Full Name *')).toHaveValue('Past Recipient')
+  expect(screen.getByLabelText('Address Line 1 *')).toHaveValue('Saved Lane')
+  expect(screen.getByLabelText('Postal Code *')).toHaveValue('249201')
+  expect(fetch.mock.calls.filter(([url]) => url === '/api/store/shipping-address')).toHaveLength(1)
+  await user.type(screen.getByLabelText('City *'), ' North')
+  expect(screen.getByLabelText('City *')).toHaveValue('Rishikesh North')
+  expect(sessionStorage.getItem('ganges-store-checkout:buyer')).toBeNull()
+})
+
+test('an account switch prevents stale address data from being filled into a different checkout', async () => {
+  let finish!: (response: Response) => void
+  const fetch = jest.spyOn(globalThis, 'fetch').mockImplementation(async url =>
+    url === '/api/store/shipping-address' ? new Promise<Response>(resolve => { finish = resolve }) : response({}))
+  const user = userEvent.setup()
+  const view = render(<StoreCheckout />)
+  await user.click(screen.getByRole('button', { name: 'Use previous shipping address' }))
+  await waitFor(() => expect(fetch.mock.calls.some(([url]) => url === '/api/store/shipping-address')).toBe(true))
+  jest.mocked(useSession).mockReturnValue({
+    data: { user: { id: 'different-buyer', name: 'Second Buyer' } },
+    status: 'authenticated',
+  } as never)
+  view.rerender(<StoreCheckout />)
+  await act(async () => finish(response({ address: {
+    name: 'Previous Buyer', line1: 'Private Address',
+    city: 'Delhi', state: 'Delhi', postalCode: '110001',
+  } })))
+  expect(screen.getByLabelText('Full Name *')).toHaveValue('Second Buyer')
+  expect(screen.getByLabelText('Address Line 1 *')).toHaveValue('')
+  expect(screen.queryByText('Previous shipping address loaded. Review or edit it before payment.')).not.toBeInTheDocument()
+})
+
+test('missing and invalid saved addresses never prevent manual checkout entry', async () => {
+  const fetch = jest.spyOn(globalThis, 'fetch').mockImplementation(async url => response(
+    url === '/api/store/shipping-address' ? { address: null } : {},
+  ))
+  const user = userEvent.setup()
+  render(<StoreCheckout />)
+  await user.click(screen.getByRole('button', { name: 'Use previous shipping address' }))
+  expect(await screen.findByText(/No complete shipping address was found/)).toBeInTheDocument()
+  expect(screen.getByLabelText('Address Line 1 *')).toHaveValue('')
+  fetch.mockImplementation(async url => response(url === '/api/store/shipping-address' ? { address: { name: 'Incomplete' } } : {}))
+  await user.click(screen.getByRole('button', { name: 'Use previous shipping address' }))
+  expect(await screen.findByText(/Could not load a previous address/)).toBeInTheDocument()
+  await user.type(screen.getByLabelText('Address Line 1 *'), 'Manual lane')
+  expect(screen.getByLabelText('Address Line 1 *')).toHaveValue('Manual lane')
 })
