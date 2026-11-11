@@ -52,7 +52,8 @@ export async function listProducts(params?: { categorySlug?: string; chakra?: st
     where,
     orderBy: { id: 'asc' },
     ...(cursor ? { cursor, skip: 1 } : {}),
-    take: limit,
+    // Fetch an extra row to avoid advertising a next page that is empty.
+    take: limit + 1,
     select: {
       id: true,
       slug: true,
@@ -68,7 +69,8 @@ export async function listProducts(params?: { categorySlug?: string; chakra?: st
     },
   })
 
-  const items: ProductListItem[] = rows.map((r) => ({
+  const pageRows = rows.slice(0, limit)
+  const items: ProductListItem[] = pageRows.map((r) => ({
     id: r.id,
     slug: r.slug,
     title: r.title,
@@ -81,7 +83,7 @@ export async function listProducts(params?: { categorySlug?: string; chakra?: st
     chakra: r.chakra ?? null,
     category: r.category ? { slug: r.category.slug, title: r.category.title } : null,
   }))
-  const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
+  const nextCursor = rows.length > limit ? pageRows[pageRows.length - 1].id : null
   return { items, nextCursor }
 }
 
