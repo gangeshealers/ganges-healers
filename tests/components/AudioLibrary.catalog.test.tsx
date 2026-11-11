@@ -44,3 +44,34 @@ test('an empty filtered result can be reset without losing access to the library
   expect(screen.getByRole('link', { name: 'Clear filters' })).toHaveAttribute('href', '/audio')
   expect(screen.getByRole('searchbox', { name: 'Search audio tracks' })).toHaveValue('missing')
 })
+
+
+test('the Free filter narrows the published query and keeps search terms in access links', async () => {
+  jest.mocked(prisma.audioTrack.count).mockResolvedValueOnce(1)
+  jest.mocked(prisma.audioTrack.findMany).mockImplementation(async args => {
+    if ('distinct' in args) return [{ category: 'Meditation' }] as never
+    return [{
+      id: 'free-track', slug: 'free-meditation', title: 'Free Meditation',
+      description: 'Free audio', duration: 180, category: 'Meditation', isPremium: false,
+    }] as never
+  })
+  render(await AudioLibraryPage({ searchParams: Promise.resolve({ q: 'meditation', access: 'free' }) }))
+  expect(prisma.audioTrack.count).toHaveBeenCalledWith({
+    where: expect.objectContaining({ isPublished: true, isPremium: false }),
+  })
+  const filter = screen.getByRole('navigation', { name: 'Filter audio by access' })
+  expect(filter.querySelector('a[aria-current="page"]')).toHaveTextContent('Free tracks')
+  expect(screen.getByRole('link', { name: 'Premium tracks' }))
+    .toHaveAttribute('href', '/audio?q=meditation&access=premium')
+  expect(screen.getByText('Free', { selector: 'span' })).toBeVisible()
+})
+
+test('empty premium tracks expose a way back to the full library', async () => {
+  jest.mocked(prisma.audioTrack.count).mockResolvedValueOnce(0)
+  jest.mocked(prisma.audioTrack.findMany).mockResolvedValueOnce([{ category: 'Meditation' }] as never)
+  render(await AudioLibraryPage({ searchParams: Promise.resolve({ access: 'premium' }) }))
+  expect(prisma.audioTrack.count).toHaveBeenCalledWith({
+    where: expect.objectContaining({ isPublished: true, isPremium: true }),
+  })
+  expect(screen.getByRole('link', { name: 'Clear filters' })).toHaveAttribute('href', '/audio')
+})
