@@ -34,3 +34,11 @@ The workflow requires **no new external providers or environment variables**. It
 ## Rollback
 
 The feature's new pages, API, account shortcuts, and service code can be reverted without modifying checkout or payments. Once migrated, preserve the table as historical support data rather than dropping it to roll back; perform a planned forward migration if a schema correction is needed.
+
+## Member notifications for staff responses
+
+When a reviewed administrator saves a new or changed nonempty support response, the update now creates an unread in-app `Notification` for the ticket owner with type `support_reply`. The notification has a **fixed generic title and message**, never a ticket subject, reply contents, account details or arbitrary destination URL. The member's notifications inbox links this event to the authenticated `/dashboard/support` page where full private replies remain owner-scoped.
+
+The optimistic `updatedAt` guard, ticket update and notification insertion run inside one PostgreSQL transaction. Stale forms cannot insert an alert, and a failed notification write rolls the staff reply back instead of claiming success. Saving only a status, clearing a reply or re-saving the same response does not generate an alert. Updating a reply with new text does generate a new notice. No outbound email is sent.
+
+The normal NotificationProvider polling and focus refresh make the event visible in the member's existing bell/inbox without a new service or secret. Existing `other` activity filtering includes the support reply type. No schema migration is required; rollback is a code revert, keeping previously saved support and notification records untouched.
