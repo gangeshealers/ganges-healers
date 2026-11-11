@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BOOKING_TIME_ZONE } from '@/lib/bookings/time'
 
 export const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 export type WeekDay = typeof WEEK_DAYS[number]
@@ -45,4 +46,36 @@ export function workingWindowSlots(window: DayWindow | null | undefined): string
   const start = Math.ceil(timeToMinutes(window.start) / 30) * 30
   const end = timeToMinutes(window.end)
   return START_TIMES.filter(time => timeToMinutes(time) >= start && timeToMinutes(time) < end)
+}
+/**
+ * A schedule cue for public healer cards, not a claim of bookable slots.
+ * Working hours are in Asia/Kolkata; actual availability must still come from
+ * the booking endpoint, which checks conflicts and session duration.
+ */
+export function getWeeklyScheduleCue(availability: unknown, now = new Date()): string | null {
+  const schedule = readWeeklyAvailability(availability)
+  if (!schedule) return null
+
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: BOOKING_TIME_ZONE, weekday: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now)
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value ?? ''
+  const day = get('weekday').toLowerCase() as WeekDay
+  const dayIndex = WEEK_DAYS.indexOf(day)
+  if (dayIndex < 0) return null
+
+  const minuteOfDay = Number(get('hour')) * 60 + Number(get('minute'))
+  for (let offset = 0; offset <= 7; offset++) {
+    const candidate = WEEK_DAYS[(dayIndex + offset) % 7]
+    const window = schedule[candidate]
+    if (!window || (offset === 0 && minuteOfDay >= timeToMinutes(window.end))) continue
+
+    const label = offset === 0
+      ? "Today's regular hours"
+      : offset === 1
+        ? "Tomorrow's regular hours"
+        : 'Next regular hours (' + DAY_LABELS[candidate] + ')'
+    return label + ': ' + window.start + '–' + window.end + ' IST'
+  }
+  return null
 }
