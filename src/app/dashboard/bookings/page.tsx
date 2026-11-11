@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card } from '@/components/ui/card'
 import BookingCard from '../../../components/bookings/BookingCard'
@@ -155,9 +156,30 @@ export default function MyBookingsPage() {
       <h1 className="text-2xl font-semibold mb-4">My Bookings</h1>
 
       {loading ? (
-        <Card className="p-6">Loading...</Card>
+        <Card aria-live="polite" className="p-6">Loading your bookings…</Card>
       ) : error ? (
-        <Card className="p-6 text-red-600">{error}</Card>
+        <Card role="alert" className="space-y-4 border-red-200 bg-red-50 p-6">
+          <h2 className="font-semibold text-red-900">
+            {userId ? 'Your bookings could not be loaded' : 'Sign in to view bookings'}
+          </h2>
+          <p className="text-sm text-red-800">
+            {userId ? 'Please try refreshing your bookings. Your saved appointments have not been changed.' : 'Use your account to view upcoming and past appointments.'}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {userId ? (
+              <button type="button" onClick={reloadBookings} className="rounded-lg bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700">
+                Try loading bookings again
+              </button>
+            ) : (
+              <Link href="/auth/signin?callbackUrl=%2Fdashboard%2Fbookings" className="rounded-lg bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700">
+                Sign in to see bookings
+              </Link>
+            )}
+            <Link href="/services" className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-900 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700">
+              Browse healing services
+            </Link>
+          </div>
+        </Card>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -166,14 +188,26 @@ export default function MyBookingsPage() {
           </TabsList>
           <TabsContent value="upcoming" className="mt-4 space-y-3">
             {upcoming.length === 0 ? (
-              <Card className="p-6 text-muted-foreground">No upcoming bookings.</Card>
+              <Card className="space-y-3 p-6">
+                <p className="text-sm text-muted-foreground">No upcoming bookings.</p>
+                <p className="text-sm text-muted-foreground">Find a healing service and select an available appointment to get started.</p>
+                <Link href="/services" className="inline-flex rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
+                  Explore healing services
+                </Link>
+              </Card>
             ) : upcoming.map((b) => (
               <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={reloadBookings} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
             ))}
           </TabsContent>
           <TabsContent value="past" className="mt-4 space-y-3">
             {past.length === 0 ? (
-              <Card className="p-6 text-muted-foreground">No past bookings.</Card>
+              <Card className="space-y-3 p-6">
+                <p className="text-sm text-muted-foreground">No past bookings.</p>
+                <p className="text-sm text-muted-foreground">Completed and cancelled appointments will appear here when available.</p>
+                <Link href="/services" className="inline-flex rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
+                  Discover healing sessions
+                </Link>
+              </Card>
             ) : past.map((b) => (
               <BookingCard key={b.id} booking={b} ownerId={userId} onConfirmed={reloadBookings} onReschedule={() => onRescheduleOpen(b)} onCancel={() => onCancelOpen(b)} onReviewSaved={review => applyUpdate({ ...b, review })} />
             ))}
