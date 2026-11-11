@@ -51,6 +51,7 @@ test('owned practitioner sees a past appointment without member email or meeting
   expect(screen.getByText('Member: Member A')).toBeInTheDocument()
   expect(screen.queryByText(/@example/i)).not.toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Back to Manage Bookings' })).toHaveAttribute('href', '/healer/bookings')
+  expect(screen.getByRole('link', { name: 'Download history CSV' })).toHaveAttribute('href', '/api/healer/bookings/history/export')
 })
 
 test('filtered pages preserve owner, service name and status', async () => {
@@ -71,6 +72,7 @@ test('filtered pages preserve owner, service name and status', async () => {
   expect(screen.getByRole('link', { name: 'Next appointments' }))
     .toHaveAttribute('href', '/healer/bookings/history?status=cancelled&q=breathwork&page=3')
   expect(screen.getByRole('link', { name: 'Cancelled' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('link', { name: 'Download history CSV' })).toHaveAttribute('href', '/api/healer/bookings/history/export?status=cancelled&q=breathwork')
 })
 
 test('out-of-range and repeated parameters cannot reveal other practitioners or show ghost pages', async () => {
