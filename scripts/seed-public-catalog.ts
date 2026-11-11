@@ -6,19 +6,22 @@
  *   pnpm seed:catalog
  *   pnpm seed:catalog --apply --confirm-host=localhost
  *   pnpm seed:catalog --apply --confirm-host=<dev-branch-db-host>
+ *   pnpm seed:catalog --with-products --apply --confirm-host=<dev-branch-db-host>
  */
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import { sampleCourses, samplePrograms, sampleServices } from '../src/lib/catalog/sample-data'
+import { sampleProductCategories, sampleProducts } from '../src/lib/catalog/sample-products'
 import { seedPublicSampleCatalog } from '../src/lib/catalog/seed-public-samples'
 import { validateCatalogSeedTarget } from '../src/lib/catalog/seed-guard'
 
 async function main() {
   const args = process.argv.slice(2)
   const apply = args.includes('--apply')
+  const withProducts = args.includes('--with-products')
   const hostArgs = args.filter(arg => arg.startsWith('--confirm-host='))
-  if (hostArgs.length > 1 || args.some(arg => arg !== '--apply' && !arg.startsWith('--confirm-host='))) {
-    throw new Error('Usage: pnpm seed:catalog [--apply --confirm-host=<hostname>]')
+  if (hostArgs.length > 1 || args.some(arg => arg !== '--apply' && arg !== '--with-products' && !arg.startsWith('--confirm-host='))) {
+    throw new Error('Usage: pnpm seed:catalog [--with-products] [--apply --confirm-host=<hostname>]')
   }
   const target = validateCatalogSeedTarget(process.env.DATABASE_URL, {
     apply,
@@ -29,14 +32,16 @@ async function main() {
   // Never print DATABASE_URL, its password, username or search parameters.
   console.log(`[catalog-seed] Target host: ${target.hostname}; database: ${target.databaseName}`)
   console.log(`[catalog-seed] Catalog examples: ${sampleServices.length} services, ${samplePrograms.length} programs, ${sampleCourses.length} courses, ${sampleCourses.reduce((n, c) => n + c.lessons.length, 0)} lesson outlines`)
+  if (withProducts) console.log(`[catalog-seed] Optional store examples: ${sampleProductCategories.length} categories, ${sampleProducts.length} products`)
   if (!apply) {
     console.log('[catalog-seed] Dry run. No database connection or write made. Pass --apply and --confirm-host to insert missing records.')
     return
   }
   const prisma = new PrismaClient()
   try {
-    const result = await seedPublicSampleCatalog(prisma)
+    const result = await seedPublicSampleCatalog(prisma, { withProducts })
     console.log(`[catalog-seed] Completed. Checked ${result.sampleServices} services, ${result.samplePrograms} programs, ${result.sampleCourses} courses and ${result.sampleLessons} lesson outlines. Existing catalog rows were preserved.`)
+    if (withProducts) console.log(`[catalog-seed] Checked ${result.sampleProductCategories} store categories and ${result.sampleProducts} products. Existing prices, stock, activity and descriptions were preserved.`)
   } finally {
     await prisma.$disconnect()
   }
