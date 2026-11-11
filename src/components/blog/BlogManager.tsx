@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import type { BlogSummary } from '@/lib/blog/admin'
+import { publicArticleHref, isLegalDocumentSlug } from '@/lib/legal/routes'
 
 export default function BlogManager() {
   const [status, setStatus] = useState('all')
@@ -80,8 +81,8 @@ export default function BlogManager() {
       {rows.map(row => <Card key={row.id} role="article" aria-labelledby={`blog-admin-${row.id}`}><CardContent className="p-5 space-y-3">
         <div className="flex flex-wrap justify-between gap-3"><h2 id={`blog-admin-${row.id}`} className="text-lg font-semibold break-words"><Link href={`/admin/blog/${row.id}`} className="hover:underline">{row.title}</Link></h2><Badge variant={row.published ? 'outline' : 'secondary'}>{row.published ? 'Published' : 'Draft'}</Badge></div>
         {row.excerpt && <p className="text-sm text-muted-foreground break-words">{row.excerpt}</p>}
-        <p className="text-xs text-muted-foreground break-all">/blog/{row.slug} · Updated {new Date(row.updatedAt).toLocaleString()}</p>
-        <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" asChild><Link href={`/admin/blog/${row.id}`} aria-label={`Edit ${row.title}`}>Edit article</Link></Button>{row.published && <Button size="sm" variant="ghost" asChild><Link href={`/blog/${encodeURIComponent(row.slug)}`} target="_blank" rel="noopener noreferrer">Open public article</Link></Button>}</div>
+        <p className="text-xs text-muted-foreground break-all">{publicArticleHref(row.slug)} · Updated {new Date(row.updatedAt).toLocaleString()}</p>
+        <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" asChild><Link href={`/admin/blog/${row.id}`} aria-label={`Edit ${row.title}`}>Edit article</Link></Button>{row.published && <Button size="sm" variant="ghost" asChild><Link href={publicArticleHref(row.slug)} target="_blank" rel="noopener noreferrer">{isLegalDocumentSlug(row.slug) ? 'Open public policy' : 'Open public article'}</Link></Button>}</div>
       </CardContent></Card>)}
     </div>}
     {cursor && !forbidden && <div className="text-center"><Button variant="outline" disabled={loadingMore || loading} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Load More'}</Button></div>}
