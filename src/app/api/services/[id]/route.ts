@@ -19,7 +19,7 @@ export async function GET(
         category: true, price: true, duration: true, image: true, mode: true,
         benefits: true, isActive: true, popularity: true, createdAt: true, updatedAt: true,
         bookings: {
-          where: { status: 'COMPLETED', healer: { isActive: true } },
+          where: { status: 'COMPLETED', healer: { isActive: true, isVerified: true } },
           select: {
             healer: {
               select: {
