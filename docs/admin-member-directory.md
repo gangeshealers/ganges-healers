@@ -1,0 +1,15 @@
+# Searchable administrator member directory
+
+The administrator dashboard originally listed only the 50 newest accounts, making older customers impossible to find for manual VIP/credit corrections. It now provides an authenticated, read-only-to-search **account directory** within `/admin`, covering all accounts, with role filters (**All, Members, Practitioners, Administrators**), case-insensitive partial email/name search, and an exact account ID match.
+
+## Access and boundaries
+
+The server renders account rows only after checking the signed-in ADMIN session **and** `requireCurrentAdmin()` against the current database role, before querying accounts or catalog statistics. Ordinary users and practitioners cannot use the directory. The existing `UserBenefitsForm` requires the same current session's administrator identity before editing. The server action independently repeats authorization; it serializes account edits, checks the reviewed version/identity, requires a reason, and records before/after in the activity log atomically. No new write capability is added.
+
+Search is limited to 100 trimmed characters. Literal Prisma substring matching escapes `%`, `_` and backslashes so search metacharacters cannot broaden results. The selected role is a closed set of values; repeated or invalid query fields reset to safe defaults. Each page displays at most 50 accounts, newest first with stable ID tie-break. Page input is capped at 1000 and clamped to the last existing page; large archives should be narrowed with search. The UI displays the total matching count and a useful zero-results reset link. Accounts are looked up only by server-side Prisma queries, not by downloading all account details to the browser.
+
+The form's stale-version reload preserves the currently selected directory role, search and page, so administrators reviewing older users do not lose the target on refresh. Unfiltered legacy links remain `/admin`, maintaining current navigation and the manual benefits correction workflow.
+
+Tests verify live admin access before querying user records, precise role/status filters, stable bounded pagination, literal wildcard handling, empty-state recovery and preserved reload links. The existing full browser admin benefits workflow now **searches for the target account first** and verifies stale-reload keeps the filter while protecting the optimistic version/audit behavior.
+
+No schema migration, new provider, export of private data, change to subscription entitlements, automatic VIP grants or new user permissions. This page remains an administrator-only operational workspace. Rollback requires reverting the directory helper, pagination/search UI and reload link changes; saved user benefits and audit logs remain unchanged.
