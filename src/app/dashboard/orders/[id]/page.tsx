@@ -170,7 +170,7 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
               <Link href={receiptHref} className="font-semibold text-primary underline-offset-4 hover:underline">View order invoice</Link>
             </p>
           ) : (
-            <p role="status" className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               An issued invoice is not available for this order yet. Check your billing history or contact support if a paid receipt is missing.
             </p>
           )}
