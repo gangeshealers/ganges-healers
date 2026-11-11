@@ -1,6 +1,8 @@
 # Implementation Plan
 ## Ganges Healers - Complete Development Roadmap
 
+> **Current release implementation and acceptance (November 2026):** See [Release Completion Matrix](./RELEASE_COMPLETION_MATRIX.md). This September 2025 document is an initial architecture/sprint proposal, not proof of deployed production readiness. Its Sprint 5+ plan is not filled in; use the matrix and linked tests for actionable outstanding work.
+
 ---
 
 ## 1. Executive Summary
