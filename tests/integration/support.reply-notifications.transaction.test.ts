@@ -53,6 +53,8 @@ test('status-only edits, unchanged replies and stale edits do not duplicate aler
   expect(await prisma.notification.count({ where: { userId: owners[0], type: 'support_reply' } })).toBe(1)
   expect(await prisma.notification.count({ where: { userId: owners[1], type: 'support_reply' } })).toBe(0)
   const old = await prisma.supportTicket.findUniqueOrThrow({ where: { id: tickets[0] } })
+  // Ensure the version advances even if the CI database runs both writes in one millisecond.
+  await prisma.supportTicket.update({ where: { id: old.id }, data: { updatedAt: new Date(old.updatedAt.getTime() + 1000) } })
   await update(0, 'The updated private response.', 'RESOLVED')
   await expect(updateAdminSupportTicket({
     id: old.id, updatedAt: old.updatedAt.toISOString(), status: 'RESOLVED', response: 'Stale competing reply',
