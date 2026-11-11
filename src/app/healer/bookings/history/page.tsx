@@ -5,7 +5,7 @@ import { requireHealer } from '@/lib/auth/requireHealer'
 import { prisma } from '@/lib/prisma'
 import {
   HEALER_HISTORY_MAX_PAGE, HEALER_HISTORY_PAGE_SIZE, HEALER_HISTORY_STATUSES,
-  parseHealerHistory, healerHistoryHref, healerHistoryWhere,
+  parseHealerHistory, healerHistoryHref, healerHistoryWhere, healerHistoryExportHref,
 } from '@/lib/healer/booking-history'
 
 export const dynamic = 'force-dynamic'
@@ -66,7 +66,11 @@ export default async function HealerBookingHistoryPage({ searchParams }: { searc
           </Link>
         ))}
       </nav>
-      <p role="status" className="text-sm text-muted-foreground">{count} {count === 1 ? 'appointment' : 'appointments'} match this view</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="status" className="text-sm text-muted-foreground">{count} {count === 1 ? 'appointment' : 'appointments'} match this view</p>
+        <a href={healerHistoryExportHref(status, query)} download="ganges-healers-practitioner-bookings.csv"
+          className="rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted">Download history CSV</a>
+      </div>
       {bookings.length === 0 ? (
         <section className="space-y-3 rounded-xl border border-dashed p-7 text-center">
           <h2 className="text-lg font-semibold">{query || status !== 'all' ? 'No matching appointments' : 'No past appointments yet'}</h2>
