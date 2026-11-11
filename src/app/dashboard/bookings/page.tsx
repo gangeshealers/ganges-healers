@@ -156,7 +156,7 @@ export default function MyBookingsPage() {
       <h1 className="text-2xl font-semibold mb-4">My Bookings</h1>
 
       {loading ? (
-        <Card role="status" aria-live="polite" className="p-6">Loading your bookings…</Card>
+        <Card aria-live="polite" className="p-6">Loading your bookings…</Card>
       ) : error ? (
         <Card role="alert" className="space-y-4 border-red-200 bg-red-50 p-6">
           <h2 className="font-semibold text-red-900">
