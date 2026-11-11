@@ -90,3 +90,29 @@ test('unknown sort inputs fall back to newest ordering and never round-trip into
   }))
   expect(screen.getByRole('link', { name: 'Next services' })).toHaveAttribute('href', '/services?page=2')
 })
+
+test.each([
+  ['online', ['ONLINE', 'BOTH']],
+  ['in_person', ['OFFLINE', 'BOTH']],
+])('session format %s includes services that support both delivery modes', async (format, modes) => {
+  await ServicesPage({ searchParams: Promise.resolve({ format, category: 'Therapy' }) })
+  expect(prisma.service.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    where: expect.objectContaining({ isActive: true, category: 'Therapy', mode: { in: modes } }),
+    select: expect.objectContaining({ mode: true, name: true }),
+  }))
+  expect(prisma.service.count).toHaveBeenCalledWith({
+    where: expect.objectContaining({ mode: { in: modes } }),
+  })
+})
+
+test('format, sorting and search survive service pagination and malformed formats do not', async () => {
+  jest.mocked(prisma.service.count).mockResolvedValueOnce(25)
+  render(await ServicesPage({ searchParams: Promise.resolve({ format: 'online', sort: 'popular', search: 'sound' }) }))
+  const next = new URL(screen.getByRole('link', { name: 'Next services' }).getAttribute('href')!, 'https://example.test')
+  expect(Object.fromEntries(next.searchParams)).toEqual({ search: 'sound', sort: 'popular', format: 'online', page: '2' })
+
+  jest.clearAllMocks()
+  jest.mocked(prisma.service.count).mockResolvedValueOnce(25)
+  render(await ServicesPage({ searchParams: Promise.resolve({ format: ['online', 'in_person'] }) }))
+  expect(screen.getAllByRole('link', { name: 'Next services' }).at(-1)).toHaveAttribute('href', '/services?page=2')
+})
