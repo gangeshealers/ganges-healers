@@ -78,3 +78,52 @@ test('last page hides further navigation and preserves a recovery link for out-o
   expect(screen.queryByRole('link', { name: 'Next requests' })).not.toBeInTheDocument()
   expect(screen.getByText(/No requests on this page/)).toBeInTheDocument()
 })
+
+test('members search only their own subject and message, retaining search and status on pages', async () => {
+  findMany.mockResolvedValueOnce(Array.from({ length: 21 }, (_, i) => row(i)))
+  render(await MemberSupportPage({ searchParams: Promise.resolve({ q: '  yoga_%  ', status: 'IN_PROGRESS', page: '2' }) }))
+  expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+    where: {
+      userId: 'owner-123',
+      status: 'IN_PROGRESS',
+      OR: [
+        { subject: { contains: 'yoga\\_\\%', mode: 'insensitive' } },
+        { message: { contains: 'yoga\\_\\%', mode: 'insensitive' } },
+      ],
+    },
+    skip: 20,
+    take: 21,
+  }))
+  expect(screen.getByRole('searchbox', { name: 'Find one of your requests' })).toHaveValue('yoga_%')
+  const next = new URL(screen.getByRole('link', { name: 'Next requests' }).getAttribute('href')!, 'https://example.test')
+  expect(Object.fromEntries(next.searchParams)).toEqual({ status: 'IN_PROGRESS', q: 'yoga_%', page: '3' })
+  const statusHref = new URL(screen.getByRole('link', { name: 'Resolved' }).getAttribute('href')!, 'https://example.test')
+  expect(Object.fromEntries(statusHref.searchParams)).toEqual({ status: 'RESOLVED', q: 'yoga_%' })
+  expect(screen.getByRole('link', { name: 'Clear search' })).toHaveAttribute('href', '/dashboard/support?status=IN_PROGRESS')
+})
+
+test('repeated search values never produce an owner query and a bounded literal search remains private', async () => {
+  render(await MemberSupportPage({ searchParams: Promise.resolve({ q: ['other-person', 'private'], page: '2' }) }))
+  expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'owner-123' }, skip: 20 }))
+  expect(screen.queryByRole('link', { name: 'Clear search' })).not.toBeInTheDocument()
+
+  findMany.mockClear()
+  const tooLong = 'a'.repeat(100)
+  render(await MemberSupportPage({ searchParams: Promise.resolve({ q: tooLong }) }))
+  expect(screen.getByRole('searchbox', { name: 'Find one of your requests' })).toHaveValue('a'.repeat(80))
+  expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+    where: expect.objectContaining({
+      userId: 'owner-123',
+      OR: [
+        { subject: { contains: 'a'.repeat(80), mode: 'insensitive' } },
+        { message: { contains: 'a'.repeat(80), mode: 'insensitive' } },
+      ],
+    }),
+  }))
+})
+
+test('search with no matching requests gives a clear recovery path and keeps support requests private', async () => {
+  render(await MemberSupportPage({ searchParams: Promise.resolve({ q: 'not found' }) }))
+  expect(screen.getByText('No requests match this search.')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Clear search' })).toHaveAttribute('href', '/dashboard/support')
+})
