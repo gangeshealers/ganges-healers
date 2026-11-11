@@ -18,7 +18,7 @@ test('a healer publishes early hours, stale edits cannot overwrite them, and a c
     const staff = await db.user.create({ data: { email: staffEmail, role: 'HEALER', name: 'Availability Practitioner' } }); users.push(staff.id)
     const customer = await db.user.create({ data: { email: customerEmail, name: 'Availability Customer', vip: true, freeSessionCredits: 1 } }); users.push(customer.id)
     const service = await db.service.create({ data: { slug: `availability-journey-${suffix}`, name: `Availability Journey ${suffix}`, category: 'Test', description: 'Isolated browser fixture', price: 100, duration: 60 } }); serviceId = service.id
-    const healer = await db.healer.create({ data: { userId: staff.id, isActive: true, specializations: [service.name], availability: { monday: { start: '10:00', end: '20:00' } } } }); healerId = healer.id
+    const healer = await db.healer.create({ data: { userId: staff.id, isActive: true, isVerified: true, specializations: [service.name], availability: { monday: { start: '10:00', end: '20:00' } } } }); healerId = healer.id
     await login('HEALER', staffEmail); await page.goto('/healer/availability')
     await expect(page.getByLabel('Monday start', { exact: true })).toHaveValue('10:00', { timeout: 30000 })
     await page.getByLabel('Monday start', { exact: true }).selectOption('08:00')
