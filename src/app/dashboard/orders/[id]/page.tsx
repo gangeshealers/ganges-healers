@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { readOrderTracking, shippingAddressSchema } from "@/lib/store/order-shipping"
 import { OrderPaymentButton } from "@/components/store/OrderPaymentButton"
+import { invoiceViewerHref } from "@/lib/invoices/viewer-link"
 
 export const dynamic = "force-dynamic"
 
@@ -42,6 +43,7 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
       id: true,
       status: true,
       totalPaise: true,
+      paymentId: true,
       createdAt: true,
       shippingAddress: true,
       trackingInfo: true,
@@ -57,6 +59,14 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
   })
 
   if (!order) notFound()
+  // Look up the receipt only after confirming ownership of the store order.
+  // Recheck the payment owner and STORE type; a guessed payment ID never grants access.
+  const invoice = order.paymentId
+    ? await prisma.invoice.findFirst({
+        where: { paymentId: order.paymentId, payment: { userId: session.user.id, type: 'STORE' } },
+        select: { id: true, invoiceNumber: true },
+      })
+    : null
   const addressResult = shippingAddressSchema.safeParse(order.shippingAddress)
   const address = addressResult.success ? addressResult.data : null
   const tracking = readOrderTracking(order.status, order.trackingInfo)
@@ -78,6 +88,25 @@ export default async function OrderDetailsPage({ params }: { params: Promise<{ i
         </div>
         <Badge variant={status.variant}>{status.label}</Badge>
       </div>
+
+      <Card className="space-y-3 p-5">
+        <h2 className="text-lg font-semibold">Receipt and billing</h2>
+        {invoice ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Your issued invoice is ready to view or download.</p>
+            <Button asChild variant="outline" size="sm">
+              <Link href={invoiceViewerHref(invoice)}>View invoice</Link>
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No invoice has been issued for this order yet. Receipts appear after payment is processed.
+          </p>
+        )}
+        <Link href="/dashboard/billing" className="inline-block text-sm font-medium text-primary underline-offset-4 hover:underline">
+          See all billing history
+        </Link>
+      </Card>
 
       <Card className="space-y-4 p-5">
         <h2 className="text-lg font-semibold">Order progress</h2>
