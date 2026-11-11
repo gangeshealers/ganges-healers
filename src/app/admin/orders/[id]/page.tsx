@@ -59,8 +59,10 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
   const session = await auth()
   if (!session?.user?.id) redirect('/auth/signin')
   if (session.user.role !== 'ADMIN') redirect('/')
+  await requireCurrentAdmin()
 
   const { id } = await params
+  if (!id || id.length > 200) notFound()
   const order = await prisma.order.findUnique({
     where: { id },
     select: {
