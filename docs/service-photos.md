@@ -7,7 +7,7 @@ The service catalog already supports the nullable `Service.image` field. The pre
 1. A currently active administrator opens `/admin/services`, creates a service or expands an existing service's **Edit** form.
 2. Enter a supported HTTPS image URL, or select a licensed JPEG/PNG/WebP file up to 4 MB from **Upload service photo**. The protected `POST /api/admin/services/image` endpoint checks current administrator authorization, size, MIME and header signature; a random Vercel Blob pathname avoids overwriting another asset.
 3. The upload control fills the service's image URL on success. **Upload alone does not publish the photo to the service**; select **Save Service** to persist the image alongside the other approved service fields.
-4. Clear the URL and save to remove the public image. Without an image, the separate branded image fallback is used. The admin action revalidates service catalog and detail paths.
+4. Clear the URL and save to remove the public image. The public services index displays a branded, decorative gradient card whenever the image is absent or blank; a real approved image always takes precedence. The service detail page has its own fallback change tracked in PR #122. The admin action revalidates service catalog and detail paths.
 
 Only the existing configured Vercel Blob token (`BLOB_READ_WRITE_TOKEN`) is used; it stays on the server. Missing storage returns 503 and the existing edit form remains usable for text/price changes. Approved remote image origins reuse `src/config/images.ts` (the same trusted host policy used for product and article images). No provider, payments, database migrations or customer data are modified.
 
