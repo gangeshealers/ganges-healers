@@ -7,6 +7,7 @@ import { POST as book } from '@/app/api/bookings/route'
 import { GET as list } from '@/app/api/program-enrollments/route'
 import { GET as detail, PATCH as update } from '@/app/api/program-enrollments/[id]/route'
 import { GET as calendar } from '@/app/api/program-enrollments/[id]/sessions/[number]/calendar/route'
+import { GET as programCalendar } from '@/app/api/program-enrollments/[id]/calendar/route'
 import { GET as bookingCalendar } from '@/app/api/bookings/[id]/calendar/route'
 import { getHealerAvailability } from '@/lib/availability'
 import { buildProgramSchedule } from '@/lib/programs/schedule'
@@ -152,6 +153,41 @@ test('owned calendar exports use confirmed rows and keep another customer’s en
   mockUserId = outsiderId
   expect((await calendar(req({}), context)).status).toBe(404)
 })
+test('program calendar exports only the current member’s future confirmed reservations', async () => {
+  const row = await fixture('active', 4)
+  const create = async (sessionNumber: number, scheduledAt: Date, status: 'SCHEDULED' | 'CANCELLED', meetingLink: string | null) =>
+    prisma.programSession.create({ data: { enrollmentId: row.id, healerId, sessionNumber, scheduledAt, status, durationMin: 60, meetingLink } })
+  const first = await create(1, at(27), 'SCHEDULED', 'https://example.test/room-one')
+  const second = await create(2, at(28), 'SCHEDULED', 'https://example.test/room-two')
+  const cancelled = await create(3, at(29), 'CANCELLED', 'https://example.test/cancelled')
+  const past = await create(4, at(-2), 'SCHEDULED', 'https://example.test/past')
+  const context = { params: Promise.resolve({ id: row.id }) }
+  mockUserId = outsiderId; mockRole = 'USER'
+  expect((await programCalendar(req({}), context)).status).toBe(404)
+  mockUserId = staffId; mockRole = 'HEALER'
+  expect((await programCalendar(req({}), context)).status).toBe(404)
+  mockUserId = adminId; mockRole = 'ADMIN'
+  expect((await programCalendar(req({}), context)).status).toBe(404)
+  mockUserId = ownerId; mockRole = 'USER'
+  const exported = await programCalendar(req({}), context)
+  expect(exported.status).toBe(200)
+  expect(exported.headers.get('cache-control')).toBe('private, no-store')
+  const content = await exported.text()
+  expect(content.split('\r\n').filter(line => line === 'BEGIN:VEVENT')).toHaveLength(2)
+  expect(content).toContain('UID:program-' + first.id)
+  expect(content).toContain('UID:program-' + second.id)
+  expect(content).toContain('URL:https://example.test/room-one')
+  expect(content).toContain('URL:https://example.test/room-two')
+  expect(content).not.toContain(cancelled.id)
+  expect(content).not.toContain(past.id)
+  expect(content).not.toMatch(/example\.test\/cancelled|example\.test\/past/)
+
+  await prisma.programEnrollment.update({ where: { id: row.id }, data: { status: 'paused' } })
+  const paused = await programCalendar(req({}), context)
+  expect(paused.status).toBe(200)
+  expect(await paused.text()).not.toContain('BEGIN:VEVENT')
+})
+
 test('booking calendar access is scoped and preserves tentative/cancelled status', async () => {
   const row = await prisma.booking.create({ data: { userId: ownerId, healerId, serviceId, scheduledAt: at(24), durationMin: 60, pricePaise: 25000 } })
   const context = { params: Promise.resolve({ id: row.id }) }

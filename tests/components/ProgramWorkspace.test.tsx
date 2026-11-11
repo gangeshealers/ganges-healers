@@ -21,6 +21,20 @@ test('confirmed appointments expose their owned calendar download', () => {
   expect(screen.getByText('Confirmed')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Download calendar' })).toHaveAttribute('href', '/api/program-enrollments/enrollment/sessions/1/calendar')
 })
+test('only My Programs cards offer a whole-schedule download once a session is confirmed', () => {
+  const scheduled = { ...row, sessions: [{ ...row.sessions[0], id: 'session', status: 'scheduled', scheduledAt: '2030-01-01T04:30:00.000Z' }] }
+  const view = render(<ProgramWorkspace items={[scheduled]} showOwnedCalendar />)
+  expect(screen.getByRole('link', { name: 'Download upcoming program calendar' }))
+    .toHaveAttribute('href', '/api/program-enrollments/enrollment/calendar')
+  expect(screen.getByText(/This file is a snapshot/)).toBeInTheDocument()
+  view.rerender(<ProgramWorkspace items={[scheduled]} />)
+  expect(screen.queryByRole('link', { name: 'Download upcoming program calendar' })).not.toBeInTheDocument()
+  view.rerender(<ProgramWorkspace items={[{ ...scheduled, status: 'paused' }]} showOwnedCalendar />)
+  expect(screen.queryByRole('link', { name: 'Download upcoming program calendar' })).not.toBeInTheDocument()
+  view.rerender(<ProgramWorkspace items={[row]} showOwnedCalendar />)
+  expect(screen.queryByRole('link', { name: 'Download upcoming program calendar' })).not.toBeInTheDocument()
+})
+
 test('staff scheduling uses available India time and waits for explicit server confirmation', async () => {
   const fetch = jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => options?.method === 'PATCH' ? response({ success: true, data: { id: row.id } }) : response({ success: true, data: { slots: [{ time: '10:00', available: true }, { time: '10:30', available: false }] } }))
   render(<ProgramWorkspace items={[{ ...row, canManage: true }]} />)
