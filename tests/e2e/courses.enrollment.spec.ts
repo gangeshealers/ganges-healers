@@ -33,6 +33,19 @@ test('a customer enrolls in a free course and reaches its gated lesson without p
     expect(gatewayRequests).toEqual([])
     expect((await page.request.post(`/api/courses/${course.slug}/enroll`)).status()).toBe(409)
     expect(await db.courseEnrollment.count({ where: { userId, courseId } })).toBe(1)
+
+    await page.goto('/courses/enrolled')
+    await expect(page.getByRole('heading', { name: 'My Courses' })).toBeVisible()
+    await expect(page.getByText('Free Practice Course', { exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Continue learning' }))
+      .toHaveAttribute('href', `/courses/${course.slug}/lesson/${course.lessons[0].id}`)
+
+    // Removing a course from the public catalog must never revoke an enrolled member's lesson access.
+    await db.course.update({ where: { id: courseId }, data: { isActive: false } })
+    await page.reload()
+    await expect(page.getByText('Archived · access retained')).toBeVisible()
+    await page.getByRole('link', { name: 'Continue learning' }).click()
+    await expect(page.getByRole('heading', { name: 'First Free Practice', exact: true })).toBeVisible()
   } finally {
     try {
       if (userId) await db.user.delete({ where: { id: userId } })
