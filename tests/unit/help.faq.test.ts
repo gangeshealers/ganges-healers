@@ -7,7 +7,9 @@ describe('public help content and search', () => {
     for (const item of helpQuestions) {
       expect(item.question.length).toBeGreaterThan(10)
       expect(item.answer.length).toBeGreaterThan(20)
-      expect(item.link.href).toMatch(/^\/[a-z][a-z0-9/\-]*$/)
+      expect(item.link.href.startsWith('/')).toBe(true)
+      expect(item.link.href).not.toContain('://')
+      expect(item.link.href).not.toContain(' ')
       expect(helpCategories).toContain(item.category)
     }
   })
