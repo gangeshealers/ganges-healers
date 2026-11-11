@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { UserBenefitsForm } from '@/components/admin/user-benefits-form'
+import { AdminCatalogOverview } from '@/components/admin/catalog-overview'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { updateUserBenefits, UserBenefitsError, userBenefitsSelect, userBenefitsVersion, type UserBenefitsInput, type UserBenefitsResult } from '@/lib/admin/user-benefits'
 
@@ -30,11 +31,20 @@ export default async function AdminPage() {
   if (!session?.user?.id) redirect("/auth/signin")
   if (session.user.role !== "ADMIN") redirect("/")
 
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    select: { ...userBenefitsSelect, createdAt: true },
-  })
+  const [users, activeServices, verifiedHealers, activePrograms, activeCourses, publishedAudio, activeProducts, publishedArticles] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { ...userBenefitsSelect, createdAt: true },
+    }),
+    prisma.service.count({ where: { isActive: true } }),
+    prisma.healer.count({ where: { isActive: true, isVerified: true } }),
+    prisma.program.count({ where: { isActive: true } }),
+    prisma.course.count({ where: { isActive: true } }),
+    prisma.audioTrack.count({ where: { isPublished: true } }),
+    prisma.product.count({ where: { isActive: true } }),
+    prisma.blogPost.count({ where: { published: true } }),
+  ])
   type AdminUser = typeof users[number]
 
   return (
@@ -56,6 +66,16 @@ export default async function AdminPage() {
         <Button asChild variant="outline"><Link href="/admin/payments">Payments</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/analytics">Analytics</Link></Button>
       </nav>
+
+      <AdminCatalogOverview items={[
+        { label: 'Services', count: activeServices, href: '/admin/services', meaning: 'Active healing services' },
+        { label: 'Healers', count: verifiedHealers, href: '/admin/healers', meaning: 'Active, verified practitioners' },
+        { label: 'Programs', count: activePrograms, href: '/admin/programs', meaning: 'Active guided programs' },
+        { label: 'Courses', count: activeCourses, href: '/admin/courses', meaning: 'Active self-paced courses' },
+        { label: 'Audio', count: publishedAudio, href: '/admin/audio', meaning: 'Published audio tracks' },
+        { label: 'Products', count: activeProducts, href: '/admin/products', meaning: 'Active store products' },
+        { label: 'Articles', count: publishedArticles, href: '/admin/blog', meaning: 'Published blog articles' },
+      ]} />
 
       <Card>
         <CardContent className="p-0">
