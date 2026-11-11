@@ -1,4 +1,4 @@
-import { BILLING_MAX_PAGE, BILLING_PAGE_SIZE, billingPageHref, parseBillingFilters } from '@/lib/invoices/billing-filters'
+import { BILLING_MAX_PAGE, BILLING_PAGE_SIZE, billingPageHref, billingExportHref, parseBillingFilters } from '@/lib/invoices/billing-filters'
 
 describe('owner billing history filters', () => {
   test('uses safe defaults for invalid, repeated or extreme page values', () => {
@@ -15,6 +15,12 @@ describe('owner billing history filters', () => {
     expect(parseBillingFilters({ type: 'SESSION', q: ' INV-2026-1 ' })).toEqual({ page: 1, type: 'SESSION', query: 'INV-2026-1' })
     expect(parseBillingFilters({ type: 'store', q: 'x'.repeat(300) })).toEqual({ page: 1, type: 'STORE', query: 'x'.repeat(80) })
     expect(parseBillingFilters({ type: 'UNRECOGNIZED' }).type).toBe('ALL')
+  })
+
+  test('exports all matching invoices without inheriting the visible page number', () => {
+    const filters = parseBillingFilters({ page: '5', type: 'COURSE', q: ' INV/7 ' })
+    expect(billingExportHref(filters)).toBe('/api/invoices/me/export?type=COURSE&q=INV%2F7')
+    expect(billingExportHref(parseBillingFilters())).toBe('/api/invoices/me/export')
   })
 
   test('preserves filters in safe, URL-encoded previous and next page links', () => {
