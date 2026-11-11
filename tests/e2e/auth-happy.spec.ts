@@ -40,7 +40,7 @@ test('register without a phone, sign in with the stored password, and sign out',
     await page.getByLabel('Password', { exact: true }).fill(password)
     await page.getByRole('button', { name: 'Sign In', exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 })
-    await expect(page.getByRole('heading', { name: 'My Bookings', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Upcoming appointments', exact: true })).toBeVisible()
     const session = await (await page.request.get('/api/auth/session')).json()
     expect(session.user.id).toBe(registered.id)
     expect(session.user.role).toBe('USER')
