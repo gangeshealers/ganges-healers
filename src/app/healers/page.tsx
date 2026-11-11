@@ -89,7 +89,7 @@ export default async function HealersPage({ searchParams }: { searchParams?: Pro
             <Link href={`/healers?${new URLSearchParams({ ...(q ? { q } : {}), ...(serviceSlug ? { serviceSlug } : {}), ...(sort !== 'default' ? { sort } : {}) }).toString()}`} className="border rounded px-3 py-2 inline-block focus-ring">Back to first page</Link>
           ) : <span />}
           {nextCursor ? (
-            <Link href={`/healers?${new URLSearchParams({ ...(q ? { q } : {}), ...(serviceSlug ? { serviceSlug } : {}), ...(sort !== 'default' ? { sort } : {}), cursor: nextCursor }).toString()}`} className="border rounded px-3 py-2 inline-block focus-ring">Next healers</Link>
+            <Link href={`/healers?${new URLSearchParams({ ...(q ? { q } : {}), ...(serviceSlug ? { serviceSlug } : {}), ...(sort !== 'default' ? { sort } : {}), cursor: nextCursor }).toString()}`} className="border rounded px-3 py-2 inline-block focus-ring">Load more</Link>
           ) : <span className="text-sm text-muted-foreground">End of results</span>}
         </nav>
       ) : null}
