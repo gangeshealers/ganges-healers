@@ -43,7 +43,7 @@ export default async function AdminLaunchReadinessPage() {
     'Approve final service, course, program, audio and store content and confirm licensed media.',
     'Complete a real, intentionally authorized payment and a signed webhook callback; reconcile duplicate and refund cases.',
     'Verify email/SMS delivery, bounces, OAuth account linking and actual uploaded media and invoices.',
-    'Confirm the booking-email outbox is consumed by a persistent worker or deployed scheduler.',
+    'Verify the configured booking-email recovery cron actually runs in production, with provider acceptance and the outbox queue reconciled.',
     'Exercise customer, healer and admin journeys in the deployed environment with role-specific accounts.',
     'Review monitoring, domain/DNS, rate limits, recovery plans and the controlled database migration/cutover.',
   ]
