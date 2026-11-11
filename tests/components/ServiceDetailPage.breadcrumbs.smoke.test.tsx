@@ -17,4 +17,11 @@ describe('Service detail breadcrumbs', () => {
     expect(links).toEqual(['Home', 'Services'])
     expect(nav!.textContent).toContain('Yoga Healing')
   })
+  test('uses a branded fallback rather than a Vercel logo when no service photograph exists', async () => {
+    const el = await ServiceDetailPage({ params: Promise.resolve({ slug: 'yoga-healing' }), searchParams: Promise.resolve({}) })
+    const { container, getByTestId } = render(el)
+    expect(getByTestId('service-image-fallback')).toHaveTextContent('Ganges Healers')
+    expect(getByTestId('service-image-fallback')).toHaveAttribute('aria-hidden', 'true')
+    expect(container.querySelector('img[src*="vercel.svg"]')).toBeNull()
+  })
 })
