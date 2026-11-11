@@ -27,6 +27,10 @@ test('a real administrator reviews and audits manual benefits without overwritin
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30000 })
     expect((await (await page.request.get('/api/auth/session')).json()).user.role).toBe('ADMIN')
     await page.goto('/admin')
+    // The directory must find target accounts without relying on newest-50 ordering.
+    await page.getByRole('searchbox', { name: 'Search by email, name or exact account ID' }).fill(customerEmail)
+    await page.getByRole('button', { name: 'Find accounts', exact: true }).click()
+    await expect(page).toHaveURL(/\/admin\?q=/)
     const form = page.getByRole('form', { name: `Benefits for ${customerName} (${customerEmail})`, exact: true })
     await expect(form.getByLabel('Free credits', { exact: true })).toHaveValue('2', { timeout: 30000 })
     // A concurrent credit consumption changes the actual account after the administrator's review.
@@ -39,6 +43,7 @@ test('a real administrator reviews and audits manual benefits without overwritin
     expect((await db.user.findUniqueOrThrow({ where: { id: users[1] } })).freeSessionCredits).toBe(1)
     expect(await db.activityLog.count({ where: { entityId: users[1], action: 'user_benefits_updated' } })).toBe(0)
     await form.getByRole('link', { name: 'Reload user list', exact: true }).click()
+    await expect(page).toHaveURL(/\/admin\?q=/)
     await expect(form.getByLabel('Free credits', { exact: true })).toHaveValue('1', { timeout: 30000 })
     await form.getByLabel('Manual VIP', { exact: true }).selectOption('true')
     await form.getByLabel('Free credits', { exact: true }).fill('4')
