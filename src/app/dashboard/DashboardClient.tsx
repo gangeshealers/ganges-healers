@@ -4,10 +4,11 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { format } from 'date-fns'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import BookingActions from '@/components/dashboard/BookingActions'
+
+const appointmentFormatter = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
 
 interface BookingRecord {
   id: string
@@ -41,10 +42,16 @@ interface CourseEnrollmentRecord {
 export default function DashboardClient({ bookings, recentPosts = [], courseEnrollments = [] }: { bookings: BookingRecord[]; recentPosts?: CommunityPostRecord[]; courseEnrollments?: CourseEnrollmentRecord[] }) {
   return (
     <div className="container mx-auto px-4 py-8 space-y-8">
-      <h1 className="text-2xl font-semibold">My Bookings</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Upcoming appointments</h1>
+        <Button asChild variant="outline" size="sm"><Link href="/dashboard/bookings">View all bookings</Link></Button>
+      </div>
 
       {bookings.length === 0 && (
-        <p className="text-muted-foreground">No bookings yet. Browse services to book your first session.</p>
+        <div className="space-y-2">
+          <p className="text-muted-foreground">No upcoming appointments. Your previous sessions are available in booking history.</p>
+          <Button asChild size="sm"><Link href="/services">Browse services</Link></Button>
+        </div>
       )}
 
       <div className="grid gap-4">
@@ -56,7 +63,7 @@ export default function DashboardClient({ bookings, recentPosts = [], courseEnro
                 <div className="flex-1">
                   <div className="font-medium">{b.service.name}</div>
                   <div className="text-sm text-muted-foreground">
-                    {format(new Date(b.scheduledAt), 'EEE, dd MMM yyyy HH:mm')} · with {b.healer.user?.name ?? 'Healer'}
+                    {appointmentFormatter.format(new Date(b.scheduledAt))} IST · with {b.healer.user?.name ?? 'Healer'}
                   </div>
                   <div className="text-sm">
                     Status: <span className="font-medium">{b.status}</span> | Payment: {b.payment?.status ?? '-'} ({b.payment?.gateway ?? '-'})
