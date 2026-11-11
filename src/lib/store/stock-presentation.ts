@@ -13,7 +13,8 @@ export function getStockPresentation(status: string, count: number | null | unde
   if (quantity !== null && quantity <= 5) {
     return { label: `${quantity} in stock`, available: true, tone: 'low' }
   }
-  if (status === 'LOW') {
+  // A known ample quantity outranks an outdated LOW label.
+  if (status === 'LOW' && quantity === null) {
     return { label: 'Low stock', available: true, tone: 'low' }
   }
   return { label: 'In stock', available: true, tone: 'normal' }
