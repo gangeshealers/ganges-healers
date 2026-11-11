@@ -128,6 +128,10 @@ A modern healthcare management system built with Next.js 14, TypeScript, and a c
 
    Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+## Public sample catalog for local development
+
+The catalog pages use database records, not hard-coded listings. To restore the 10 example services, 6 programs and 8 courses on an isolated development database without creating demo users or payments, use the guarded **`pnpm seed:catalog`** command. It starts as a dry run and requires an exact hostname confirmation before writing. See [docs/catalog-seeding.md](docs/catalog-seeding.md) for instructions, branch-safety requirements, and the distinction from the full `pnpm seed` fixture.
+
 ## Safe test database setup
 
 `pnpm test:unit` runs without database credentials, reset, or seed. Integration
