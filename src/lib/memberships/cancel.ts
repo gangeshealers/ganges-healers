@@ -42,7 +42,7 @@ export async function endMembershipNow(userId: string, membershipId: string, pro
   if (membership.status === 'cancelled') return { status: 'cancelled' as const, alreadyEnded: true }
 
   const quote = await prisma.payment.findUnique({ where: { id: membershipQuoteId(membership.id) } })
-  if (!validQuote(quote?.metadata, quote?.userId ?? null, userId, membership.id, membership.subscriptionId)) {
+  if (!quote || !validQuote(quote.metadata, quote.userId, userId, membership.id, membership.subscriptionId)) {
     throw new MembershipCancellationError('RECONCILIATION_REQUIRED', 409, 'Please contact support to end this membership safely.')
   }
 
