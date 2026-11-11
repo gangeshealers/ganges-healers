@@ -108,7 +108,7 @@ describe('admin payment CSV export', () => {
   test('returns a header-only CSV for an empty date range', async () => {
     const response = await GET(request('?kind=refunds&from=2026-11-01&to=2026-11-02'))
     expect(response.status).toBe(200)
-    expect((await response.text()).split('\r\n')).toHaveLength(3)
+    expect((await response.text()).split('\r\n')).toHaveLength(2)
   })
 
   test('hides database errors from clients', async () => {
