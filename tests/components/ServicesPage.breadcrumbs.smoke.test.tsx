@@ -5,7 +5,7 @@ import ServicesPage from '@/app/services/page'
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     service: {
-      findMany: jest.fn(async () => [])
+      findMany: jest.fn(async () => []), count: jest.fn(async () => 0)
     }
   }
 }))
