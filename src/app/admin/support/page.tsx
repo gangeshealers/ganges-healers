@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic'
 async function saveSupportResponse(formData: FormData) {
   'use server'
   await requireCurrentAdmin()
+  if (!isSupportDeskEnabled()) redirect('/admin/support')
   let errorCode: string | null = null
   try {
     await updateAdminSupportTicket(Object.fromEntries(formData))
