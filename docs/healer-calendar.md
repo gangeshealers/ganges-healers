@@ -1,0 +1,11 @@
+# Practitioner's combined upcoming calendar
+
+The authenticated healer's `/healer/bookings` workspace includes **Download upcoming schedule**. It downloads a private RFC 5545 `.ics` snapshot that combines normal session appointments and program sessions **assigned to that specific practitioner**. This complements member-facing appointment/program calendars; it does not create a subscription, remote Google Calendar event, new meeting, payment, or schedule modification.
+
+`GET /api/healer/calendar` begins with `requireHealer()` and obtains the current database healer ID. It independently queries **only that ID** in `Booking.healerId` and `ProgramSession.healerId`, with no caller-supplied identity. Session bookings must be future and `CONFIRMED`, or `RESCHEDULED` with a confirmed/funded delivery state. Program sessions must be future, `SCHEDULED` and within an active enrollment. Unfunded reschedules, suggested program dates, cancelled/completed/past appointments and paused/cancelled program enrollments never become live calendar events.
+
+Each event uses the same stable UID as its corresponding single-event download (`booking-<id>` or `program-<id>`), the actual saved time/duration, title, timestamp and safe HTTPS meeting URL. It does **not** contain customer names, email addresses, phone numbers, payment details or mailing addresses. Content from the DB is escaped/folded by the shared calendar renderer. All events are sorted chronologically. Up to 100 candidate future records (both categories combined) may be exported; exceeding the bound returns HTTP 413 rather than quietly omitting appointments. A legitimate empty schedule still returns an importable `.ics` file.
+
+Successful and error responses carry private/no-store headers, and failures return JSON (401/403 on missing/incorrect role, 500 on errors). The download UI is available only when the signed-in session role is HEALER. The underlying API separately enforces the database healer identity.
+
+Tests use real isolated Postgres fixtures to verify role/owner isolation, ordinary+program combined events, funded/confirmed behavior, and exclusion of sensitive member information. No schema migration, provider API call, secret, background task or new role privilege is introduced. Roll back by reverting the endpoint and UI link; existing saved booking and program times remain unchanged.
