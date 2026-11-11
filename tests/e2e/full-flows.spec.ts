@@ -324,7 +324,7 @@ test.describe('Course lesson completion', () => {
     await expect(page).toHaveURL(new RegExp(`/lesson/${course.lessons[1].id}$`), { timeout: 30000 })
 
     await page.goto('/courses/enrolled')
-    await expect(page.getByRole('link', { name: /Introduction to Reiki/i })).toContainText('1/5 lessons · 20%')
+    await expect(page.getByRole('article').filter({ hasText: 'Introduction to Reiki' })).toContainText('1/5 lessons · 20%')
 
     for (const lesson of course.lessons.slice(1)) {
       const response = await page.request.post(`/api/courses/${course.slug}/progress`, { data: { lessonOrder: lesson.order } })
@@ -332,7 +332,7 @@ test.describe('Course lesson completion', () => {
       expect(await response.json()).toEqual({ progress: lesson.order + 1, status: lesson.order === 5 ? 'completed' : 'active' })
     }
     await page.reload()
-    await expect(page.getByRole('link', { name: /Introduction to Reiki/i })).toContainText('5/5 lessons · 100%')
+    await expect(page.getByRole('article').filter({ hasText: 'Introduction to Reiki' })).toContainText('5/5 lessons · 100%')
     await expect(page.getByText('✓ Completed')).toBeVisible()
   })
 })
