@@ -50,6 +50,27 @@ test('customers filter and page orders, inspect totals, and cannot view another 
     await expect(page.getByRole('heading', { name: 'My Orders', exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('link', { name: 'View details', exact: true })).toHaveCount(50)
     await expect(page.getByText(`Order ID: ${foreign.id}`, { exact: true })).toHaveCount(0)
+
+    // A search must stay owner-bound, match purchased products, and preserve status filters.
+    await page.getByRole('searchbox', { name: 'Find an order' }).fill('Order verification mat')
+    await page.getByRole('button', { name: 'Search orders' }).click()
+    await expect(page.getByRole('link', { name: 'View details', exact: true })).toHaveCount(1)
+    await expect(page.getByText(`Order ID: ${paidIds[0]}`, { exact: true })).toBeVisible()
+    await page.getByRole('link', { name: 'Shipped', exact: true }).click()
+    await expect(page).toHaveURL(/status=shipped&q=Order\+verification\+mat$/)
+    await expect(page.getByText('No orders match your search.', { exact: true })).toBeVisible()
+    await page.getByRole('link', { name: 'Paid', exact: true }).click()
+    await expect(page.getByRole('link', { name: 'View details', exact: true })).toHaveCount(1)
+    await page.getByRole('link', { name: 'Clear search', exact: true }).first().click()
+    await expect(page).toHaveURL(/orders\?status=paid$/)
+    await expect(page.getByRole('link', { name: 'View details', exact: true })).toHaveCount(50)
+
+    // A full order reference works, but a literal SQL wildcard does not enumerate purchases.
+    await page.goto('/dashboard/orders?status=paid&q=' + encodeURIComponent(paidIds[0]))
+    await expect(page.getByRole('link', { name: 'View details', exact: true })).toHaveCount(1)
+    await page.goto('/dashboard/orders?status=paid&q=%25')
+    await expect(page.getByText('No orders match your search.', { exact: true })).toBeVisible()
+    await page.goto('/dashboard/orders?status=paid')
     await page.getByRole('link', { name: 'Next page', exact: true }).click()
     await expect(page).toHaveURL(/status=paid&page=2$/)
     await expect(page.getByRole('link', { name: 'View details', exact: true })).toHaveCount(2)
