@@ -133,6 +133,10 @@ export default async function AdminPage({ searchParams }: { searchParams?: Promi
                   <div className="text-sm text-muted-foreground">
                     {u.email} · Role: {u.role} · Created: {new Date(u.createdAt).toLocaleString()}
                   </div>
+                  <Link href={'/admin/members/' + encodeURIComponent(u.id) + '/benefits'}
+                    className="mt-1 inline-flex text-sm font-semibold text-primary underline-offset-4 hover:underline">
+                    View benefit audit
+                  </Link>
                 </div>
 
                 <UserBenefitsForm actorId={session.user.id} reloadHref={adminMembersHref(role, query, page)} label={u.name ? `${u.name} (${u.email})` : u.email} user={{ id: u.id, vip: u.vip, freeSessionCredits: u.freeSessionCredits, version: userBenefitsVersion(u) }} onSave={setVip} />
