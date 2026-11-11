@@ -26,7 +26,7 @@ test('shows the session time in India rather than relying on the browser timezon
     payment: null,
   }]} recentPosts={[]} courseEnrollments={[]} />)
   expect(screen.getByText('Reiki Consultation')).toBeInTheDocument()
-  expect(screen.getByText(/1 Dec 2026/)).toHaveTextContent('IST · with Practitioner')
+  expect(screen.getByText(/1 Dec,? 2026/)).toHaveTextContent('IST · with Practitioner')
   expect(screen.getByText('Manage booking controls')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'View all bookings' })).toHaveAttribute('href', '/dashboard/bookings')
 })
