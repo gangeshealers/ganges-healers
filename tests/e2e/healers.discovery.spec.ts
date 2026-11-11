@@ -13,8 +13,9 @@ test('healer directory pages preserve filters, finish on the last result and rej
     const active = await db.service.create({ data: { slug: `directory-${token}`, name: activeName, description: 'Isolated directory browser fixture', category: 'Fixture', price: 100, duration: 60 } }); services.push(active.id)
     const inactive = await db.service.create({ data: { slug: `inactive-directory-${token}`, name: `Inactive ${token}`, description: 'Unpublished fixture', category: 'Fixture', price: 100, duration: 60, isActive: false } }); services.push(inactive.id)
     for (let index = 0; index < 22; index++) {
-      const healer = await db.healer.create({ data: { specializations: [index === 21 ? inactive.name : activeName], user: { create: { name: `Directory Fixture ${index} ${token}`, email: `directory-browser-${index}-${token}@example.test`, role: 'HEALER' } } } }); users.push(healer.userId)
+      const healer = await db.healer.create({ data: { isVerified: true, specializations: [index === 21 ? inactive.name : activeName], user: { create: { name: `Directory Fixture ${index} ${token}`, email: `directory-browser-${index}-${token}@example.test`, role: 'HEALER' } } } }); users.push(healer.userId)
     }
+    const unverified = await db.healer.create({ data: { isVerified: false, specializations: [activeName], user: { create: { name: `Unverified Fixture ${token}`, email: `unverified-directory-${token}@example.test`, role: 'HEALER' } } } }); users.push(unverified.userId)
     const query = new URLSearchParams({ q: token, serviceSlug: active.slug })
     await page.goto(`/healers?${new URLSearchParams({ q: token })}`)
     const form = page.getByRole('form', { name: 'Find healers', exact: true })
@@ -27,6 +28,7 @@ test('healer directory pages preserve filters, finish on the last result and rej
     expect(api.status()).toBe(200)
     const first = await api.json()
     expect(first.items).toHaveLength(20)
+    expect(first.items.some((healer: { id: string }) => healer.id === unverified.id)).toBe(false)
     await page.getByRole('link', { name: 'Load more', exact: true }).click()
     expect(new URL(page.url()).searchParams.get('q')).toBe(token)
     expect(new URL(page.url()).searchParams.get('serviceSlug')).toBe(active.slug)

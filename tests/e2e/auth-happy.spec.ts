@@ -78,7 +78,7 @@ test('a profile-selected practitioner survives registration and real password si
     for (const [name, experienceYears] of [['First Ranked Practitioner', 20], ['Chosen Practitioner', 5]] as const) {
       const user = await db.user.create({ data: { email: `practitioner-${experienceYears}-${token}@example.test`, name, role: 'HEALER' } })
       practitionerUsers.push(user.id)
-      healers.push(await db.healer.create({ data: { userId: user.id, specializations: [service.name], experienceYears } }))
+      healers.push(await db.healer.create({ data: { userId: user.id, isVerified: true, specializations: [service.name], experienceYears } }))
     }
     const selected = healers[1]
     await page.goto(`/healers/${selected.id}`)

@@ -60,7 +60,7 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
     specializationFromService = specializationKeyFromServiceName(svc.name)
   }
 
-  const where: any = { isActive: true } // eslint-disable-line @typescript-eslint/no-explicit-any
+  const where: any = { isActive: true, isVerified: true } // eslint-disable-line @typescript-eslint/no-explicit-any
   if (q) {
     where.OR = [
       { bio: { contains: q, mode: 'insensitive' } },
@@ -125,7 +125,7 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
 export async function getHealerBySlug(slug: string): Promise<HealerDetail | null> {
   // slug is healer.id for now
   const h = await prisma.healer.findUnique({
-    where: { id: slug, isActive: true },
+    where: { id: slug, isActive: true, isVerified: true },
     select: {
       id: true,
       bio: true,

@@ -21,7 +21,7 @@ beforeAll(async () => {
   const token = randomUUID()
   userId = (await prisma.user.create({ data: { email: `reviews-${token}@example.test`, name: 'Review Customer' } })).id
   healerUserId = (await prisma.user.create({ data: { email: `review-healer-${token}@example.test`, role: 'HEALER' } })).id
-  healerId = (await prisma.healer.create({ data: { userId: healerUserId } })).id
+  healerId = (await prisma.healer.create({ data: { userId: healerUserId, isVerified: true } })).id
   serviceId = (await prisma.service.create({ data: { slug: `review-service-${token}`, name: 'Review Service', description: 'Review test', category: 'Test', price: 100, duration: 60 } })).id
 })
 beforeEach(async () => {
