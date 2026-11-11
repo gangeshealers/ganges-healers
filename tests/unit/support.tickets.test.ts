@@ -13,7 +13,10 @@ const tx = {
   supportTicket: {
     count: jest.fn(),
     create: jest.fn(),
+    findUnique: jest.fn(),
+    updateMany: jest.fn(),
   },
+  notification: { create: jest.fn() },
 }
 const valid = {
   subject: 'Help with booking',
@@ -25,6 +28,9 @@ beforeEach(() => {
   ;(prisma.$transaction as jest.Mock).mockImplementation((work: (client: typeof tx) => Promise<unknown>) => work(tx))
   tx.supportTicket.count.mockResolvedValue(0)
   tx.supportTicket.create.mockResolvedValue({ id: 'ticket-abc123', status: 'OPEN' })
+  tx.supportTicket.findUnique.mockResolvedValue({ userId: 'member-123', response: null })
+  tx.supportTicket.updateMany.mockResolvedValue({ count: 1 })
+  tx.notification.create.mockResolvedValue({ id: 'notification-new' })
 })
 
 test('a member request is normalized, owner-scoped and created within a serialized limit check', async () => {
@@ -60,19 +66,49 @@ test('five submissions within a day is a persistent rate limit, not an in-memory
 })
 
 test('admin reply is validated and optimistic-locks updates using the visible revision', async () => {
-  ;(prisma.supportTicket.updateMany as jest.Mock).mockResolvedValueOnce({ count: 1 })
   await expect(updateAdminSupportTicket({
     id: 'ticket-abc123', updatedAt: '2026-11-11T03:00:00.000Z',
     status: 'RESOLVED', response: '  Your booking is confirmed.  ',
   })).resolves.toEqual({ success: true })
-  expect(prisma.supportTicket.updateMany).toHaveBeenCalledWith({
+  expect(tx.supportTicket.updateMany).toHaveBeenCalledWith({
     where: { id: 'ticket-abc123', updatedAt: new Date('2026-11-11T03:00:00.000Z') },
     data: { status: 'RESOLVED', response: 'Your booking is confirmed.', respondedAt: expect.any(Date) },
   })
 })
 
+test('a new support reply creates exactly one private member notification with no reply content', async () => {
+  await updateAdminSupportTicket({
+    id: 'ticket-abc123', updatedAt: '2026-11-11T03:00:00.000Z',
+    status: 'IN_PROGRESS', response: 'Your private order information is only in the Support Center.',
+  })
+  expect(tx.notification.create).toHaveBeenCalledTimes(1)
+  expect(tx.notification.create).toHaveBeenCalledWith({
+    data: {
+      userId: 'member-123',
+      type: 'support_reply',
+      title: 'Your support request has a reply',
+      message: 'A member of the Ganges Healers team responded. Open your Support Center to read the response.',
+    },
+  })
+  expect(JSON.stringify(tx.notification.create.mock.calls)).not.toContain('private order information')
+})
+
+test('status-only edits, empty replies and unchanged responses do not create duplicate notifications', async () => {
+  await updateAdminSupportTicket({ id: 'ticket-abc123', updatedAt: '2026-11-11T03:00:00.000Z', status: 'IN_PROGRESS', response: '' })
+  tx.supportTicket.findUnique.mockResolvedValueOnce({ userId: 'member-123', response: 'Already answered' })
+  await updateAdminSupportTicket({ id: 'ticket-abc123', updatedAt: '2026-11-11T03:00:00.000Z', status: 'RESOLVED', response: 'Already answered' })
+  expect(tx.notification.create).not.toHaveBeenCalled()
+})
+
+test('a failed notification insertion prevents a reply from being reported as saved', async () => {
+  tx.notification.create.mockRejectedValueOnce(new Error('notification insert failed'))
+  await expect(updateAdminSupportTicket({ id: 'ticket-abc123', updatedAt: '2026-11-11T03:00:00.000Z', status: 'RESOLVED', response: 'A new answer' }))
+    .rejects.toThrow('notification insert failed')
+  expect(prisma.$transaction).toHaveBeenCalled()
+})
+
 test('a stale admin form cannot silently overwrite a newer response', async () => {
-  ;(prisma.supportTicket.updateMany as jest.Mock).mockResolvedValueOnce({ count: 0 })
+  tx.supportTicket.updateMany.mockResolvedValueOnce({ count: 0 })
   await expect(updateAdminSupportTicket({
     id: 'ticket-abc123', updatedAt: '2026-11-11T03:00:00.000Z',
     status: 'IN_PROGRESS', response: '',
@@ -87,5 +123,5 @@ test('admin cannot set unsupported status or arbitrary response contents', async
   ]) {
     await expect(updateAdminSupportTicket(payload)).rejects.toBeInstanceOf(SupportTicketError)
   }
-  expect(prisma.supportTicket.updateMany).not.toHaveBeenCalled()
+  expect(tx.supportTicket.updateMany).not.toHaveBeenCalled()
 })
