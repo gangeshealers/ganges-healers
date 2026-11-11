@@ -46,7 +46,7 @@ export default async function HealerDashboardPage() {
   const monthStart = healerActivityStart('month', now)!
 
   const totalAgg = await prisma.payment.aggregate({
-    where: { booking: { healerId: healer.id }, statusEnum: "SUCCESS" },
+    where: { booking: { healerId: healer.id }, statusEnum: "SUCCESS", currency: "INR" },
     _sum: { amountPaise: true },
     _count: { id: true },
   })
@@ -55,6 +55,7 @@ export default async function HealerDashboardPage() {
     where: {
       booking: { healerId: healer.id },
       statusEnum: "SUCCESS",
+      currency: "INR",
       createdAt: { gte: monthStart },
     },
     _sum: { amountPaise: true },
