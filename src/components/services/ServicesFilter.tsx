@@ -4,7 +4,7 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, type FormEvent } from 'react'
 import { Filter } from 'lucide-react'
-import { parseServiceCatalogSort, type ServiceCatalogSort } from '@/lib/services/catalog-filters'
+import { parseServiceCatalogSort, parseServiceFormat, type ServiceCatalogSort, type ServiceFormatFilter } from '@/lib/services/catalog-filters'
 
 export default function ServicesFilter({ categories, minimumRating }: { categories: string[]; minimumRating?: number }) {
   const router = useRouter()
@@ -16,7 +16,8 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
     maxPrice: searchParams.get('maxPrice') || '',
     minRating: minimumRating?.toString() ?? '',
     search: searchParams.get('search') || searchParams.get('q') || '',
-    sort: parseServiceCatalogSort(searchParams.get('sort'))
+    sort: parseServiceCatalogSort(searchParams.get('sort')),
+    format: parseServiceFormat(searchParams.get('format'))
   })
   
   function applyFilters(event: FormEvent<HTMLFormElement>) {
@@ -24,7 +25,7 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
     const params = new URLSearchParams()
     
     Object.entries(filters).forEach(([key, value]) => {
-      if (value && !(key === 'sort' && value === 'newest')) params.set(key, value)
+      if (value && !(key === 'sort' && value === 'newest') && !(key === 'format' && value === 'all')) params.set(key, value)
     })
     
     router.push(params.size ? `/services?${params.toString()}` : '/services')
@@ -37,12 +38,13 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
       maxPrice: '',
       minRating: '',
       search: '',
-      sort: 'newest'
+      sort: 'newest',
+      format: 'all'
     })
     router.push('/services')
   }
   
-  const hasActiveFilters = Object.entries(filters).some(([key, value]) => key === 'sort' ? value !== 'newest' : value !== '')
+  const hasActiveFilters = Object.entries(filters).some(([key, value]) => key === 'sort' ? value !== 'newest' : key === 'format' ? value !== 'all' : value !== '')
   
   return (
     <form onSubmit={applyFilters} className="bg-white rounded-xl shadow-sm p-6">
@@ -96,6 +98,22 @@ export default function ServicesFilter({ categories, minimumRating }: { categori
         </select>
       </div>
       
+      <div className="mb-6">
+        <label htmlFor="service-format" className="block text-sm font-medium text-gray-700 mb-2">
+          Session format
+        </label>
+        <select
+          id="service-format"
+          value={filters.format}
+          onChange={event => setFilters({ ...filters, format: event.target.value as ServiceFormatFilter })}
+          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+        >
+          <option value="all">All formats</option>
+          <option value="online">Online sessions</option>
+          <option value="in_person">In-person sessions</option>
+        </select>
+      </div>
+
       {/* Price Range */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 mb-2">

@@ -43,3 +43,17 @@ test('approved service photos continue to render with service name alt text', ()
   expect(screen.getByRole('img', { name: 'Sound Healing' })).toHaveAttribute('data-src', 'https://assets.example.test/healing.webp')
   expect(screen.getByRole('link', { name: /Sound Healing/i })).toHaveAttribute('href', '/services/sound-healing')
 })
+
+test('service cards show the published delivery format without implying an available appointment', () => {
+  render(<ServicesGrid services={[
+    { ...base, id: 'both', name: 'Yoga', slug: 'yoga', mode: 'BOTH' },
+    { ...base, id: 'virtual', name: 'Meditation', slug: 'meditation', mode: 'ONLINE' },
+    { ...base, id: 'studio', name: 'Reiki', slug: 'reiki', mode: 'OFFLINE' },
+  ]} />)
+  expect(screen.getAllByTestId('service-card-format').map(el => el.textContent?.trim())).toEqual([
+    'Online & in person',
+    'Online',
+    'In person',
+  ])
+  expect(screen.getByRole('link', { name: /Yoga/i })).toHaveAttribute('href', '/services/yoga')
+})

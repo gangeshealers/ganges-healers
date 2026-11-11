@@ -12,6 +12,7 @@ interface Service {
   duration: number
   image?: string
   category: string
+  mode?: 'ONLINE' | 'OFFLINE' | 'BOTH'
   averageRating: number | null
   totalSessions: number
   totalReviews: number
@@ -49,6 +50,11 @@ export default function ServicesGrid({ services }: { services: Service[] }) {
                   {service.category}
                 </span>
               </div>
+              {service.mode && (
+                <span data-testid="service-card-format" className="absolute bottom-3 left-4 rounded-full bg-slate-950/75 px-3 py-1 text-xs font-medium text-white">
+                  {service.mode === 'BOTH' ? 'Online & in person' : service.mode === 'ONLINE' ? 'Online' : 'In person'}
+                </span>
+              )}
             </div>
             
             {/* Content */}
