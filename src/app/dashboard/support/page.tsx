@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import SupportTicketForm from '@/components/support/SupportTicketForm'
+import { isSupportDeskEnabled } from '@/lib/support/availability'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,18 @@ const statusLabels = {
 export default async function MemberSupportPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/auth/signin')
+
+  if (!isSupportDeskEnabled()) {
+    return (
+      <div className="container mx-auto max-w-3xl space-y-5 px-4 py-12">
+        <h1 className="text-3xl font-semibold">Support center</h1>
+        <p role="status" className="rounded-xl border bg-white p-6 text-sm text-muted-foreground">
+          Support requests are not available on this deployment yet. Your bookings, orders and account remain accessible.
+        </p>
+        <Link href="/dashboard" className="inline-flex rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50">Back to dashboard</Link>
+      </div>
+    )
+  }
 
   const tickets = await prisma.supportTicket.findMany({
     where: { userId: session.user.id },
