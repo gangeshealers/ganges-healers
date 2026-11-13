@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import AudioLibraryPage from '@/app/audio/page'
 import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -9,11 +10,12 @@ jest.mock('@/lib/prisma', () => ({
 }))
 
 beforeEach(() => jest.clearAllMocks())
+const findTracks = prisma.audioTrack.findMany as unknown as jest.Mock<Promise<unknown[]>, [args?: Prisma.AudioTrackFindManyArgs]>
 
 test('published audio is paged and keeps search/category/sort on continuation links', async () => {
   jest.mocked(prisma.audioTrack.count).mockResolvedValueOnce(25)
-  jest.mocked(prisma.audioTrack.findMany).mockImplementation(async args => {
-    if ('distinct' in args) return [{ category: 'Meditation' }] as never
+  findTracks.mockImplementation(async args => {
+    if (args?.distinct) return [{ category: 'Meditation' }]
     return [{
       id: 'track-13', slug: 'meditation-track-13', title: 'Meditation Track 13',
       description: 'Mindfulness', duration: 240, category: 'Meditation', isPremium: false,
@@ -48,8 +50,8 @@ test('an empty filtered result can be reset without losing access to the library
 
 test('the Free filter narrows the published query and keeps search terms in access links', async () => {
   jest.mocked(prisma.audioTrack.count).mockResolvedValueOnce(1)
-  jest.mocked(prisma.audioTrack.findMany).mockImplementation(async args => {
-    if ('distinct' in args) return [{ category: 'Meditation' }] as never
+  findTracks.mockImplementation(async args => {
+    if (args?.distinct) return [{ category: 'Meditation' }]
     return [{
       id: 'free-track', slug: 'free-meditation', title: 'Free Meditation',
       description: 'Free audio', duration: 180, category: 'Meditation', isPremium: false,

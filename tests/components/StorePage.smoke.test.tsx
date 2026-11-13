@@ -40,7 +40,7 @@ describe('StorePage smoke', () => {
     })
     expect(screen.getByRole('combobox', { name: 'Sort products' })).toHaveValue('price_asc')
     expect(screen.getByRole('link', { name: 'Back to first page' })).toHaveAttribute('href', '/store?q=Oil&categorySlug=oils&chakra=Heart&sort=price_asc')
-    expect(screen.getByRole('link', { name: 'All', exact: true })).toHaveAttribute('href', '/store?q=Oil&categorySlug=oils&sort=price_asc')
+    expect(screen.getByRole('link', { name: 'All' })).toHaveAttribute('href', '/store?q=Oil&categorySlug=oils&sort=price_asc')
   })
 
   test('renders product cards', async () => {

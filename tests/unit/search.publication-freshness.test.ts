@@ -5,7 +5,7 @@ jest.mock('@/lib/prisma', () => ({
   prisma: { $queryRawUnsafe: jest.fn() },
 }))
 
-const db = jest.mocked(prisma.$queryRawUnsafe)
+const db = prisma.$queryRawUnsafe as unknown as jest.Mock<Promise<unknown[]>, [sql: string, ...values: unknown[]]>
 let published = true
 
 beforeEach(() => {
