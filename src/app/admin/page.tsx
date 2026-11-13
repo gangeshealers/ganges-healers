@@ -73,6 +73,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: Promi
         <Button asChild variant="outline"><Link href="/admin/orders">Manage Orders</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/bookings">Booking Operations</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/booking-emails">Booking Emails</Link></Button>
+        <Button asChild variant="outline"><Link href="/admin/support">Support Requests</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/programs">Manage Programs</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/program-enrollments">Program Enrollments</Link></Button>
         <Button asChild variant="outline"><Link href="/admin/community">Community Moderation</Link></Button>

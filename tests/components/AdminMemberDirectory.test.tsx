@@ -108,3 +108,12 @@ test('empty searches have a recovery route without querying unrelated benefits',
   expect(screen.getByRole('link', { name: 'Show all accounts' })).toHaveAttribute('href', '/admin')
   expect(screen.queryByTestId('benefits-editor')).not.toBeInTheDocument()
 })
+
+test('authorized administrators can discover the existing support inbox from the admin workspace', async () => {
+  render(await AdminPage({ searchParams: Promise.resolve({}) }))
+  const nav = screen.getByRole('navigation', { name: 'Admin workspaces' })
+  const support = nav.querySelector('a[href="/admin/support"]')
+  expect(support).toBeInTheDocument()
+  expect(support).toHaveTextContent('Support Requests')
+  expect(authorized).toHaveBeenCalledTimes(1)
+})
