@@ -60,6 +60,32 @@ function view(row: Enrollment, actor: ProgramActor) {
 }
 export type ProgramEnrollmentView = ReturnType<typeof view>
 
+/** Small owner-only dashboard summaries reuse the purchased-schedule projection. */
+export async function listMemberProgramPreviews(userId: string, now: Date) {
+  const rows = await prisma.programEnrollment.findMany({
+    where: { userId, status: { in: ['active', 'paused'] } },
+    select: enrollmentSelect,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 3,
+  })
+  return rows.map(row => {
+    // Read as the owner even if the account also has a staff role.
+    const item = view(row, { id: userId, role: 'USER', healerId: null })
+    const nextSession = item.status === 'active' ? item.sessions
+      .filter(session => session.status === 'scheduled' && session.scheduledAt && Date.parse(session.scheduledAt) >= now.getTime())
+      .sort((a, b) => Date.parse(a.scheduledAt!) - Date.parse(b.scheduledAt!))[0] : undefined
+    return {
+      id: item.id, title: item.program.title, status: item.status,
+      completedSessions: item.completedSessions, totalSessions: item.totalSessions,
+      progressPercent: item.progressPercent, needsReview: item.needsReview,
+      nextSessionAt: nextSession?.scheduledAt ?? null,
+      practitioner: item.healer?.name ?? null,
+    }
+  })
+}
+
+export type MemberProgramPreview = Awaited<ReturnType<typeof listMemberProgramPreviews>>[number]
+
 /** Bounded, stable pagination; staff can see only their assigned enrollments. */
 export async function listProgramEnrollments(actor: ProgramActor, scope: ProgramScope, page: number) {
   if (scope === 'admin' && actor.role !== 'ADMIN' || scope === 'healer' && !actor.healerId) throw new ProgramAccessError('Forbidden', 403)

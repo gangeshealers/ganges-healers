@@ -80,8 +80,8 @@ export default function ServicesGrid({ services }: { services: Service[] }) {
                   </> : <span>No reviews yet</span>}
                 </div>
                 <div className="flex items-center gap-1">
-                  <Users className="w-4 h-4" />
-                  <span>{service.totalSessions}</span>
+                  <Users className="w-4 h-4" aria-hidden="true" />
+                  <span aria-label={`${service.totalSessions} completed sessions`}>{service.totalSessions} completed</span>
                 </div>
               </div>
               

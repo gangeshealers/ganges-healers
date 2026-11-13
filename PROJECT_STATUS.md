@@ -1,3 +1,13 @@
+## Application completion checkpoint — 13 November 2026
+
+The workspace is synchronized with development release `5222d4b`. Dashboard moderation (#133) and admin support navigation (#134) have merged after their existing complete CI runs.
+
+The consolidated `codex/application-completion-20261113` milestone builds a member home with direct course continuation, accurate lesson-order progress, purchased program progress, confirmed next program appointments, notification counts and account workspace links. It incorporates the completed-session display from #135, corrects its accidental currency prefix, and reconciles the #136 release tracker. Private dashboard reads now select display fields rather than whole user/payment records. See `docs/dashboard-upcoming-bookings.md`.
+
+This branch remains development work until its PR merges. Focused validation and review evidence belongs in that PR. The remaining launch dependencies are tracked in `docs/RELEASE_COMPLETION_MATRIX.md`: approved content, live provider and worker setup, deployed role acceptance, and explicit production cutover. No production data, provider delivery or billing change is included.
+
+---
+
 # Ganges Healers — Implementation and Rollout Status
 
 Reviewed November 6, 2026 against the attached implementation plan and system design, current release source, recent commit history, pull requests and CI. Vercel access is now authorized. Historical checks below describe their recorded commits; PR #10 tracks the current protected Preview and production readiness.

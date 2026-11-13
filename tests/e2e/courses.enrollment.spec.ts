@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { test, expect } from '@playwright/test'
 import { PrismaClient } from '@prisma/client'
 import { loadTestDatabaseEnvironment, verifyTestDatabaseConnection } from '../../scripts/test-database'
+import { buildProgramSchedule } from '../../src/lib/programs/schedule'
 
 test('a customer enrolls in a free course and reaches its gated lesson without payment checkout', async ({ page }) => {
   test.setTimeout(120000)
@@ -11,6 +12,7 @@ test('a customer enrolls in a free course and reaches its gated lesson without p
   const email = `free-course-${randomUUID()}@example.test`
   let userId = ''
   let courseId = ''
+  let programId = ''
   const gatewayRequests: string[] = []
   page.on('request', request => { if (new URL(request.url()).hostname.endsWith('razorpay.com')) gatewayRequests.push(request.url()) })
   try {
@@ -46,10 +48,27 @@ test('a customer enrolls in a free course and reaches its gated lesson without p
     await expect(page.getByText('Archived · access retained')).toBeVisible()
     await page.getByRole('link', { name: 'Continue learning' }).click()
     await expect(page.getByRole('heading', { name: 'First Free Practice', exact: true })).toBeVisible()
+
+    const program = await db.program.create({ data: { slug: `dashboard-program-${randomUUID()}`, title: 'Mindful Practice Journey', description: 'Isolated dashboard fixture.', pricePaise: 10000, totalSessions: 4, sessionsPerWeek: 2, durationMinutes: 45 } })
+    programId = program.id
+    await db.programEnrollment.create({ data: { userId, programId, status: 'active', schedule: buildProgramSchedule(4, 2, 45, new Date()).sessions } })
+    await page.goto('/dashboard')
+    await expect(page.getByRole('heading', { name: 'Your healing space' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Your account workspaces' })).toBeVisible()
+    await expect(page.getByText('Archived · access retained')).toBeVisible()
+    await expect(page.getByText('0 of 4 sessions completed')).toBeVisible()
+    await expect(page.getByText('Your next appointment is awaiting confirmation.')).toBeVisible()
+    await test.info().attach('member-dashboard-desktop', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await test.info().attach('member-dashboard-mobile', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+    await page.getByRole('link', { name: 'Continue learning: Free Practice Course' }).click()
+    await expect(page.getByRole('heading', { name: 'First Free Practice', exact: true })).toBeVisible()
   } finally {
     try {
       if (userId) await db.user.delete({ where: { id: userId } })
       if (courseId) await db.course.delete({ where: { id: courseId } })
+      if (programId) await db.program.delete({ where: { id: programId } })
     } finally { await db.$disconnect() }
   }
 })

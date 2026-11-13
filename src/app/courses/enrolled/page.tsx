@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import type { Prisma } from '@prisma/client'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { courseProgress } from '@/lib/courses/progress'
 
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
@@ -105,13 +106,7 @@ export default async function EnrolledCoursesPage({ searchParams }: { searchPara
         <section aria-label="Enrolled courses" className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {enrollments.map(enrollment => {
             const course = enrollment.course
-            const totalLessons = course.lessons.length
-            // Stored progress is one greater than a completed lesson's order;
-            // lesson orders need not be zero-based or consecutive.
-            const completedLessons = course.lessons.filter(lesson => enrollment.progress > lesson.order).length
-            const percentage = totalLessons ? Math.min(100, Math.round(completedLessons / totalLessons * 100)) : 0
-            const firstUnfinished = course.lessons.find(lesson => enrollment.progress <= lesson.order)
-            const nextLesson = firstUnfinished ?? course.lessons[0]
+            const { totalLessons, completedLessons, percentage, nextLesson, hasUnfinished } = courseProgress(enrollment.progress, course.lessons)
             const base = '/courses/' + encodeURIComponent(course.slug)
             const href = nextLesson ? base + '/lesson/' + encodeURIComponent(nextLesson.id) : base
             const isCompleted = enrollment.status === 'completed' && totalLessons > 0 && completedLessons === totalLessons
@@ -137,7 +132,7 @@ export default async function EnrolledCoursesPage({ searchParams }: { searchPara
                       </>
                     ) : <p className="text-sm text-muted-foreground">Lessons are not available yet.</p>}
                     <Link href={href} className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
-                      {totalLessons === 0 ? 'View course' : isCompleted ? 'Review lessons' : firstUnfinished ? 'Continue learning' : 'Review lessons'}
+                      {totalLessons === 0 ? 'View course' : isCompleted ? 'Review lessons' : hasUnfinished ? 'Continue learning' : 'Review lessons'}
                     </Link>
                   </div>
                 </div>

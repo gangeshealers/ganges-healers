@@ -120,7 +120,8 @@ async function getServices(
       price: true,
       duration: true,
       mode: true,
-      _count: { select: { bookings: true } },
+      // Only fulfilled appointments count as sessions; pending/cancelled bookings do not.
+      _count: { select: { bookings: { where: { status: 'COMPLETED' } } } },
     },
   }) : []
 

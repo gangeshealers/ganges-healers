@@ -11,6 +11,7 @@ import { GET as programCalendar } from '@/app/api/program-enrollments/[id]/calen
 import { GET as bookingCalendar } from '@/app/api/bookings/[id]/calendar/route'
 import { getHealerAvailability } from '@/lib/availability'
 import { buildProgramSchedule } from '@/lib/programs/schedule'
+import { listMemberProgramPreviews } from '@/lib/programs/enrollments'
 import { archiveProgramCatalog, writeProgramCatalog, programCatalogVersion } from '@/lib/programs/queries'
 import { lockTransaction } from '@/lib/db/locks'
 import { GET as publicPrograms } from '@/app/api/programs/route'
@@ -67,6 +68,26 @@ test('private enrollment lists and detail enforce the current database identity 
   expect(found.sessions[0]).toMatchObject({ status: 'proposed', scheduledAt: null })
   mockUserId = ''
   expect((await list(new Request('http://localhost/api/program-enrollments'))).status).toBe(401)
+})
+
+test('dashboard program previews retain purchased progress, exclude outsiders and show only confirmed future sessions', async () => {
+  const row = await fixture('active', 3)
+  await prisma.programSession.createMany({ data: [
+    { enrollmentId: row.id, healerId, sessionNumber: 1, durationMin: 60, scheduledAt: at(-2), status: 'COMPLETED', meetingLink: 'https://private.example.test/room' },
+    { enrollmentId: row.id, healerId, sessionNumber: 2, durationMin: 60, scheduledAt: at(2), status: 'CANCELLED' },
+    { enrollmentId: row.id, healerId, sessionNumber: 3, durationMin: 60, scheduledAt: at(3), status: 'SCHEDULED', meetingLink: 'https://private.example.test/next-room' },
+  ] })
+  await prisma.program.update({ where: { id: row.programId }, data: { totalSessions: 50, isActive: false } })
+  expect(await listMemberProgramPreviews(outsiderId, new Date())).toEqual([])
+  const result = (await listMemberProgramPreviews(ownerId, new Date())).find(item => item.id === row.id)
+  expect(result).toMatchObject({ completedSessions: 1, totalSessions: 3, progressPercent: 33, nextSessionAt: at(3).toISOString() })
+  expect(result).not.toHaveProperty('customerEmail')
+  expect(result).not.toHaveProperty('sessions')
+  expect(JSON.stringify(result)).not.toContain('private.example.test')
+  await prisma.programEnrollment.update({ where: { id: row.id }, data: { status: 'paused' } })
+  expect((await listMemberProgramPreviews(ownerId, new Date())).find(item => item.id === row.id)).toMatchObject({ status: 'paused', nextSessionAt: null })
+  await prisma.programEnrollment.update({ where: { id: row.id }, data: { status: 'pending_payment' } })
+  expect((await listMemberProgramPreviews(ownerId, new Date())).some(item => item.id === row.id)).toBe(false)
 })
 test('a confirmed program reservation blocks public availability and ordinary bookings', async () => {
   const row = await fixture()

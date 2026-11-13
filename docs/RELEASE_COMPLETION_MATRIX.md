@@ -1,6 +1,6 @@
 # Release completion matrix — Ganges Healers
 
-**Status date:** 11 November 2026  
+**Status date:** 13 November 2026
 **Source of requirements:** [Implementation Plan](./IMPLEMENTATION_PLAN.md) (September 2025), [release PR #10](https://github.com/gangeshealers/ganges-healers/pull/10), [deployment guide](./deployment.md), [operations checklist](./ops-checklist.md), and [database rehearsal](./database-rehearsal.md).  
 **Integration branch:** `codex/site-completion-release`; **production branch:** `main`.
 
@@ -26,15 +26,26 @@ Definitions:
 | Admin / practitioner operations | Catalog editing, member lookups, booking/payment views, practitioner calendar/history, launch inspection and booking-email reconciliation; [ops checklist](./ops-checklist.md) | Staff walkthrough, review permissions, stale-write and recovery behavior |
 | Infrastructure and quality gates | GitHub CI, PostgreSQL integration, UI/unit/security/build and Playwright suites, Vercel Preview, database migration rehearsal | Exact merged revision full-green; protected Preview delivery acceptance and production rehearsal remain separate |
 
+
+**Latest merged development checkpoint (13 November 2026):** `5222d4be94f852e1e1af307422c92f5c176fa0b5` integrates dashboard moderation #133 and admin support navigation #134 after service sorting #130, format filtering #131 and support search #132. These commits are on the development release, **not** production. Later merges require a new exact-head CI and separate protected Preview acceptance.
+
 ## Priority P0 — finish and validate the code
 
-- [ ] **Restore repeatable E2E CI.** [PR #114](https://github.com/gangeshealers/ganges-healers/pull/114) changes the browser installer and adds a launch check. Its entire E2E suite must pass on the PR revision before merging. GitHub unit/UI/integration/security/build/operations must also pass. A browser smoke check alone is not sufficient.
-- [ ] **Integrate catalog hydration stability.** [PR #112](https://github.com/gangeshealers/ganges-healers/pull/112) avoids an E2E race in admin review actions. Review compatibility with the latest release and rerun browser tests after merging.
-- [ ] **Bound community pinned discussion paging.** [PR #113](https://github.com/gangeshealers/ganges-healers/pull/113) removes an unbounded pinned-first result set while retaining owner access and cursor continuity. Verify response shape and real-DB integration.
-- [ ] **Finish private support queue search.** [PR #110](https://github.com/gangeshealers/ganges-healers/pull/110) needs a clean end-to-end run after catalog hydration. Validate admin authorization, literal query escaping, pagination and preserved return context.
-- [ ] **Finish healer directory experience sort.** [PR #109](https://github.com/gangeshealers/ganges-healers/pull/109) needs browser stability and tests of pagination/filter continuity. Never change verified/active healer visibility or imply availability.
-- [ ] **Exact-release CI checkpoint.** The integration branch must pass all seven jobs **after** all intended merges, not just the head of individual PRs. Keep `main` unchanged until separate release approval.
-- [ ] **Accessible cross-role Preview acceptance.** Use the exact READY release deployment, not an older preview. Test anonymous, customer, practitioner and admin permissions, critical mobile flows, booking-to-provider and content publishing; document defects as separate PRs.
+### Completed development integrations (not live acceptance)
+
+- [x] **Restore repeatable E2E CI.** [PR #114](https://github.com/gangeshealers/ganges-healers/pull/114) merged Chromium install/startup repair; subsequent seven-job runs, including Playwright, passed. This is CI evidence, not production acceptance.
+- [x] **Integrate catalog hydration, bounded community paging, support queue search and healer directory sorting.** The individual early review branches [#112](https://github.com/gangeshealers/ganges-healers/pull/112), [#113](https://github.com/gangeshealers/ganges-healers/pull/113), [#110](https://github.com/gangeshealers/ganges-healers/pull/110), and [#109](https://github.com/gangeshealers/ganges-healers/pull/109) were closed unmerged; their reviewed functionality was integrated through verified [PR #116](https://github.com/gangeshealers/ganges-healers/pull/116). Do not reopen the superseded branches.
+- [x] **Publish-gated public pages, catalog visibility, stock controls, and truthful admin publication inventory.** Integrated through [#117](https://github.com/gangeshealers/ganges-healers/pull/117), [#118](https://github.com/gangeshealers/ganges-healers/pull/118), [#119](https://github.com/gangeshealers/ganges-healers/pull/119), [#120](https://github.com/gangeshealers/ganges-healers/pull/120), and [#124](https://github.com/gangeshealers/ganges-healers/pull/124); content/legal review remains external.
+- [x] **Protected service image editing, opt-in marketing consent, logout robustness and public image fallbacks.** Integrated via [#125](https://github.com/gangeshealers/ganges-healers/pull/125), [#127](https://github.com/gangeshealers/ganges-healers/pull/127), [#128](https://github.com/gangeshealers/ganges-healers/pull/128), [#129](https://github.com/gangeshealers/ganges-healers/pull/129) and [#122](https://github.com/gangeshealers/ganges-healers/pull/122). Missing service photos still require licensed/owner-approved media.
+- [x] **Public service sorting, delivery format discovery and private member support search.** Integrated via [#130](https://github.com/gangeshealers/ganges-healers/pull/130), [#131](https://github.com/gangeshealers/ganges-healers/pull/131) and [#132](https://github.com/gangeshealers/ganges-healers/pull/132), all with exact-head seven-job CI including browser tests.
+
+### Still open — requires fresh evidence
+
+- [x] **Dashboard moderation and admin support navigation.** [#133](https://github.com/gangeshealers/ganges-healers/pull/133) and [#134](https://github.com/gangeshealers/ganges-healers/pull/134) passed their existing complete CI runs and merged into development.
+- [ ] **Member dashboard completion milestone.** The `codex/application-completion-20261113` branch adds direct course continuation, purchased program progress and account workspace navigation. It incorporates #135 with a corrected session-count label and #136’s reconciled tracker. Review and integrate this consolidated milestone; source drafts remain unshipped until integration. See [dashboard behavior](./dashboard-upcoming-bookings.md).
+- [ ] **Exact-release CI checkpoint.** After intended changes merge, run all seven jobs on the combined `codex/site-completion-release` head, including full Playwright, not a previous green SHA. Preserve `main` until separately approved.
+- [ ] **Accessible cross-role Preview acceptance.** Obtain an exact-head READY protected release Preview, then exercise anonymous/customer/practitioner/admin journeys, mobile sign-out, sensitive permissions, booking/payment recovery and content publication. An older READY Preview is not sufficient.
+- [ ] **Deployment and email-recovery contract.** [Draft #123](https://github.com/gangeshealers/ganges-healers/pull/123) adds a Vercel Schedules beta path target, but authentication header delivery on beta HTTP-path schedules is not yet proven. Keep it unmerged and disabled until Preview shows a protected invocation, owner approves automatic sends, and provider/reconciliation checks pass. Superseded legacy Cron PR #88 is closed unmerged.
 
 ## Priority P1 — content and verified integrations
 
@@ -42,7 +53,7 @@ Definitions:
 - [ ] **Razorpay test-mode provider acceptance.** Securely configure Preview credentials and callback URLs; verify capture, duplicate/delayed webhook, uncertain-result recovery and refund reconciliation with provider records. Do not exercise live charges during CI.
 - [ ] **Transactional email and SMS acceptance.** Confirm actual provider acceptance IDs, delivery/bounces, account recovery, verification, booking notifications and retry reconciliation. No fixture result is live delivery evidence.
 - [ ] **OAuth, uploads, invoices, meetings.** Verify configured stable callback origin, permission and identity isolation, licensed media uploads/downloads, invoice retrieval and actual meeting-link lifecycle without exposing private URLs.
-- [ ] **Background consumer/recovery.** Deploy a persistent Redis-backed worker where needed, or approve/configure an authenticated booking-email recovery scheduler. The code has a guarded `/api/cron/booking-emails` endpoint but no scheduled invocation in `vercel.json`; do not treat it as operating continuously. Verify outbox retry, duplicate provider outcomes, and PENDING/REVIEW triage. [Deployment instructions](./deployment.md).
+- [ ] **Background consumer/recovery.** Deploy a persistent Redis-backed worker where needed, or approve/configure an authenticated booking-email recovery scheduler. The code has a guarded `/api/cron/booking-emails` endpoint, but the proposed Vercel Schedules beta invocation is still draft [#123](https://github.com/gangeshealers/ganges-healers/pull/123), not activated or proven to send authenticated requests; do not treat it as operating continuously. Verify outbox retry, duplicate provider outcomes, and PENDING/REVIEW triage. [Deployment instructions](./deployment.md).
 
 ## Priority P1 — operational release gate
 

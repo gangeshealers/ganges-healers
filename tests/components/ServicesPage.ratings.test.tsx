@@ -16,6 +16,14 @@ beforeEach(() => jest.clearAllMocks())
 test('catalog cards show actual average/count and a truthful unrated state in one batched query', async () => {
   render(await ServicesPage({ searchParams: Promise.resolve({}) }))
   expect(screen.getByLabelText('3.5 out of 5 from 2 reviews')).toBeVisible()
+  expect(screen.getByLabelText('5 completed sessions')).toBeVisible()
+  expect(screen.getByLabelText('5 completed sessions')).toHaveTextContent(/^5 completed$/)
+  expect(screen.getByLabelText('0 completed sessions')).toBeVisible()
+  expect(prisma.service.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    select: expect.objectContaining({
+      _count: { select: { bookings: { where: { status: 'COMPLETED' } } } },
+    }),
+  }))
   expect(screen.getByText('No reviews yet')).toBeVisible()
   expect(screen.queryByText('5.0')).not.toBeInTheDocument()
   expect(prisma.review.groupBy).toHaveBeenCalledTimes(1)
