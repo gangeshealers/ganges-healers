@@ -60,6 +60,8 @@ Preview uses a separate database and authentication secret. Its Razorpay variabl
 
 See `.env.example` for the full list including optional variables.
 
+The Razorpay entry on `/admin/launch` checks the checkout keys, webhook secret and the exact `PAYMENT_EVENTS_ENABLED=true` setting. With event processing off, the endpoint can acknowledge signed callbacks before any booking or refund updates run. Verify test callback delivery to the stable Preview hostname, enable processing for that Preview, redeploy, and check that a captured test payment produces one confirmed booking and one receipt after a repeated callback.
+
 ---
 
 ## 3. Vercel Deployment
