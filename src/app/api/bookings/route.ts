@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
     }
-    const { healerId, serviceId, scheduledAt } = parsed.data
+    const { healerId, serviceId, scheduledAt, expectedPricePaise } = parsed.data
     const scheduledDate = new Date(scheduledAt)
     if (isNaN(scheduledDate.getTime())) {
       return NextResponse.json(
@@ -136,6 +136,11 @@ export async function POST(request: NextRequest) {
       })
       if (!validation.valid) throw new BookingError(validation.error || 'Time slot not available', 409)
 
+      const pricePaise = Math.round(service.price * 100)
+      if (expectedPricePaise !== undefined && expectedPricePaise !== pricePaise) {
+        return { currentPricePaise: pricePaise }
+      }
+
       const created = await tx.booking.create({
         data: {
           userId,
@@ -144,7 +149,7 @@ export async function POST(request: NextRequest) {
           scheduledAt: scheduledDate,
           durationMin: service.duration,
           status: 'PENDING',
-          pricePaise: Math.round(service.price * 100),
+          pricePaise,
         },
         include: {
           healer: { include: { user: { select: { name: true, image: true } } } },
@@ -155,6 +160,12 @@ export async function POST(request: NextRequest) {
       return created
     }, { maxWait: 10000, timeout: 10000, isolationLevel: 'ReadCommitted' })
 
+    if ('currentPricePaise' in booking) {
+      return NextResponse.json({
+        error: 'The session price has changed. Review the updated price before confirming.',
+        currentPricePaise: booking.currentPricePaise,
+      }, { status: 409 })
+    }
     await dispatchBookingEmails(booking.id)
 
     await logActivity({ userId: session?.user?.id, action: 'booking_created', entityType: 'booking', entityId: booking.id, metadata: { serviceId: booking.serviceId, healerId: booking.healerId } })

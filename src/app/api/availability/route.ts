@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     
     // Get availability
     let duration = 60 // Preserve the existing API default for callers without a service.
+    let pricePaise: number | undefined
     let excludedBookingId: string | undefined
     if (bookingId) {
       const session = await auth()
@@ -64,17 +65,18 @@ export async function GET(request: NextRequest) {
       duration = booking.durationMin
       excludedBookingId = booking.id
     } else if (serviceId) {
-      const service = await prisma.service.findUnique({ where: { id: serviceId }, select: { duration: true, isActive: true } })
+      const service = await prisma.service.findUnique({ where: { id: serviceId }, select: { duration: true, isActive: true, price: true } })
       if (!service?.isActive || !Number.isSafeInteger(service.duration) || service.duration <= 0) {
         return NextResponse.json({ error: 'Service not found or inactive' }, { status: 404 })
       }
       duration = service.duration
+      pricePaise = Math.round(service.price * 100)
     }
     const availability = await getHealerAvailability(healerId, date, duration, excludedBookingId)
     
     return NextResponse.json({
       success: true,
-      data: availability
+      data: pricePaise === undefined ? availability : { ...availability, pricePaise }
     }, { headers: { 'Cache-Control': 'no-store' } })
     
   } catch (error) {

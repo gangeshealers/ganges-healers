@@ -113,7 +113,8 @@ test('an unpaid reschedule keeps its room private until payment verifies, while 
     await dialog.getByLabel('Select Date', { exact: true }).fill(clinicDate(new Date(Date.now() + 35 * 86400000)))
     await dialog.getByRole('button', { name: '10:00 AM', exact: true }).click()
     const freeRequest = page.waitForResponse(response => new URL(response.url()).pathname === '/api/bookings' && response.request().method() === 'POST')
-    await dialog.getByRole('button', { name: 'Confirm & Pay', exact: true }).click()
+    await expect(dialog.getByText('Free', { exact: true })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Request free session', exact: true }).click()
     const free = await freeRequest
     expect(free.status()).toBe(201)
     const freeId = (await free.json()).data.id as string

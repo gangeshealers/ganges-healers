@@ -58,12 +58,20 @@ test('a healer publishes early hours, stale edits cannot overwrite them, and a c
     const dialog = page.getByRole('dialog', { name: `Book ${service.name}`, exact: true })
     await dialog.getByLabel('Select Date', { exact: true }).fill(date)
     await dialog.getByRole('button', { name: '8:00 AM', exact: true }).click()
+    await expect(dialog.getByText('₹100.00', { exact: true })).toBeVisible()
+    await db.service.update({ where: { id: serviceId }, data: { price: 115.50 } })
+    await dialog.getByRole('button', { name: 'Use 1 session credit', exact: true }).click()
+    await expect(dialog.getByRole('alert')).toContainText('The session price has changed')
+    await expect(dialog.getByText('₹115.50', { exact: true })).toBeVisible()
+    expect(await db.booking.count({ where: { serviceId } })).toBe(0)
+    expect((await db.user.findUniqueOrThrow({ where: { id: customer.id } })).freeSessionCredits).toBe(1)
+
     const created = page.waitForResponse(response => response.url().endsWith('/api/bookings') && response.request().method() === 'POST')
-    await dialog.getByRole('button', { name: 'Confirm & Pay', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Use 1 session credit', exact: true }).click()
     const createdResponse = await created; expect(createdResponse.status()).toBe(201)
     const bookingId = (await createdResponse.json()).data.id as string
     await expect(dialog.getByRole('heading', { name: 'Booking Confirmed!', exact: true })).toBeVisible({ timeout: 30000 })
-    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ userId: customer.id, healerId, status: 'CONFIRMED', durationMin: 60, scheduledAt: clinicSlotInstant(date, '08:00') })
+    expect(await db.booking.findUniqueOrThrow({ where: { id: bookingId } })).toMatchObject({ userId: customer.id, healerId, status: 'CONFIRMED', pricePaise: 11550, durationMin: 60, scheduledAt: clinicSlotInstant(date, '08:00') })
     const after = (await (await page.request.get(availabilityUrl)).json()).data.slots as Array<{ time: string; available: boolean }>
     expect(after.find(slot => slot.time === '08:00')?.available).toBe(false)
     await login('HEALER', staffEmail); await page.goto('/healer/availability')

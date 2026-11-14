@@ -40,6 +40,7 @@ interface BookingModalProps {
 
 type SavedBooking = { id: string; ownerId: string; scheduledAt: string; pricePaise: number }
 type BookingAttempt = SavedBooking & { credit: boolean; paymentStarted: boolean; proof: RazorpayResult | null }
+const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })
 
 export default function BookingModal(props: BookingModalProps) {
   const { data: session, status } = useSession()
@@ -64,6 +65,7 @@ function BookingFlow({
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedTime, setSelectedTime] = useState<string>('')
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([])
+  const [pricePaise, setPricePaise] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
   const [savedBooking, setSavedBooking] = useState<SavedBooking | null>(null)
@@ -86,7 +88,9 @@ function BookingFlow({
   const titleId = useId()
   const titleText = serviceName ? `Book ${serviceName}` : 'Book a session'
 
-  // (Replaced by shared helper openRazorpayCheckout)
+  const isTest = process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1'
+  const needsSignIn = !session?.user?.id && !isTest
+  const useCredit = Boolean(session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0) || (isTest && !session?.user?.id)
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -107,6 +111,7 @@ function BookingFlow({
     const version = ++availabilityVersion.current
     const current = () => mounted.current && version === availabilityVersion.current && selectedDateRef.current === selectedDate
     setAvailableSlots([])
+    setPricePaise(null)
     setLoading(true)
     setError('')
     
@@ -124,6 +129,9 @@ function BookingFlow({
       if (!current()) return
       const slots: unknown = data?.data?.slots
       if (!Array.isArray(slots) || !slots.every(slot => slot && typeof slot.time === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(slot.time) && typeof slot.available === 'boolean')) throw new Error('Available times could not be confirmed. Select the date again.')
+      const price = data.data.pricePaise
+      if (!Number.isSafeInteger(price) || price < 0) throw new Error('The session price could not be confirmed. Select the date again.')
+      setPricePaise(price)
       setAvailableSlots(slots.filter((slot: TimeSlot) => slot.available))
       
       if (slots.filter((slot: TimeSlot) => slot.available).length === 0) {
@@ -159,7 +167,6 @@ function BookingFlow({
 
   const handleBooking = async () => {
     if (inFlight.current || requiresReview.current || sessionStatus === 'loading') return
-    const isTest = process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1'
     const ownerId = session?.user?.id || ''
     if (!ownerId && !isTest) {
       const params = new URLSearchParams(window.location.search)
@@ -189,6 +196,7 @@ function BookingFlow({
     try {
       checkOwner()
       if (!attempt.current) {
+        if (pricePaise === null) throw new Error('Select a date to review the session price.')
         const scheduledAt = clinicSlotInstant(selectedDate, selectedTime).toISOString()
         if (!availableSlots.some(slot => slot.time === selectedTime)) throw new Error('Select an available time before requesting this appointment.')
         if (!(Date.parse(scheduledAt) > Date.now())) throw new Error(bookingCheckoutClosed)
@@ -198,19 +206,22 @@ function BookingFlow({
           if (!login.ok) throw new Error('Test sign-in failed')
         }
         creationSubmitted = true
-        const response = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ healerId: healer.id, serviceId, scheduledAt }) })
+        const response = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ healerId: healer.id, serviceId, scheduledAt, expectedPricePaise: pricePaise }) })
         checkOwner()
         const data = await response.json().catch(() => null)
         checkOwner()
         if (!response.ok) {
           creationRejected = response.status >= 400 && response.status < 500
+          if (response.status === 409 && Number.isSafeInteger(data?.currentPricePaise) && data.currentPricePaise >= 0) {
+            setPricePaise(data.currentPricePaise)
+          }
           throw new Error(data?.error || 'The booking request could not be confirmed.')
         }
         const row = data?.data
         if (!row || typeof row.id !== 'string' || !row.id || row.status !== 'PENDING' || row.scheduledAt !== scheduledAt
-          || !Number.isSafeInteger(row.pricePaise) || row.pricePaise < 0 || typeof row.userId !== 'string' || !row.userId || (ownerId && row.userId !== ownerId)) throw new Error('The booking request could not be confirmed.')
+          || row.pricePaise !== pricePaise || typeof row.userId !== 'string' || !row.userId || (ownerId && row.userId !== ownerId)) throw new Error('The booking request could not be confirmed.')
         const saved: SavedBooking = { id: row.id, ownerId: ownerId || row.userId, scheduledAt, pricePaise: row.pricePaise }
-        attempt.current = { ...saved, credit: !!(session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0) || (isTest && !ownerId), paymentStarted: false, proof: null }
+        attempt.current = { ...saved, credit: useCredit, paymentStarted: false, proof: null }
         setSavedBooking(saved)
         if (isTest) (window as unknown as { __e2eBookingId?: string }).__e2eBookingId = saved.id
         if (saved.pricePaise === 0) { setStep('requested'); return }
@@ -291,6 +302,14 @@ function BookingFlow({
       hour12: true
     })
   }
+
+  let confirmLabel = 'Confirm & Pay'
+  if (loading) confirmLabel = 'Processing...'
+  else if (hasProof) confirmLabel = 'Confirm payment'
+  else if (savedBooking) confirmLabel = 'Continue payment'
+  else if (needsSignIn) confirmLabel = 'Sign in to book'
+  else if (pricePaise === 0) confirmLabel = 'Request free session'
+  else if (useCredit) confirmLabel = 'Use 1 session credit'
 
   return (
     <Dialog open={isOpen} onOpenChange={(next) => { if (!next) handleClose() }}>
@@ -416,6 +435,12 @@ function BookingFlow({
                   <span className="text-gray-600">Time (India):</span>
                   <span className="font-medium">{formatTime(selectedTime)}</span>
                 </div>
+                {pricePaise !== null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">{savedBooking ? 'Saved price' : 'Session price'}</span>
+                    <span className="font-medium">{pricePaise === 0 ? 'Free' : rupees.format(pricePaise / 100)}</span>
+                  </div>
+                )}
               </div>
               
               <div className="flex gap-3">
@@ -428,13 +453,13 @@ function BookingFlow({
                   Back
                 </Button>
                 <Button onClick={handleBooking} disabled={loading || sessionStatus === 'loading'} className="flex-1">
-                  {loading ? 'Processing...' : hasProof ? 'Confirm payment' : savedBooking ? 'Continue payment' : 'Confirm & Pay'}
+                  {confirmLabel}
                 </Button>
               </div>
             </div>
           )}
 
-          {savedBooking && step === 'confirm' ? <div className="space-y-2 text-sm"><p role="status">Your appointment request is saved. Continue with this appointment or open My Bookings to review it.</p><p>Saved price: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(savedBooking.pricePaise / 100)}.</p>{hasProof && !proofStored ? <p role="alert">Your browser could not retain the payment receipt. Keep this window open while confirming payment.</p> : null}<Button variant="outline" onClick={viewBookings}>View My Bookings</Button></div> : null}
+          {savedBooking && step === 'confirm' ? <div className="space-y-2 text-sm"><p role="status">Your appointment request is saved. Continue with this appointment or open My Bookings to review it.</p>{hasProof && !proofStored ? <p role="alert">Your browser could not retain the payment receipt. Keep this window open while confirming payment.</p> : null}<Button variant="outline" onClick={viewBookings}>View My Bookings</Button></div> : null}
           {step === 'recovery' ? <Button onClick={viewBookings} className="w-full">View My Bookings</Button> : null}
 
           {/* Step 4: Processing Payment / Credits */}

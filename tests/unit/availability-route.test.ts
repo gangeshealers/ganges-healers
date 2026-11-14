@@ -19,20 +19,26 @@ afterEach(() => jest.useRealTimers())
 
 test('uses India calendar dates instead of the server timezone', async () => {
   expect((await GET(request('healerId=h&date=2026-01-01'))).status).toBe(400)
-  expect((await GET(request('healerId=h&date=2026-01-02'))).status).toBe(200)
+  const response = await GET(request('healerId=h&date=2026-01-02'))
+  expect(response.status).toBe(200)
+  expect((await response.json()).data).not.toHaveProperty('pricePaise')
   expect(availability).toHaveBeenCalledWith('h', '2026-01-02', 60, undefined)
 })
 
-test('passes an active service duration to the slot calculation', async () => {
-  prisma.service.findUnique.mockResolvedValue({ isActive: true, duration: 90 })
-  expect((await GET(request('healerId=h&date=2026-01-02&serviceId=s'))).status).toBe(200)
+test.each([[90.55, 9055], [0, 0]])('returns the active service price of %s in paise alongside its slots', async (price, pricePaise) => {
+  prisma.service.findUnique.mockResolvedValue({ isActive: true, duration: 90, price })
+  const response = await GET(request('healerId=h&date=2026-01-02&serviceId=s'))
+  expect(response.status).toBe(200)
+  expect((await response.json()).data).toEqual({ date: '2026-01-02', slots: [], pricePaise })
   expect(availability).toHaveBeenCalledWith('h', '2026-01-02', 90, undefined)
 })
 
 test('rescheduling availability requires the owner and uses the booked duration', async () => {
   auth.mockResolvedValue({ user: { id: 'owner' } })
   prisma.booking.findFirst.mockResolvedValue({ id: 'b', serviceId: 's', status: 'CONFIRMED', durationMin: 90, service: { isActive: true } })
-  expect((await GET(request('healerId=h&date=2026-01-02&bookingId=b'))).status).toBe(200)
+  const response = await GET(request('healerId=h&date=2026-01-02&bookingId=b'))
+  expect(response.status).toBe(200)
+  expect((await response.json()).data).not.toHaveProperty('pricePaise')
   expect(prisma.booking.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'b', userId: 'owner', healerId: 'h' } }))
   expect(availability).toHaveBeenCalledWith('h', '2026-01-02', 90, 'b')
 })
