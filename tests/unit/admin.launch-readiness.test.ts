@@ -11,7 +11,7 @@ test('launch checks expose only status flags and guidance, never environment sec
     RESEND_API_KEY: 'private-resend-token',
     REDIS_URL: 'redis://private-user:private-pass@private-host.example',
   }
-  const result = inspectLaunchIntegrations(env)
+  const result = inspectLaunchIntegrations({ ...env, PAYMENT_EVENTS_ENABLED: 'true' })
   expect(result.find(item => item.label === 'Authentication and database')?.configured).toBe(true)
   expect(result.find(item => item.label === 'Razorpay checkout and webhook')?.configured).toBe(true)
   expect(result.find(item => item.label === 'Transactional email')?.configured).toBe(true)
@@ -24,10 +24,23 @@ test('launch checks expose only status flags and guidance, never environment sec
   expect(result.every(item => typeof item.essential === 'boolean' && item.guidance.length > 20)).toBe(true)
 })
 
+test.each([undefined, '', 'false', 'TRUE', ' true '])('payment credentials alone cannot enable webhook processing (%p)', flag => {
+  const result = inspectLaunchIntegrations({
+    RAZORPAY_KEY_ID: 'rzp_test_fixture',
+    RAZORPAY_KEY_SECRET: 'fixture-secret',
+    RAZORPAY_WEBHOOK_SECRET: 'fixture-webhook',
+    NEXT_PUBLIC_RAZORPAY_KEY_ID: 'rzp_test_fixture',
+    PAYMENT_EVENTS_ENABLED: flag,
+  }).find(item => item.label === 'Razorpay checkout and webhook')
+  expect(result?.configured).toBe(false)
+  expect(result?.guidance).toContain('Signed callbacks are acknowledged only')
+})
+
 test('missing or incomplete configuration cannot be reported as configured', () => {
   const result = inspectLaunchIntegrations({
     DATABASE_URL: 'postgresql://fake.example/neondb',
     RAZORPAY_KEY_ID: 'test-only',
+    PAYMENT_EVENTS_ENABLED: 'true',
     AUTH_GOOGLE_ID: 'incomplete-client-id',
   })
   expect(result.find(item => item.label === 'Authentication and database')?.configured).toBe(false)

@@ -50,7 +50,7 @@ export default async function AdminLaunchReadinessPage() {
     published: isPolicyReadable(publishedPolicies, item.kind),
   }))
 
-  // Inspect values on the server and pass only presence booleans into React.
+  // Keep configuration values on the server.
   const integrations = inspectLaunchIntegrations(process.env)
 
   const manualChecks = [
@@ -136,7 +136,7 @@ export default async function AdminLaunchReadinessPage() {
         <div>
           <h2 id="launch-integrations-title" className="text-xl font-semibold">Integration configuration</h2>
           <p className="text-sm text-muted-foreground">
-            Presence-only checks. No values or credential fragments are displayed, and no provider requests are made.
+            These checks read the deployment settings. Verify delivery and transactions with each provider.
           </p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
@@ -151,7 +151,7 @@ export default async function AdminLaunchReadinessPage() {
                     {item.configured
                       ? <CheckCircle2 aria-hidden="true" className="size-3.5" />
                       : <AlertCircle aria-hidden="true" className="size-3.5" />}
-                    {item.configured ? 'Variables present' : 'Needs configuration review'}
+                    {item.configured ? 'Configuration detected' : 'Needs configuration review'}
                   </span>
                 </div>
                 <p className="text-sm leading-relaxed text-muted-foreground">{item.guidance}</p>

@@ -6,12 +6,14 @@ export type IntegrationCheck = {
 }
 
 /**
- * Presence-only readiness hints for an authenticated admin.
+ * Configuration hints for an authenticated admin.
  * Never return values, masked credentials, DB URLs, or claim provider delivery.
  */
 export function inspectLaunchIntegrations(env: Record<string, string | undefined>): IntegrationCheck[] {
   const present = (key: string) => Boolean(env[key]?.trim())
   const all = (...keys: string[]) => keys.every(present)
+  const paymentKeysPresent = all('RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'NEXT_PUBLIC_RAZORPAY_KEY_ID')
+  const paymentEventsEnabled = env.PAYMENT_EVENTS_ENABLED === 'true'
 
   return [
     {
@@ -22,9 +24,13 @@ export function inspectLaunchIntegrations(env: Record<string, string | undefined
     },
     {
       label: 'Razorpay checkout and webhook',
-      configured: all('RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'NEXT_PUBLIC_RAZORPAY_KEY_ID'),
+      configured: paymentKeysPresent && paymentEventsEnabled,
       essential: true,
-      guidance: 'Confirm the intended live/test mode, signed webhook delivery, duplicate handling and a real refund before accepting money.',
+      guidance: !paymentKeysPresent
+        ? 'Configure the checkout keys and webhook secret for the intended Razorpay environment.'
+        : !paymentEventsEnabled
+          ? 'Signed callbacks are acknowledged only. After verifying callback delivery, set PAYMENT_EVENTS_ENABLED=true in this environment and redeploy to apply captures and refunds.'
+          : 'Verify a test-mode capture, a duplicate callback and a refund against the booking and the Razorpay dashboard.',
     },
     {
       label: 'Transactional email',
