@@ -13,9 +13,9 @@ const prismaMock = {
         if (lte && r.createdAt > lte) return false
         return true
       })
-      if (orderBy?.createdAt === 'desc') items = items.sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime())
+      if (orderBy[0]?.createdAt === 'desc') items = items.sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime())
       if (typeof take === 'number') items = items.slice(0, take)
-      return items.map((r) => ({ id: r.id, amountPaise: r.amountPaise, createdAt: r.createdAt, paymentId: r.paymentId }))
+      return items
     },
   },
 }
@@ -32,7 +32,8 @@ describe('Admin refunds limit contracts', () => {
     Refunds = await import('@/app/api/admin/payments/refunds/route')
     const now = Date.now()
     for (let i = 0; i < 150; i++) {
-      db.refunds.push({ id: cuid(), createdAt: new Date(now - i * 1000), amountPaise: 100 + i, paymentId: 'pay_' + i })
+      db.refunds.push({ id: cuid(), createdAt: new Date(now - i * 1000), amountPaise: 100 + i, paymentId: 'pay_' + i,
+        status: 'PENDING', gatewayRefundId: null, payment: { currency: 'INR', bookingId: null } })
     }
   })
 
@@ -43,6 +44,8 @@ describe('Admin refunds limit contracts', () => {
     const body = await res.json()
     expect(Array.isArray(body.items)).toBe(true)
     expect(body.items.length).toBe(20)
+    expect(body.items[0]).toMatchObject({ currency: 'INR', outcome: 'Needs review', bookingId: null })
+    expect(body.items[0]).not.toHaveProperty('gatewayRefundId')
   })
 
   test('limit=5', async () => {
