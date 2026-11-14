@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
         payment: {
           select: {
             status: true, amountPaise: true, statusEnum: true, gateway: true, gatewayPaymentId: true,
+            userId: true, type: true, invoice: { select: { id: true } },
             refunds: { select: { amountPaise: true, status: true, gatewayRefundId: true, reason: true } }
           }
         }
@@ -70,7 +71,18 @@ export async function GET(request: NextRequest) {
       success: true,
       data: bookings.map(booking => {
         const delivery = bookingDeliveryState(booking)
-        return { ...booking, meetingLink: delivery.confirmed ? booking.meetingLink : null, needsConfirmation: delivery.needsConfirmation, payment: booking.payment ? { status: booking.payment.status, amountPaise: booking.payment.amountPaise } : null, reviewVersion: bookingReviewVersion(booking), cancellationRefund: storedCancellationRefund(booking) }
+        const payment = booking.payment
+        const receiptId = payment && payment.userId === booking.userId && (payment.type === 'SESSION' || payment.type === null)
+          ? payment.invoice?.id ?? null : null
+        return {
+          ...booking,
+          meetingLink: delivery.confirmed ? booking.meetingLink : null,
+          needsConfirmation: delivery.needsConfirmation,
+          payment: payment ? { status: payment.status, amountPaise: payment.amountPaise } : null,
+          receiptId,
+          reviewVersion: bookingReviewVersion(booking),
+          cancellationRefund: storedCancellationRefund(booking),
+        }
       })
     }, { headers: { 'Cache-Control': 'private, no-store' } })
 

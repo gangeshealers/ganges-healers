@@ -126,3 +126,10 @@
     @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/60;
   }
 }
+
+@media print {
+  /* Keep the member receipt and omit its surrounding site navigation. */
+  :has(> #main-content [data-member-receipt]) > :not(#main-content) {
+    display: none !important;
+  }
+}

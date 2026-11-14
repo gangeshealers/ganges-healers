@@ -16,3 +16,7 @@ export function invoiceViewerHref(x: InvoiceLike): string {
   if (!raw) throw new Error('invoiceViewerHref: missing identifier (invoiceNumber | paymentId | id)')
   return `/invoices/${encodeURIComponent(raw)}/view`
 }
+
+export function memberReceiptHref(invoiceId: string): string {
+  return `/dashboard/billing/${encodeURIComponent(invoiceId)}`
+}

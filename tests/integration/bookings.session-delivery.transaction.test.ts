@@ -53,6 +53,29 @@ test('an owned session link reaches customer bookings and private calendar witho
   expect(await exported.text()).toContain('URL:https://meeting.example.test/session')
 })
 
+test('lists the issued session receipt only when its payment belongs to the booking member', async () => {
+  mockActor = { user: { id: users[2], role: 'USER' } }
+  const listedBooking = async () => {
+    const response = await listCustomer(new NextRequest('http://localhost/api/bookings'))
+    expect(response.status).toBe(200)
+    return (await response.json()).data.find((row: { id: string }) => row.id === bookingId)
+  }
+  const payment = await prisma.payment.update({ where: { bookingId }, data: { userId: users[2], type: 'SESSION' } })
+  expect((await listedBooking()).receiptId).toBeNull()
+  const invoice = await prisma.invoice.create({ data: {
+    paymentId: payment.id, invoiceNumber: `INV-${randomUUID()}`, billTo: {}, lineItems: [],
+    subtotalPaise: 1000, totalPaise: 1000, pdfUrl: '',
+  } })
+  expect(await listedBooking()).toMatchObject({ receiptId: invoice.id })
+  expect((await listedBooking()).payment).toEqual({ status: 'success', amountPaise: 1000 })
+  await prisma.payment.update({ where: { id: payment.id }, data: { type: null } })
+  expect((await listedBooking()).receiptId).toBe(invoice.id)
+  await prisma.payment.update({ where: { id: payment.id }, data: { userId: users[1] } })
+  expect((await listedBooking()).receiptId).toBeNull()
+  await prisma.payment.update({ where: { id: payment.id }, data: { userId: users[2], type: 'STORE' } })
+  expect((await listedBooking()).receiptId).toBeNull()
+})
+
 test('foreign healers, ordinary users, missing sessions and revoked roles cannot manage another appointment', async () => {
   mockActor = { user: { id: users[1], role: 'HEALER' } }
   expect((await link('https://meeting.example.test/foreign')).status).toBe(403)
