@@ -1,7 +1,7 @@
 import { readCourseForViewer } from '@/lib/courses/access'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import Image from 'next/image'
+import CourseIntroduction from '@/components/courses/CourseIntroduction'
 import CourseEnrollButton from '@/components/courses/CourseEnrollButton'
 
 export const dynamic = 'force-dynamic'
@@ -29,23 +29,8 @@ export default async function CourseDetailPage({ params }: Props) {
 
   return (
     <div className="container mx-auto p-6 max-w-3xl">
-      {course.imageUrl && (
-        <Image
-          src={course.imageUrl}
-          alt={course.title}
-          width={800}
-          height={224}
-          className="w-full h-56 object-cover rounded-lg mb-6"
-        />
-      )}
-      <h1 className="text-3xl font-bold mb-2">{course.title}</h1>
-      {!course.isActive && <p className="mb-4 text-sm text-muted-foreground">This course is archived. Your existing lesson access is preserved.</p>}
-      <p className="text-muted-foreground mb-4">
-        {course._count.enrollments} student{course._count.enrollments !== 1 ? 's' : ''} enrolled
-        {' · '}
-        {course.lessons.length} lesson{course.lessons.length !== 1 ? 's' : ''}
-      </p>
-      <p className="mb-6 whitespace-pre-line">{course.description}</p>
+      <CourseIntroduction course={course} enrollmentCount={course._count.enrollments}
+        lessonCount={course.lessons.length} archived={!course.isActive} />
 
       <div className="mb-8">
         <CourseEnrollButton course={course} />

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import LessonBody from './LessonBody'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
@@ -109,25 +110,7 @@ export default function LessonPlayer({ courseSlug, lessonId }: Props) {
             </Link>
           </div>
 
-          <h1 className="text-2xl font-bold mb-4">{lesson.title}</h1>
-
-          {lesson.videoUrl && (
-            <div className="aspect-video mb-6 bg-black rounded-lg overflow-hidden">
-              <iframe
-                src={lesson.videoUrl}
-                className="w-full h-full"
-                allowFullScreen
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                title={lesson.title}
-              />
-            </div>
-          )}
-
-          {lesson.content && (
-            <div className="prose max-w-none mb-6 whitespace-pre-line">
-              {lesson.content}
-            </div>
-          )}
+          <LessonBody lesson={lesson} />
 
           <div className="flex items-center gap-3 mt-6">
             {prevLesson && (

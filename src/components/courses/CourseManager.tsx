@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { z } from 'zod'
+import CoursePreview from './CoursePreview'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -80,7 +81,7 @@ export default function CourseManager() {
       </article>)}
       {cursor && <Button variant="outline" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Load more courses'}</Button>}
     </div>}
-    {selected && userId && <CourseEditor key={`${userId}:${selected}`} id={selected} onClose={() => setSelected('')} onSaved={row => saved(row, userId)} onDeleted={() => { setRows(previous => previous.filter(row => row.id !== selected)); setSelected('') }} />}
+    {selected && userId && canManage && <CourseEditor key={`${userId}:${selected}`} id={selected} onClose={() => setSelected('')} onSaved={row => saved(row, userId)} onDeleted={() => { setRows(previous => previous.filter(row => row.id !== selected)); setSelected('') }} />}
   </div>
 }
 
@@ -169,7 +170,7 @@ function CourseEditor({ id, onSaved, onDeleted, onClose }: { id: string; onSaved
     {loading ? <p role="status">Loading saved course…</p> : course && <div key={revision} className="space-y-6">
       <p className="text-sm text-muted-foreground">{course.isActive ? 'Published' : 'Draft / archived'} · {course.enrollmentCount} enrollments. Archiving stops new enrollments; existing students keep lesson access. The URL slug stays fixed.</p>
       <DetailsForm course={course} onDirty={trackDirty} disabled={disabled} onSave={fields => act({ action: 'details', fields })} />
-      <div className="flex flex-wrap gap-3"><Button disabled={disabled || hasDirty} variant="outline" onClick={() => void act({ action: course.isActive ? 'archive' : 'publish' })}>{course.isActive ? 'Archive course' : 'Publish course'}</Button>{course.isActive && <Link className="text-sm underline self-center" href={`/courses/${encodeURIComponent(course.slug)}`} target="_blank" rel="noopener noreferrer">Open public course</Link>}</div>
+      <div className="flex flex-wrap gap-3"><CoursePreview course={course} hasUnsavedChanges={hasDirty} /><Button disabled={disabled || hasDirty} variant="outline" onClick={() => void act({ action: course.isActive ? 'archive' : 'publish' })}>{course.isActive ? 'Archive course' : 'Publish course'}</Button>{course.isActive && <Link className="text-sm underline self-center" href={`/courses/${encodeURIComponent(course.slug)}`} target="_blank" rel="noopener noreferrer">Open public course</Link>}</div>
       {hasDirty && <p className="text-sm text-muted-foreground">Save pending course and lesson changes before publishing or archiving.</p>}
       <div className="space-y-4"><h3 className="text-xl font-semibold">Lessons</h3>{protectedCourse && <p className="text-sm">Enrollment records protect this curriculum: lesson text and video may be corrected, while adding, removing, or reordering lessons is locked.</p>}
         {!course.lessons.length && <p>No lessons yet. Add lesson text or an HTTPS video URL before publishing.</p>}
