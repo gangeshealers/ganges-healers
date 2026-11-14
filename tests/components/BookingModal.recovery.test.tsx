@@ -26,7 +26,7 @@ beforeEach(() => {
   create = async init => json({ success: true, data: { id: 'saved-booking', userId: 'owner', status: 'PENDING', pricePaise: 10000, scheduledAt: JSON.parse(String(init?.body)).scheduledAt } }, 201)
   order = async () => json(quote); verify = async () => json({ verified: true }); credit = async () => json({ ok: true })
   fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
-    if (url.startsWith('/api/availability?')) return json({ data: { slots: [{ time: '10:00', available: true }] } })
+    if (url.startsWith('/api/availability?')) return json({ data: { pricePaise: 10000, slots: [{ time: '10:00', available: true }] } })
     if (url === '/api/bookings') return create(init)
     if (url === '/api/payments/create-order') return order()
     if (url === '/api/payments/verify') return verify()
@@ -46,6 +46,38 @@ async function choose() {
   return view
 }
 const count = (path: string) => fetchMock.mock.calls.filter(([url]) => url === path).length
+
+test('a changed price is shown before a second explicit confirmation', async () => {
+  create = async init => {
+    const body = JSON.parse(String(init?.body))
+    if (body.expectedPricePaise === 10000) {
+      return json({ error: 'The session price has changed.', currentPricePaise: 11250 }, 409)
+    }
+    expect(body.expectedPricePaise).toBe(11250)
+    return json({ data: { id: 'saved-booking', userId: 'owner', status: 'PENDING', pricePaise: 11250, scheduledAt: body.scheduledAt } }, 201)
+  }
+  order = async () => json({ ...quote, amountPaise: 11250 })
+  await choose()
+  expect(screen.getByText('₹100.00')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+  expect(await screen.findByText('₹112.50')).toBeVisible()
+  expect(screen.getByRole('alert')).toHaveTextContent('The session price has changed')
+  expect(count('/api/bookings')).toBe(1)
+  expect(count('/api/payments/create-order')).toBe(0)
+  expect(gateway).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+  expect(await screen.findByText('Booking Confirmed!')).toBeVisible()
+  expect(gateway).toHaveBeenCalledTimes(1)
+})
+
+test('a saved price that differs from the reviewed price cannot open payment', async () => {
+  create = async init => json({ data: { id: 'saved-booking', userId: 'owner', status: 'PENDING', pricePaise: 12000, scheduledAt: JSON.parse(String(init?.body)).scheduledAt } }, 201)
+  await choose()
+  await userEvent.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+  expect(await screen.findByRole('button', { name: 'View My Bookings' })).toBeVisible()
+  expect(count('/api/payments/create-order')).toBe(0)
+  expect(gateway).not.toHaveBeenCalled()
+})
 
 test('an order failure retries the saved appointment and cannot return to date selection', async () => {
   let failed = false
@@ -113,7 +145,7 @@ test('a definitive slot rejection keeps date selection available without startin
 
 test('an unknown credit result never starts checkout or creates a second appointment', async () => {
   mockSession.mockReturnValue(actor('owner', true)); credit = async () => { throw new TypeError('lost credit reply') }
-  await choose(); await userEvent.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+  await choose(); await userEvent.click(screen.getByRole('button', { name: 'Use 1 session credit' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('session credit result could not be confirmed')
   expect(screen.queryByRole('button', { name: /Continue payment|Confirm & Pay/ })).not.toBeInTheDocument()
   expect(count('/api/bookings')).toBe(1); expect(count('/api/payments/create-order')).toBe(0); expect(gateway).not.toHaveBeenCalled()
@@ -206,7 +238,7 @@ test('stale availability cannot replace the currently selected date', async () =
   await userEvent.click(screen.getByRole('button', { name: 'Change Date' }))
   fireEvent.change(screen.getByLabelText('Select Date'), { target: { value: clinicDate(new Date(Date.now() + 5 * 86400000)) } })
   await screen.findByRole('button', { name: '10:00 AM' })
-  await act(async () => first.resolve(json({ data: { slots: [{ time: '11:00', available: true }] } })))
+  await act(async () => first.resolve(json({ data: { pricePaise: 10000, slots: [{ time: '11:00', available: true }] } })))
   expect(screen.queryByRole('button', { name: '11:00 AM' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '10:00 AM' })).toBeVisible()
 })
@@ -227,7 +259,7 @@ test('anonymous test-mode convenience remains gated and does not reset its ackno
   mockSession.mockReturnValue({ data: null, status: 'unauthenticated', update })
   const implementation = fetchMock.getMockImplementation()!
   fetchMock.mockImplementation((url, init) => url.startsWith('/api/test/login?') ? Promise.resolve(json({ ok: true })) : implementation(url, init))
-  await choose(); await userEvent.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+  await choose(); await userEvent.click(screen.getByRole('button', { name: 'Use 1 session credit' }))
   await screen.findByText('Booking Confirmed!')
   expect(count('/api/bookings/saved-booking/confirm-with-credits')).toBe(1)
   expect(gateway).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled(); expect(mockRefresh).not.toHaveBeenCalled()

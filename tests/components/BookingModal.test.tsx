@@ -43,10 +43,10 @@ const healer = {
 const serviceId = 's_1';
 const serviceName = 'Reiki Healing';
 
-function mockAvailability(slots: Array<{ time: string; available: boolean }>) {
+function mockAvailability(slots: Array<{ time: string; available: boolean }>, pricePaise = 50000) {
   (global.fetch as any).mockImplementationOnce((_url: string) =>
     Promise.resolve(new Response(JSON.stringify({ 
-      data: { slots } 
+      data: { slots, pricePaise }
     }), { status: 200 })),
   );
 }
@@ -90,12 +90,13 @@ describe('BookingModal', () => {
     mockUseSession.mockReturnValue({ data: { user: { id: 'free-owner', role: 'USER', vip: true, freeSessionCredits: 2 }, expires: '2099-01-01' }, status: 'authenticated', update: jest.fn() })
     const user = userEvent.setup()
     render(<BookingModal isOpen onClose={jest.fn()} healer={healer} serviceId={serviceId} serviceName={serviceName} />)
-    mockAvailability([{ time: '11:00', available: true }])
+    mockAvailability([{ time: '11:00', available: true }], 0)
     const date = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
     await user.type(screen.getByDisplayValue(''), date)
     await user.click(await screen.findByText('11:00 AM'))
     jest.mocked(global.fetch).mockImplementationOnce(async (_url, init) => new Response(JSON.stringify({ success: true, data: { id: 'free-booking', status: 'PENDING', pricePaise: 0, userId: 'free-owner', scheduledAt: JSON.parse(String(init?.body)).scheduledAt } }), { status: 201 }))
-    await user.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+    expect(screen.getByText('Free', { exact: true })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Request free session' }))
     expect(await screen.findByRole('heading', { name: 'Booking request received' })).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('No payment or session credit is required')
     expect(screen.getByRole('button', { name: 'View My Bookings' })).toBeVisible()
@@ -170,7 +171,8 @@ describe('BookingModal', () => {
     await user.click(timeBtn);
 
     // Should now be on confirm step - click confirm button
-    const confirmBtn = await screen.findByText('Confirm & Pay');
+    expect(screen.getByText('₹500.00')).toBeVisible();
+    const confirmBtn = await screen.findByRole('button', { name: 'Use 1 session credit' });
     await user.click(confirmBtn);
 
     // Should have called create booking -> then confirm-with-credits
@@ -179,7 +181,7 @@ describe('BookingModal', () => {
         '/api/bookings',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ healerId: healer.id, serviceId, scheduledAt: `${dateStr}T05:30:00.000Z` }),
+          body: JSON.stringify({ healerId: healer.id, serviceId, scheduledAt: `${dateStr}T05:30:00.000Z`, expectedPricePaise: 50000 }),
         }),
       );
     });

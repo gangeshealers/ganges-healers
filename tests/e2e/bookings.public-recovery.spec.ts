@@ -36,7 +36,9 @@ test('public booking recovers lost creation, credit and payment replies without 
       const dialog = target.getByRole('dialog', { name: 'Book Public recovery appointment', exact: true })
       await dialog.getByLabel('Select Date', { exact: true }).fill(clinicDate(new Date(Date.now() + day * 86400000)))
       await dialog.getByRole('button', { name: '10:00 AM', exact: true }).click()
-      await dialog.getByRole('button', { name: 'Confirm & Pay', exact: true }).click()
+      await expect(dialog.getByText('₹100.00', { exact: true })).toBeVisible()
+      const action = target === cash ? 'Confirm & Pay' : 'Use 1 session credit'
+      await dialog.getByRole('button', { name: action, exact: true }).click()
       return dialog
     }
     await cash.route('**/api/bookings', async route => {
@@ -89,7 +91,7 @@ test('public booking recovers lost creation, credit and payment replies without 
     page.on('request', request => { if (new URL(request.url()).pathname.endsWith('/confirm-with-credits')) creditPosts++ })
     const uncertain = await choose(page, 16)
     await expect(uncertain.getByRole('alert')).toContainText('Check My Bookings before requesting another appointment')
-    await expect(uncertain.getByRole('button', { name: 'Confirm & Pay', exact: true })).toHaveCount(0)
+    await expect(uncertain.getByRole('button', { name: 'Use 1 session credit', exact: true })).toHaveCount(0)
     await uncertain.getByRole('button', { name: 'View My Bookings', exact: true }).click()
     await page.getByRole('button', { name: 'Use session credit', exact: true }).click()
     await expect(page.locator('[aria-label="status CONFIRMED"]')).toHaveCount(1)

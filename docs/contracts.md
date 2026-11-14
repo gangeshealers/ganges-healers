@@ -1084,6 +1084,15 @@ Bookings action, rather than attempting a charge/credit or claiming confirmation
 
 ### Public booking checkout recovery
 
+Service availability includes `data.pricePaise` for a new appointment with a
+selected service. The booking dialog shows that price and identifies free
+requests and session-credit bookings before submission. The dialog sends the
+reviewed integer amount as `expectedPricePaise` on `POST /api/bookings`.
+Older API callers can omit this field. The server always sets the reservation
+price from its service record. A price mismatch returns HTTP 409 with
+`{ error, currentPricePaise }` before creating a booking or queuing its email.
+The customer reviews the new price and confirms again to continue.
+
 The initial service dialog retains one server-created appointment for its owned
 flow. A checkout dismissal or order preparation failure retries that appointment;
 it never repeats booking creation. The saved price, owner and scheduled instant

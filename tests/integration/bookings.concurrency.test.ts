@@ -25,10 +25,10 @@ function day(offset: number) {
 function slot(offset: number, time: string) {
   return clinicSlotInstant(day(offset), time).toISOString()
 }
-function create(offset: number, time: string) {
+function create(offset: number, time: string, expectedPricePaise?: number) {
   return POST(makeNextRequest('http://localhost/api/bookings', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ healerId, serviceId, scheduledAt: slot(offset, time) }),
+    body: JSON.stringify({ healerId, serviceId, scheduledAt: slot(offset, time), expectedPricePaise }),
   }))
 }
 function reschedule(id: string, offset: number, time: string, version?: string) {
@@ -87,6 +87,22 @@ test('an unknown service keeps the existing booking conflict response', async ()
   }))
   expect(response.status).toBe(409)
   expect(await response.json()).toEqual({ error: 'Service not found or inactive' })
+})
+
+test('a changed price requires fresh confirmation before saving the appointment and requested email', async () => {
+  const scheduledAt = new Date(slot(24, '11:00'))
+  const where = { userId, healerId, serviceId, scheduledAt }
+  const stale = await create(24, '11:00', 0)
+  expect(stale.status).toBe(409)
+  expect(await stale.json()).toMatchObject({ currentPricePaise: 10000 })
+  expect(await prisma.booking.count({ where })).toBe(0)
+  expect(await prisma.bookingEmail.count({ where: { booking: where } })).toBe(0)
+
+  const accepted = await create(24, '11:00', 10000)
+  expect(accepted.status).toBe(201)
+  const { data } = await accepted.json()
+  expect(data.pricePaise).toBe(10000)
+  expect(await prisma.bookingEmail.count({ where: { bookingId: data.id, kind: 'REQUESTED' } })).toBe(1)
 })
 
 test('a creation and reschedule cannot reserve overlapping intervals concurrently', async () => {

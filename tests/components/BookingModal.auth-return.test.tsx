@@ -17,7 +17,7 @@ beforeEach(() => {
   mockPush.mockClear()
   mockSession.mockReturnValue({ data: null, status: 'unauthenticated' })
   window.history.replaceState({}, '', '/services/reiki-healing?healerId=old-selection&programSlug=foundation')
-  global.fetch = jest.fn(async () => new Response(JSON.stringify({ data: { slots: [{ time: '11:00', available: true }] } }), { status: 200 }))
+  global.fetch = jest.fn(async () => new Response(JSON.stringify({ data: { pricePaise: 10000, slots: [{ time: '11:00', available: true }] } }), { status: 200 }))
 })
 afterEach(() => {
   if (priorTestMode === undefined) delete process.env.TEST_MODE
@@ -37,7 +37,7 @@ async function chooseSlot() {
 
 test('signed-out booking returns to the chosen practitioner and preserves journey context without reserving a slot', async () => {
   const user = await chooseSlot()
-  await user.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+  await user.click(screen.getByRole('button', { name: 'Sign in to book' }))
   await waitFor(() => expect(mockPush).toHaveBeenCalledTimes(1))
   const signin = new URL(mockPush.mock.calls[0][0], 'https://example.test')
   expect(signin.pathname).toBe('/auth/signin')
@@ -53,7 +53,7 @@ test('signed-out booking returns to the chosen practitioner and preserves journe
 test('a session object with no customer ID still requires sign-in', async () => {
   mockSession.mockReturnValue({ data: { user: { name: 'Incomplete session' } }, status: 'authenticated' })
   const user = await chooseSlot()
-  await user.click(screen.getByRole('button', { name: 'Confirm & Pay' }))
+  await user.click(screen.getByRole('button', { name: 'Sign in to book' }))
   expect(mockPush).toHaveBeenCalledTimes(1)
   expect(jest.mocked(global.fetch).mock.calls.some(([url]) => url === '/api/bookings')).toBe(false)
 })
@@ -63,7 +63,7 @@ test('a loading session cannot trigger a premature sign-in redirect or booking',
   render(<BookingModal isOpen onClose={() => {}} healer={{ id: 'chosen-healer', user: { name: 'Chosen Practitioner' }, experienceYears: 5, rating: 4 }} serviceId="service" serviceName="Reiki Healing" />)
   expect(screen.getByRole('status')).toHaveTextContent('Loading your account')
   expect(screen.queryByLabelText('Select Date')).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Confirm & Pay' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Sign in to book' })).not.toBeInTheDocument()
   expect(mockPush).not.toHaveBeenCalled()
   expect(jest.mocked(global.fetch).mock.calls.some(([url]) => url === '/api/bookings')).toBe(false)
 })
