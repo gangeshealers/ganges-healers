@@ -166,6 +166,21 @@ describe('verified refund webhook reconciliation', () => {
     expect(mockRefundPayment).not.toHaveBeenCalled()
   })
 
+  test('a legacy unbound success remains under review after a signed partial refund, cancellation and reload', async () => {
+    const { booking, payment, refund } = await pendingRefund(7500)
+    await prisma.refund.create({ data: { paymentId: payment.id, amountPaise: 7500, status: 'processed' } })
+    const event = await sendRefund(refund.gatewayRefundId!, payment.gatewayPaymentId!, 7500)
+    expect(event.status).toBe(200)
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).statusEnum).toBe('SUCCESS')
+
+    const cancelled = await cancel('DELETE', booking.id)
+    const recovered = await getBooking(new NextRequest(`http://localhost/api/bookings/${booking.id}`), { params: Promise.resolve({ id: booking.id }) })
+    expect((await cancelled.json()).refund.status).toBe('UNKNOWN')
+    expect((await recovered.json()).data.cancellationRefund.status).toBe('UNKNOWN')
+    expect(await prisma.refund.count({ where: { paymentId: payment.id } })).toBe(2)
+    expect(mockRefundPayment).not.toHaveBeenCalled()
+  })
+
   test('simultaneous partial refunds sum atomically to the full captured amount', async () => {
     const { payment, refund } = await pendingRefund(7500)
     const second = await prisma.refund.create({ data: {

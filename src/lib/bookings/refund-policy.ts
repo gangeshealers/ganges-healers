@@ -27,6 +27,31 @@ export function refundStatusFromStored(value: string | null | undefined): Cancel
   }
 }
 
+type StoredRefundOutcome = { status: string | null; gatewayRefundId: string | null }
+
+/** A pending or successful status without a gateway reference still needs reconciliation. */
+export function referencedRefundStatus(refund: StoredRefundOutcome): CancellationRefundStatus {
+  const status = refundStatusFromStored(refund.status)
+  return !refund.gatewayRefundId && (status === 'SUCCESS' || status === 'PENDING') ? 'UNKNOWN' : status
+}
+
+/** Use the same gateway evidence to decide what customers see and whether a retry can proceed. */
+export function summarizeRefunds<T extends StoredRefundOutcome & { amountPaise: number }>(rows: T[]) {
+  let confirmedPaise = 0
+  let unresolvedStatus: 'PENDING' | 'UNKNOWN' | undefined
+  let unresolved: T | undefined
+  for (const row of rows) {
+    const status = referencedRefundStatus(row)
+    if (status === 'SUCCESS') confirmedPaise += row.amountPaise
+    if (status === 'PENDING' || status === 'UNKNOWN') {
+      if (status === 'UNKNOWN' || !unresolvedStatus) unresolvedStatus = status
+      // An unbound attempt must be reviewed even if another refund can be fetched.
+      if (!unresolved || !row.gatewayRefundId) unresolved = row
+    }
+  }
+  return { confirmedPaise, unresolvedStatus, unresolved }
+}
+
 /** Keep cancellation messages shared by mutations and read-only recovery. */
 export function cancellationRefundMessage(status: CancellationRefundStatus) {
   switch (status) {
@@ -65,10 +90,9 @@ export function storedCancellationRefund(booking: {
   status = 'UNAVAILABLE'
   if (payment.amountPaise === booking.pricePaise && payment.gateway?.toLowerCase() === 'razorpay' && payment.gatewayPaymentId) {
     const rows = payment.refunds ?? []
-    const successful = rows.filter(row => refundStatusFromStored(row.status) === 'SUCCESS' && row.gatewayRefundId).reduce((sum, row) => sum + row.amountPaise, 0)
-    const active = rows.filter(row => ['PENDING', 'UNKNOWN'].includes(refundStatusFromStored(row.status)) || refundStatusFromStored(row.status) === 'SUCCESS' && !row.gatewayRefundId)
-    if (active.length) status = active.every(row => refundStatusFromStored(row.status) === 'PENDING' && row.gatewayRefundId) ? 'PENDING' : 'UNKNOWN'
-    else if (successful >= policy.refundPaise) status = 'SUCCESS'
+    const { confirmedPaise, unresolvedStatus } = summarizeRefunds(rows)
+    if (unresolvedStatus) status = unresolvedStatus
+    else if (confirmedPaise >= policy.refundPaise) status = 'SUCCESS'
     else if (rows.some(row => row.reason === 'booking-cancellation' && refundStatusFromStored(row.status) === 'FAILED')) status = 'FAILED'
   }
   return { ...policy, status, message: cancellationRefundMessage(status) }

@@ -143,6 +143,26 @@ test('unrelated refunds are acknowledged without guessing an owner or creating a
   expect(db.$transaction).not.toHaveBeenCalled()
 })
 
+test('a signed partial refund cannot mark the payment refunded using another unreferenced success', async () => {
+  payment.amountPaise = 1500
+  refunds.push({ ...refunds[0], id: 'legacy', gatewayRefundId: null, amountPaise: 500, status: 'processed' })
+
+  await applyRefundEvent(event())
+
+  expect(refunds[0].status).toBe('SUCCESS')
+  expect(payment.statusEnum).toBe('SUCCESS')
+  expect(db.payment.update).not.toHaveBeenCalled()
+})
+
+test('a successful outcome without a gateway refund ID stays uncertain until confirmation', async () => {
+  refunds[0].gatewayRefundId = null
+  const result = await recordRefundOutcome('refund', null, 'SUCCESS')
+  expect(result.status).toBe('UNKNOWN')
+  expect(db.payment.update).not.toHaveBeenCalled()
+  await recordRefundOutcome('refund', 'rfnd_owned', 'SUCCESS')
+  expect(payment.statusEnum).toBe('REFUNDED')
+})
+
 test('delivery before the gateway ID is saved requests a retry and can reconcile once bound', async () => {
   refunds[0].gatewayRefundId = null
   db.payment.findUnique.mockResolvedValue(payment as Payment)
