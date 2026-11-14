@@ -8,7 +8,7 @@ import MemberSupportPage from '@/app/dashboard/support/page'
 
 jest.mock('@/lib/auth', () => ({ auth: jest.fn() }))
 jest.mock('@/lib/prisma', () => ({ prisma: { supportTicket: { findMany: jest.fn() } } }))
-jest.mock('@/lib/support/availability', () => ({ isSupportDeskEnabled: jest.fn(() => true) }))
+jest.mock('@/lib/support/availability', () => ({ isSupportConversationEnabled: jest.fn(() => false), isSupportDeskEnabled: jest.fn(() => true) }))
 jest.mock('@/components/support/SupportTicketForm', () => ({ __esModule: true, default: () => <div>Support request form</div> }))
 jest.mock('next/navigation', () => ({
   redirect: jest.fn((url: string) => { throw new Error('redirect:' + url) }),

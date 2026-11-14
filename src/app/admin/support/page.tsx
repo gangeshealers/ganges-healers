@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { SupportTicketError, updateAdminSupportTicket } from '@/lib/support/tickets'
-import { isSupportDeskEnabled } from '@/lib/support/availability'
+import { isSupportDeskEnabled, isSupportConversationEnabled } from '@/lib/support/availability'
 import {
   ADMIN_SUPPORT_PAGE_SIZE,
   ADMIN_SUPPORT_MAX_QUERY,
@@ -21,6 +21,7 @@ async function saveSupportResponse(formData: FormData) {
   'use server'
   await requireCurrentAdmin()
   if (!isSupportDeskEnabled()) redirect('/admin/support')
+  if (isSupportConversationEnabled()) redirect('/admin/support')
   const getText = (name: string) => {
     const value = formData.get(name)
     return typeof value === 'string' ? value : undefined
@@ -73,6 +74,7 @@ export default async function AdminSupportPage({
   }
 
   const params = (await searchParams) ?? {}
+  const conversations = isSupportConversationEnabled()
   const filters = parseAdminSupportFilters(params)
   const { status, q } = filters
   const where = adminSupportWhere(status, q)
@@ -164,7 +166,7 @@ export default async function AdminSupportPage({
                 </p>
               </header>
               <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{ticket.message}</p>
-              <form action={saveSupportResponse} className="space-y-3 rounded-lg bg-slate-50 p-4">
+              {conversations ? <div className="space-y-3"><p className="text-sm text-muted-foreground">Read the full conversation before replying or changing the request status.</p><Link href={`/admin/support/${encodeURIComponent(ticket.id)}`} className="inline-flex rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Open conversation</Link></div> : <form action={saveSupportResponse} className="space-y-3 rounded-lg bg-slate-50 p-4">
                 <input type="hidden" name="id" value={ticket.id} />
                 <input type="hidden" name="updatedAt" value={ticket.updatedAt.toISOString()} />
                 <input type="hidden" name="returnStatus" value={status} />
@@ -188,7 +190,7 @@ export default async function AdminSupportPage({
                 <button type="submit" className="rounded-lg bg-slate-950 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-violet-600">
                   Save support response
                 </button>
-              </form>
+              </form>}
             </article>
           ))}
         </div>

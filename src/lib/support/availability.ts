@@ -6,3 +6,8 @@
 export function isSupportDeskEnabled() {
   return process.env.SUPPORT_DESK_ENABLED === 'true'
 }
+
+/** Enable only after the additive conversation migration is applied. */
+export function isSupportConversationEnabled() {
+  return isSupportDeskEnabled() && process.env.SUPPORT_CONVERSATIONS_ENABLED === 'true'
+}

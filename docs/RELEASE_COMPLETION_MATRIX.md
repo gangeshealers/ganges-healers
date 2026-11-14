@@ -27,7 +27,7 @@ Definitions:
 | Infrastructure and quality gates | GitHub CI, PostgreSQL integration, UI/unit/security/build and Playwright suites, Vercel Preview, database migration rehearsal | Exact merged revision full-green; protected Preview delivery acceptance and production rehearsal remain separate |
 
 
-**Latest merged development checkpoint (13 November 2026):** `5222d4be94f852e1e1af307422c92f5c176fa0b5` integrates dashboard moderation #133 and admin support navigation #134 after service sorting #130, format filtering #131 and support search #132. These commits are on the development release, **not** production. Later merges require a new exact-head CI and separate protected Preview acceptance.
+**Latest merged development checkpoint (13 November 2026)** — `e59bdda` integrates the member dashboard in [PR #137](https://github.com/gangeshealers/ganges-healers/pull/137), following dashboard moderation #133 and admin support navigation #134.
 
 ## Priority P0 — finish and validate the code
 
@@ -42,7 +42,7 @@ Definitions:
 ### Still open — requires fresh evidence
 
 - [x] **Dashboard moderation and admin support navigation.** [#133](https://github.com/gangeshealers/ganges-healers/pull/133) and [#134](https://github.com/gangeshealers/ganges-healers/pull/134) passed their existing complete CI runs and merged into development.
-- [ ] **Member dashboard completion milestone.** The `codex/application-completion-20261113` branch adds direct course continuation, purchased program progress and account workspace navigation. It incorporates #135 with a corrected session-count label and #136’s reconciled tracker. Review and integrate this consolidated milestone; source drafts remain unshipped until integration. See [dashboard behavior](./dashboard-upcoming-bookings.md).
+- [x] **Member dashboard.** Direct course continuation, purchased program progress and account workspace navigation merged in [PR #137](https://github.com/gangeshealers/ganges-healers/pull/137). See [dashboard behavior](./dashboard-upcoming-bookings.md).
 - [ ] **Exact-release CI checkpoint.** After intended changes merge, run all seven jobs on the combined `codex/site-completion-release` head, including full Playwright, not a previous green SHA. Preserve `main` until separately approved.
 - [ ] **Accessible cross-role Preview acceptance.** Obtain an exact-head READY protected release Preview, then exercise anonymous/customer/practitioner/admin journeys, mobile sign-out, sensitive permissions, booking/payment recovery and content publication. An older READY Preview is not sufficient.
 - [ ] **Deployment and email-recovery contract.** [Draft #123](https://github.com/gangeshealers/ganges-healers/pull/123) adds a Vercel Schedules beta path target, but authentication header delivery on beta HTTP-path schedules is not yet proven. Keep it unmerged and disabled until Preview shows a protected invocation, owner approves automatic sends, and provider/reconciliation checks pass. Superseded legacy Cron PR #88 is closed unmerged.

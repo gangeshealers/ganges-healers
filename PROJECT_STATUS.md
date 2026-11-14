@@ -1,10 +1,8 @@
-## Application completion checkpoint — 13 November 2026
+## Application completion checkpoint — 14 November 2026
 
-The workspace is synchronized with development release `5222d4b`. Dashboard moderation (#133) and admin support navigation (#134) have merged after their existing complete CI runs.
+The member dashboard merged into the development release in [PR #137](https://github.com/gangeshealers/ganges-healers/pull/137). Members can resume their next lesson, review purchased program progress and upcoming appointments, and reach their account workspaces from the dashboard.
 
-The consolidated `codex/application-completion-20261113` milestone builds a member home with direct course continuation, accurate lesson-order progress, purchased program progress, confirmed next program appointments, notification counts and account workspace links. It incorporates the completed-session display from #135, corrects its accidental currency prefix, and reconciles the #136 release tracker. Private dashboard reads now select display fields rather than whole user/payment records. See `docs/dashboard-upcoming-bookings.md`.
-
-This branch remains development work until its PR merges. Focused validation and review evidence belongs in that PR. The remaining launch dependencies are tracked in `docs/RELEASE_COMPLETION_MATRIX.md`: approved content, live provider and worker setup, deployed role acceptance, and explicit production cutover. No production data, provider delivery or billing change is included.
+The support conversation change adds private follow-ups, preserves earlier staff answers and lets staff reply or change a request’s status from the support queue. See [member and staff workflows](./docs/support-desk.md) and the [release completion matrix](./docs/RELEASE_COMPLETION_MATRIX.md).
 
 ---
 

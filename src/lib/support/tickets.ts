@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
+import { isSupportConversationEnabled } from './availability'
 
 const ticketInput = z.object({
   subject: z.string().trim().min(5).max(120),
@@ -50,6 +51,7 @@ export async function createMemberSupportTicket(userId: string, input: unknown) 
 
 /** Admin-only call site must authenticate before invoking this helper. */
 export async function updateAdminSupportTicket(input: unknown) {
+  if (isSupportConversationEnabled()) throw new SupportTicketError('Open the conversation to append a response.', 409, 'USE_CONVERSATION')
   const parsed = adminUpdate.safeParse(input)
   if (!parsed.success) throw new SupportTicketError('Review the response and reload the ticket.', 400, 'INVALID_INPUT')
   const { id, updatedAt, status, response } = parsed.data
