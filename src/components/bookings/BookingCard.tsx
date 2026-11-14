@@ -1,5 +1,7 @@
 "use client"
 
+import Link from 'next/link'
+import { memberReceiptHref } from '@/lib/invoices/viewer-link'
 import type { NormalizedBooking } from '@/app/dashboard/bookings/page'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -37,7 +39,10 @@ export default function BookingCard({ booking, onReschedule, onCancel, onReviewS
           <div className="font-medium">{serviceName}</div>
           <div className="text-sm text-muted-foreground">with {healerName}</div>
           <div className="text-sm">{formatLocal(startIso)}</div>
-          <a className="text-sm underline" href={`/api/bookings/${encodeURIComponent(booking.id)}/calendar`}>Download calendar</a>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <a className="underline" href={`/api/bookings/${encodeURIComponent(booking.id)}/calendar`}>Download calendar</a>
+            {booking.receiptId && <Link className="underline" href={memberReceiptHref(booking.receiptId)}>View session receipt</Link>}
+          </div>
           {meeting ? <div><a className="inline-flex rounded-md border px-3 py-2 text-sm font-medium focus-ring" href={meeting} target="_blank" rel="noopener noreferrer">Join session</a></div>
             : ['CONFIRMED', 'RESCHEDULED'].includes(status) && !booking.needsConfirmation ? <p className="text-sm text-muted-foreground">Your practitioner will add the session link here.</p> : null}
           <div className={cn('text-xs inline-flex rounded px-2 py-0.5 border',

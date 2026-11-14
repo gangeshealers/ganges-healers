@@ -16,6 +16,7 @@ import { safeMeetingLink } from '@/lib/bookings/session-delivery'
 
 type ApiBooking = {
   id: string
+  receiptId?: string | null
   reviewVersion?: string
   cancellationRefund?: unknown
   needsConfirmation?: boolean
@@ -35,6 +36,7 @@ type ApiBooking = {
 
 export type NormalizedBooking = {
   id: string
+  receiptId?: string | null
   reviewVersion?: string
   cancellationRefund?: CancellationRefund
   serviceSlug: string
@@ -100,6 +102,7 @@ export default function MyBookingsPage() {
             healerName: b.healer?.user?.name || 'Healer',
             startIso: start.toISOString(),
             status,
+            receiptId: b.receiptId || null,
             meetingLink: safeMeetingLink(b.meetingLink),
             isCancelable: active && hoursUntil >= 24,
             isReschedulable: active && hoursUntil >= 24,

@@ -1,9 +1,42 @@
 'use client'
 
-import { useEffect, useRef, useState, useTransition, type ComponentProps, type FormEvent, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, useTransition, type ComponentProps, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 
-type SaveResult = { error?: string; reloadRequired?: boolean }
+type SaveResult = { error?: string; reloadRequired?: boolean; savedVersion?: string }
+
+const EditorGroup = createContext<{ begin: () => boolean; finish: (savedVersion?: string) => void } | null>(null)
+
+/** Keep sibling forms on one reviewed record in sync with its server-rendered version. */
+export function CatalogEditorGroup({ version, children, className }: { version: string; children: ReactNode; className?: string }) {
+  const submitting = useRef(false)
+  const [pending, setPending] = useState(false)
+  const [replacedVersion, setReplacedVersion] = useState<string | null>(null)
+  const refreshing = replacedVersion === version
+
+  function begin() {
+    if (submitting.current || refreshing) return false
+    submitting.current = true
+    setPending(true)
+    return true
+  }
+
+  function finish(savedVersion?: string) {
+    // A server action can resolve before its revalidated page is committed.
+    setReplacedVersion(savedVersion && savedVersion !== version ? version : null)
+    submitting.current = false
+    setPending(false)
+  }
+
+  return (
+    <EditorGroup.Provider value={{ begin, finish }}>
+      <fieldset disabled={pending || refreshing} aria-busy={pending || refreshing} className={className}>
+        {children}
+      </fieldset>
+      {refreshing && <button type="button" className="text-sm underline" onClick={() => window.location.reload()}>Reload updated profile</button>}
+    </EditorGroup.Provider>
+  )
+}
 
 export function CatalogEditor({ action, children, item, create = false, submitLabel, compact = false, submitVariant = 'default' }: {
   action: (data: FormData) => Promise<SaveResult>
@@ -19,26 +52,30 @@ export function CatalogEditor({ action, children, item, create = false, submitLa
   useEffect(() => setHydrated(true), [])
   const [pending, startTransition] = useTransition()
   const saving = useRef(false)
+  const group = useContext(EditorGroup)
   // Preserve native server-action submission before the editor hydrates.
   const formAction: (data: FormData) => void = action
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (saving.current) return
+    if (saving.current || (group && !group.begin())) return
 
     const form = event.currentTarget
     const data = new FormData(form)
     saving.current = true
     setResult(null)
     startTransition(async () => {
+      let savedVersion: string | undefined
       try {
         const response = await action(data)
+        savedVersion = response.savedVersion
         if (!response.error && create) form.reset()
         setResult(response)
       } catch {
         setResult({ error: `The ${item.toLowerCase()} could not be saved. Try again.` })
       } finally {
         saving.current = false
+        group?.finish(savedVersion)
       }
     })
   }

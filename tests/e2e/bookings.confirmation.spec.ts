@@ -62,7 +62,7 @@ test('saved appointment payment retains its price and proof through a lost confi
   const db = new PrismaClient({ datasources: { db: { url: settings.environment.DATABASE_URL } } })
   const token = crypto.randomUUID(), orderId = `order_${token}`, paymentId = `pay_${token}`
   const signature = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!).update(`${orderId}|${paymentId}`).digest('hex')
-  let userId = '', serviceId = '', originalPrice = 0
+  let userId = '', otherUserId = '', serviceId = '', originalPrice = 0
   try {
     const login = await page.goto(`/api/test/login?role=USER&email=paid-confirm-${token}@example.test`)
     expect(login?.ok()).toBeTruthy()
@@ -103,8 +103,36 @@ test('saved appointment payment retains its price and proof through a lost confi
     expect(await db.payment.count({ where: { bookingId: booking.id } })).toBe(1)
     expect(await db.bookingEmail.count({ where: { bookingId: booking.id, kind: 'CONFIRMED', status: 'PENDING' } })).toBe(1)
     await expect.poll(() => db.funnelEvent.count({ where: { userId, type: 'purchase' } })).toBe(1)
+    const invoiceForBooking = () => db.invoice.findFirst({ where: { payment: { bookingId: booking.id, userId } } })
+    await expect.poll(invoiceForBooking).not.toBeNull()
+    const invoice = (await invoiceForBooking())!
+    await page.reload()
+    await pastTab.click()
+    await page.getByRole('link', { name: 'View session receipt' }).click()
+    const receiptPath = `/dashboard/billing/${invoice.id}`
+    await expect(page).toHaveURL(url => url.pathname === receiptPath)
+    await expect(page.getByRole('heading', { name: invoice.invoiceNumber })).toBeVisible()
+    await expect(page.getByText(`paid-confirm-${token}@example.test`)).toBeVisible()
+    const charge = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(booking.pricePaise / 100)
+    await expect(page.getByText('Invoice total').locator('..')).toContainText(charge)
+    await expect(page.getByRole('button', { name: 'Print' })).toBeVisible()
+    await page.emulateMedia({ media: 'print' })
+    await expect(page.getByRole('heading', { name: invoice.invoiceNumber })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Print' })).toBeHidden()
+    await expect(page.getByRole('contentinfo')).toBeHidden()
+    await page.emulateMedia({ media: 'screen' })
+    await page.getByRole('link', { name: 'Back to billing' }).click()
+    await expect(page.getByRole('link', { name: 'View invoice' })).toHaveAttribute('href', receiptPath)
+
+    const otherLogin = await page.goto(`/api/test/login?role=USER&email=receipt-other-${token}@example.test`)
+    expect(otherLogin?.ok()).toBeTruthy()
+    otherUserId = (await otherLogin!.json()).userId
+    await page.goto(receiptPath)
+    await expect(page.getByText('Page not found', { exact: true })).toBeVisible()
+    await expect(page.getByText(`paid-confirm-${token}@example.test`)).toHaveCount(0)
   } finally {
     try {
+      if (otherUserId) await db.user.deleteMany({ where: { id: otherUserId } })
       if (serviceId) await db.service.update({ where: { id: serviceId }, data: { price: originalPrice } })
       if (userId) { await db.activityLog.deleteMany({ where: { userId } }); await db.funnelEvent.deleteMany({ where: { userId } }); await db.user.deleteMany({ where: { id: userId } }) }
     } finally { await db.$disconnect() }

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { GET as listHealer } from '@/app/api/healer/bookings/route'
@@ -6,10 +6,13 @@ import { PATCH } from '@/app/api/healer/bookings/[id]/route'
 import { GET as listCustomer } from '@/app/api/bookings/route'
 import { GET as detailCustomer } from '@/app/api/bookings/[id]/route'
 import { GET as calendar } from '@/app/api/bookings/[id]/calendar/route'
+import { POST as paymentWebhook } from '@/app/api/payments/webhook/route'
+import { uploadInvoicePDF } from '@/lib/invoices/storage'
 import { lockTransaction } from '@/lib/db/locks'
 
 let mockActor: { user: { id: string; role: string } } | null
 jest.mock('@/lib/auth', () => ({ auth: jest.fn(async () => mockActor) }))
+jest.mock('@/lib/invoices/storage', () => ({ uploadInvoicePDF: jest.fn() }))
 const users: string[] = [], healers: string[] = []
 let serviceId = '', bookingId = ''
 const request = (body: object) => new NextRequest('http://localhost/api/healer/bookings/booking', { method: 'PATCH', body: JSON.stringify(body) })
@@ -51,6 +54,69 @@ test('an owned session link reaches customer bookings and private calendar witho
   expect((await listed.json()).data.find((row: { id: string }) => row.id === bookingId)).toMatchObject({ meetingLink: 'https://meeting.example.test/session' })
   const exported = await calendar(new Request('http://localhost/calendar'), params())
   expect(await exported.text()).toContain('URL:https://meeting.example.test/session')
+})
+
+test('lists the issued session receipt only when its payment belongs to the booking member', async () => {
+  mockActor = { user: { id: users[2], role: 'USER' } }
+  const listedBooking = async () => {
+    const response = await listCustomer(new NextRequest('http://localhost/api/bookings'))
+    expect(response.status).toBe(200)
+    return (await response.json()).data.find((row: { id: string }) => row.id === bookingId)
+  }
+  const payment = await prisma.payment.update({ where: { bookingId }, data: { userId: users[2], type: 'SESSION' } })
+  expect((await listedBooking()).receiptId).toBeNull()
+  const invoice = await prisma.invoice.create({ data: {
+    paymentId: payment.id, invoiceNumber: `INV-${randomUUID()}`, billTo: {}, lineItems: [],
+    subtotalPaise: 1000, totalPaise: 1000, pdfUrl: '',
+  } })
+  expect(await listedBooking()).toMatchObject({ receiptId: invoice.id })
+  expect((await listedBooking()).payment).toEqual({ status: 'success', amountPaise: 1000 })
+  await prisma.payment.update({ where: { id: payment.id }, data: { type: null } })
+  expect((await listedBooking()).receiptId).toBe(invoice.id)
+  await prisma.payment.update({ where: { id: payment.id }, data: { userId: users[1] } })
+  expect((await listedBooking()).receiptId).toBeNull()
+  await prisma.payment.update({ where: { id: payment.id }, data: { userId: users[2], type: 'STORE' } })
+  expect((await listedBooking()).receiptId).toBeNull()
+})
+
+test('a captured session without a browser callback still issues one printable receipt during a PDF outage', async () => {
+  const previousFlag = process.env.PAYMENT_EVENTS_ENABLED
+  const previousSecret = process.env.RAZORPAY_WEBHOOK_SECRET
+  const secret = 'test-booking-receipt-webhook'
+  try {
+    process.env.PAYMENT_EVENTS_ENABLED = 'true'
+    process.env.RAZORPAY_WEBHOOK_SECRET = secret
+    jest.mocked(uploadInvoicePDF).mockRejectedValueOnce(new Error('test storage outage'))
+    await prisma.booking.update({ where: { id: bookingId }, data: { status: 'PENDING' } })
+    const orderId = `order_${randomUUID()}`, gatewayPaymentId = `pay_${randomUUID()}`
+    const payment = await prisma.payment.update({ where: { bookingId }, data: {
+      userId: users[2], type: 'SESSION', status: 'pending', statusEnum: 'PENDING', gatewayOrderId: orderId,
+    } })
+    const body = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: {
+      id: gatewayPaymentId, order_id: orderId, amount: 1000, currency: 'INR', status: 'captured',
+    } } } })
+    const signature = createHmac('sha256', secret).update(body).digest('hex')
+    const callback = () => paymentWebhook(new Request('http://localhost/api/payments/webhook', {
+      method: 'POST', body, headers: { 'x-razorpay-signature': signature },
+    }))
+    expect((await callback()).status).toBe(200)
+    expect((await callback()).status).toBe(200)
+    expect(await fresh()).toMatchObject({ status: 'CONFIRMED' })
+    const invoices = await prisma.invoice.findMany({ where: { paymentId: payment.id } })
+    expect(invoices).toHaveLength(1)
+    expect(invoices[0]).toMatchObject({ pdfUrl: '', totalPaise: 1000, lineItems: [{ description: 'Delivery Service Session', amountPaise: 1000 }] })
+    expect(uploadInvoicePDF).toHaveBeenCalledTimes(1)
+    expect(await prisma.bookingEmail.count({ where: { bookingId, kind: 'CONFIRMED' } })).toBe(1)
+    mockActor = { user: { id: users[2], role: 'USER' } }
+    const response = await listCustomer(new NextRequest('http://localhost/api/bookings'))
+    expect((await response.json()).data.find((row: { id: string }) => row.id === bookingId).receiptId).toBe(invoices[0].id)
+  } finally {
+    jest.mocked(uploadInvoicePDF).mockReset()
+    if (previousFlag === undefined) delete process.env.PAYMENT_EVENTS_ENABLED
+    else process.env.PAYMENT_EVENTS_ENABLED = previousFlag
+    if (previousSecret === undefined) delete process.env.RAZORPAY_WEBHOOK_SECRET
+    else process.env.RAZORPAY_WEBHOOK_SECRET = previousSecret
+  }
 })
 
 test('foreign healers, ordinary users, missing sessions and revoked roles cannot manage another appointment', async () => {

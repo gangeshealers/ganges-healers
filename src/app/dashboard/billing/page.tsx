@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import Link from 'next/link'
-import { invoiceViewerHref } from '@/lib/invoices/viewer-link'
+import { memberReceiptHref } from '@/lib/invoices/viewer-link'
 import { BILLING_PAGE_SIZE, BILLING_MAX_PAGE, BILLING_TYPES, billingPageHref, billingExportHref, parseBillingFilters, type BillingSearchParams } from '@/lib/invoices/billing-filters'
 
 export const dynamic = 'force-dynamic'
@@ -114,7 +114,7 @@ export default async function BillingPage({ searchParams }: { searchParams?: Pro
                     <td className="px-4 py-3">{invoice.payment.type ? typeLabels[invoice.payment.type] : 'Other'}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{currency.format(invoice.totalPaise / 100)}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
-                      <Link href={invoiceViewerHref({ invoiceNumber: invoice.invoiceNumber, id: invoice.id })} className="font-semibold text-primary underline-offset-4 hover:underline">
+                      <Link href={memberReceiptHref(invoice.id)} className="font-semibold text-primary underline-offset-4 hover:underline">
                         View invoice
                       </Link>
                     </td>

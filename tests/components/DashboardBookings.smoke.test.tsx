@@ -10,7 +10,7 @@ const mockBookings = {
   success: true,
   data: [
     {
-      id: 'future-1', userId: 'u1', healerId: 'h1', serviceId: 's1',
+      id: 'future-1', receiptId: 'invoice/1', userId: 'u1', healerId: 'h1', serviceId: 's1',
       scheduledAt: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
       status: 'CONFIRMED',
       healer: { user: { name: 'Healer A' } },
@@ -48,7 +48,7 @@ test('renders Upcoming and Past tabs and splits items', async () => {
 
   // Upcoming contains the future item
   expect(await screen.findByText('Service A')).toBeInTheDocument()
-  // Past tab content should include past item when selected
+  expect(screen.getByRole('link', { name: 'View session receipt' })).toHaveAttribute('href', '/dashboard/billing/invoice%2F1')
 })
 
 test('server confirmation state overrides a legacy success string for a rescheduled appointment', async () => {
@@ -59,8 +59,9 @@ test('server confirmation state overrides a legacy success string for a reschedu
 })
 
 test('an explicit free request shows practitioner waiting guidance without a checkout action', async () => {
-  jest.mocked(global.fetch).mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: [{ ...mockBookings.data[0], status: 'PENDING', needsConfirmation: true, pricePaise: 0, payment: null }] }), { status: 200 }))
+  jest.mocked(global.fetch).mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: [{ ...mockBookings.data[0], status: 'PENDING', needsConfirmation: true, pricePaise: 0, payment: null, receiptId: null }] }), { status: 200 }))
   render(<MyBookingsPage />)
   expect(await screen.findByRole('status')).toHaveTextContent('No payment or session credit is required')
+  expect(screen.queryByRole('link', { name: 'View session receipt' })).toBeNull()
   expect(screen.queryByRole('button', { name: /payment|session credit/i })).not.toBeInTheDocument()
 })
