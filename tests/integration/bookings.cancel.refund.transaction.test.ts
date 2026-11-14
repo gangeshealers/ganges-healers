@@ -227,6 +227,33 @@ beforeEach(() => {
 })
 
 describe('booking cancellation refund transactions', () => {
+  test('concurrent retries after a partial refund reuse the deferred intent and respect the original cancellation band', async () => {
+    const { booking, payment } = await createPaidBooking()
+    const cancelledAt = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    await prisma.booking.update({ where: { id: booking.id }, data: {
+      status: 'CANCELLED', updatedAt: cancelledAt, scheduledAt: new Date(cancelledAt.getTime() + 36 * 60 * 60 * 1000),
+    } })
+    const deferred = await prisma.refund.create({ data: {
+      paymentId: payment.id, amountPaise: 7500, reason: 'gateway-not-configured', status: 'UNAVAILABLE',
+    } })
+    const previous = await prisma.refund.create({ data: {
+      paymentId: payment.id, amountPaise: 2500, reason: 'other', status: 'PENDING', gatewayRefundId: `rfnd_${randomUUID()}`,
+    } })
+    expect((await sendRefund(previous.gatewayRefundId!, payment.gatewayPaymentId!, 2500)).status).toBe(200)
+
+    const replies = await Promise.all([cancel('PATCH', booking.id), cancel('DELETE', booking.id)])
+    expect(replies.map(response => response.status)).toEqual([200, 200])
+    expect(mockRefundPayment).toHaveBeenCalledTimes(1)
+    expect(mockRefundPayment).toHaveBeenCalledWith(expect.objectContaining({ amountPaise: 5000 }))
+    expect(await prisma.refund.findUniqueOrThrow({ where: { id: deferred.id } })).toMatchObject({
+      status: 'SUCCESS', reason: 'booking-cancellation', amountPaise: 5000,
+    })
+    expect(await prisma.refund.count({ where: { paymentId: payment.id } })).toBe(2)
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).statusEnum).toBe('SUCCESS')
+    const recovered = await getBooking(new NextRequest(`http://localhost/api/bookings/${booking.id}`), { params: Promise.resolve({ id: booking.id }) })
+    expect((await recovered.json()).data.cancellationRefund).toMatchObject({ band: 'HALF', refundPaise: 7500, status: 'SUCCESS' })
+  })
+
   test('commits a pending refund intent before calling the mocked gateway', async () => {
     const { booking, payment } = await createPaidBooking()
     let observedBeforeGateway: { bookingStatus: string; refundStatus: string | null; amountPaise: number } | undefined

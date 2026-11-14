@@ -467,6 +467,39 @@ describe('booking cancellation and Razorpay refunds', () => {
     expect(mockDb.refunds).toHaveLength(0)
   })
 
+  test.each(['UNAVAILABLE', 'SIMULATED'])('a %s cancellation retries only the balance after a separate partial refund', async status => {
+    const booking = seedBooking({ status: 'CANCELLED', hoursUntil: 36 })
+    const deferred = await mockPrisma.refund.create({ data: {
+      paymentId: mockDb.payments[0].id, amountPaise: 7500, status,
+      reason: status === 'SIMULATED' ? null : 'gateway-not-configured',
+    } })
+    mockDb.refunds.push({ ...deferred, id: 'prior-refund', status: 'SUCCESS', amountPaise: 2500, reason: 'other', gatewayRefundId: 'rfnd_prior' })
+
+    const result = await cancel('PATCH', booking.id)
+    expect((await result.json()).refund).toMatchObject({ band: 'HALF', refundPaise: 5000, status: 'SUCCESS' })
+    expect(mockRefundPayment).toHaveBeenCalledWith(expect.objectContaining({ amountPaise: 5000 }))
+    expect(mockDb.refunds.find(row => row.id === deferred.id)).toMatchObject({ amountPaise: 5000, status: 'SUCCESS' })
+    await cancel('DELETE', booking.id)
+    expect(mockRefundPayment).toHaveBeenCalledTimes(1)
+    expect(mockDb.refunds).toHaveLength(2)
+  })
+
+  test.each([
+    ['PENDING', 1000, null, 'UNKNOWN'],
+    ['UNKNOWN', 1000, null, 'UNKNOWN'],
+    ['SUCCESS', 7500, 'rfnd_paid', 'SUCCESS'],
+    ['FAILED', 7500, 'rfnd_failed', 'FAILED'],
+  ] as const)('a separate %s refund is reconciled before a deferred cancellation can submit money', async (status, amountPaise, gatewayRefundId, expected) => {
+    const booking = seedBooking({ status: 'CANCELLED', hoursUntil: 36 })
+    const deferred = await mockPrisma.refund.create({ data: {
+      paymentId: mockDb.payments[0].id, status: 'UNAVAILABLE', amountPaise: 7500, reason: 'gateway-not-configured',
+    } })
+    mockDb.refunds.push({ ...deferred, id: 'existing-refund', status, amountPaise, gatewayRefundId, reason: 'booking-cancellation' })
+    expect((await (await cancel('PATCH', booking.id)).json()).refund.status).toBe(expected)
+    expect(mockRefundPayment).not.toHaveBeenCalled()
+    expect(deferred.status).toBe('UNAVAILABLE')
+  })
+
   test('a payment already marked refunded requires review unless a confirmed refund is stored', async () => {
     const booking = seedBooking({ payment: { status: 'refunded', statusEnum: 'REFUNDED' } })
 
