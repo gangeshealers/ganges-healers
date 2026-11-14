@@ -166,6 +166,11 @@ wait for activity/analytics side effects rather than forcing Jest to exit.
   - `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`
   - Booking cancellation refunds use `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`;
     see the booking refund contract and [invoice operations notes](./invoices.md).
+    When a cancellation is retried after credentials become available, the application
+    checks the payment's saved refund history first. Confirmed refunds reduce the
+    balance owed under the policy at the time of cancellation. Pending or uncertain
+    outcomes must be reconciled before another submission. An eligible retry reuses
+    the original unsubmitted intent, capped at both its recorded amount and the balance.
 
 - Testing (contracts pinned by)
   - `membership.plans.api.contract.test.ts`

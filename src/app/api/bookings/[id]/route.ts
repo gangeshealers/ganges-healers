@@ -291,98 +291,9 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
       where: { paymentId: payment.id },
       orderBy: { createdAt: 'desc' },
     })
-    const simulated = refunds.find(refund =>
-      refund.amountPaise === policy.refundPaise && refundStatusFromStored(refund.status) === 'UNAVAILABLE'
-    )
-    if (simulated?.status?.toUpperCase() === 'SIMULATED' && hasRazorpayRefundCredentials()) {
-      const upgraded = await tx.refund.update({
-        where: { id: simulated.id },
-        data: { status: 'PENDING', reason: 'booking-cancellation' },
-      })
-      return {
-        booking: cancelledBooking,
-        alreadyCancelled,
-        refund: { ...baseRefund, status: 'PENDING' as const, message: cancellationRefundMessage('PENDING') },
-        refundId: upgraded.id,
-        gatewayPaymentId: payment.gatewayPaymentId,
-        action: 'SUBMIT' as const,
-        bookingId: id,
-        userId,
-      }
-    }
-    const deferredForConfiguration = refunds.find(refund =>
-      refund.reason === 'gateway-not-configured' && refund.status?.toUpperCase() === 'UNAVAILABLE'
-    )
-    if (deferredForConfiguration) {
-      if (!hasRazorpayRefundCredentials()) {
-        return {
-          booking: cancelledBooking,
-          alreadyCancelled,
-          refund: {
-            ...baseRefund,
-            refundPaise: deferredForConfiguration.amountPaise,
-            status: 'UNAVAILABLE' as const,
-            message: cancellationRefundMessage('UNAVAILABLE'),
-          },
-          bookingId: id,
-          userId,
-        }
-      }
-      const upgraded = await tx.refund.update({
-        where: { id: deferredForConfiguration.id },
-        data: { status: 'PENDING', reason: 'booking-cancellation' },
-      })
-      return {
-        booking: cancelledBooking,
-        alreadyCancelled,
-        refund: {
-          ...baseRefund,
-          refundPaise: deferredForConfiguration.amountPaise,
-          status: 'PENDING' as const,
-          message: cancellationRefundMessage('PENDING'),
-        },
-        refundId: upgraded.id,
-        gatewayPaymentId: payment.gatewayPaymentId,
-        action: 'SUBMIT' as const,
-        bookingId: id,
-        userId,
-      }
-    }
-
-    const existingCancellationAttempt = refunds.find(refund =>
-      refund.reason === 'booking-cancellation'
-      && refund.amountPaise === policy.refundPaise
-      && ['PENDING', 'UNKNOWN', 'FAILED'].includes(refundStatusFromStored(refund.status))
-    )
-    if (existingCancellationAttempt) {
-      const status = refundStatusFromStored(existingCancellationAttempt.status)
-      const refundStatus: 'PENDING' | 'UNKNOWN' | 'FAILED' = status === 'FAILED'
-        ? 'FAILED'
-        : status === 'PENDING' && existingCancellationAttempt.gatewayRefundId
-          ? 'PENDING'
-          : 'UNKNOWN'
-      return {
-        booking: cancelledBooking,
-        alreadyCancelled,
-        refund: {
-          ...baseRefund,
-          status: refundStatus,
-          message: cancellationRefundMessage(refundStatus),
-        },
-        refundId: existingCancellationAttempt.id,
-        gatewayRefundId: existingCancellationAttempt.gatewayRefundId || undefined,
-        gatewayPaymentId: payment.gatewayPaymentId,
-        paymentId: payment.id,
-        action: REFUND_IN_FLIGHT_STATUSES.has(status) && existingCancellationAttempt.gatewayRefundId ? 'FETCH' as const : undefined,
-        bookingId: id,
-        userId,
-      }
-    }
-
     const confirmedPaise = refunds.reduce((total, refund) =>
-      ['SUCCESS'].includes(refundStatusFromStored(refund.status)) ? total + refund.amountPaise : total, 0)
+      refundStatusFromStored(refund.status) === 'SUCCESS' ? total + refund.amountPaise : total, 0)
     const inFlight = refunds.filter(refund => REFUND_IN_FLIGHT_STATUSES.has(refundStatusFromStored(refund.status)))
-    const inFlightPaise = inFlight.reduce((total, refund) => total + refund.amountPaise, 0)
     if (confirmedPaise >= policy.refundPaise) {
       return {
         booking: cancelledBooking,
@@ -392,7 +303,7 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
         userId,
       }
     }
-    if (inFlightPaise > 0) {
+    if (inFlight.length > 0) {
       const status: 'UNKNOWN' | 'PENDING' =
         inFlight.some(refund =>
           refundStatusFromStored(refund.status) === 'UNKNOWN' || !refund.gatewayRefundId
@@ -412,26 +323,15 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
       }
     }
 
-    if (alreadyCancelled) {
-      return {
-        booking: cancelledBooking,
-        alreadyCancelled,
-        refund: {
-          ...baseRefund,
-          refundPaise: policy.refundPaise,
-          status: 'UNAVAILABLE' as const,
-          message: cancellationRefundMessage('UNAVAILABLE'),
-        },
-        bookingId: id,
-        userId,
-      }
-    }
-
-    const amountPaise = policy.refundPaise - confirmedPaise
-    const existingFailed = refunds.find(refund =>
-      refund.reason === 'booking-cancellation'
-      && refund.amountPaise === amountPaise
-      && refundStatusFromStored(refund.status) === 'FAILED'
+    const remainingPaise = policy.refundPaise - confirmedPaise
+    // A saved, unsubmitted intent is a ceiling. Other refunds may have settled since it was recorded.
+    const deferred = refunds.find(refund =>
+      (refund.reason === 'gateway-not-configured' && refund.status?.toUpperCase() === 'UNAVAILABLE')
+      || (refund.status?.toUpperCase() === 'SIMULATED' && refund.amountPaise === policy.refundPaise)
+    )
+    const existingFailed = refunds.some(refund =>
+      refund.reason === 'booking-cancellation' && refundStatusFromStored(refund.status) === 'FAILED'
+      && (deferred !== undefined || refund.amountPaise === policy.refundPaise || refund.amountPaise === remainingPaise)
     )
     if (existingFailed) {
       return {
@@ -442,10 +342,16 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
         userId,
       }
     }
+    if ((alreadyCancelled && !deferred) || (deferred && (deferred.gatewayRefundId || deferred.amountPaise <= 0))) {
+      return { booking: cancelledBooking, alreadyCancelled, refund: refundRequiresReview(policy), bookingId: id, userId }
+    }
+    const amountPaise = deferred ? Math.min(deferred.amountPaise, remainingPaise) : remainingPaise
     if (!hasRazorpayRefundCredentials()) {
-      await tx.refund.create({
-        data: { paymentId: payment.id, amountPaise, status: 'UNAVAILABLE', reason: 'gateway-not-configured' },
-      })
+      if (!deferred) {
+        await tx.refund.create({
+          data: { paymentId: payment.id, amountPaise, status: 'UNAVAILABLE', reason: 'gateway-not-configured' },
+        })
+      }
       return {
         booking: cancelledBooking,
         alreadyCancelled,
@@ -460,9 +366,10 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
       }
     }
 
-    const refundIntent = await tx.refund.create({
-      data: { paymentId: payment.id, amountPaise, status: 'PENDING', reason: 'booking-cancellation' },
-    })
+    const intent = { amountPaise, status: 'PENDING', reason: 'booking-cancellation' }
+    const refundIntent = deferred
+      ? await tx.refund.update({ where: { id: deferred.id }, data: intent })
+      : await tx.refund.create({ data: { paymentId: payment.id, ...intent } })
     return {
       booking: cancelledBooking,
       alreadyCancelled,
