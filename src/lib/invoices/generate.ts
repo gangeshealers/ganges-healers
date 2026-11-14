@@ -3,6 +3,7 @@ import { generateInvoicePDF } from './pdf'
 import { uploadInvoicePDF } from './storage'
 import crypto from 'crypto'
 import { emailService } from '@/lib/email/email.service'
+import { runSideEffect } from '@/lib/runSideEffect'
 
 interface GenerateArgs {
   paymentId: string
@@ -19,11 +20,12 @@ function buildInvoiceNumber(date: Date) {
 export async function generateInvoiceForPayment(args: GenerateArgs) {
   const { paymentId, force, sendEmail = true } = args
   console.log('[invoice][generate][start]', { paymentId, force })
-  // Idempotency: legacy Payment.invoiceUrl fast path via raw SQL (column exists but not in Prisma model)
+  // Idempotency: the legacy column is optional; JSONB row lookup avoids missing-column errors.
   if (!force) {
     try {
       const rows: Array<{ invoiceUrl: string | null }> = await prisma.$queryRaw`
-        SELECT "invoiceUrl" FROM "Payment" WHERE "id" = ${paymentId} LIMIT 1
+        SELECT to_jsonb(p)->>'invoiceUrl' AS "invoiceUrl"
+        FROM "Payment" p WHERE p."id" = ${paymentId} LIMIT 1
       `
       const legacyUrl = rows?.[0]?.invoiceUrl
       if (legacyUrl) {
@@ -147,12 +149,12 @@ export async function generateInvoiceForPayment(args: GenerateArgs) {
   }
 
   if (sendEmail && pdfUrl) {
-    emailService.sendInvoiceEmail({
+    await runSideEffect(emailService.sendInvoiceEmail({
       to: billToEmail,
       invoiceNumber: invoiceRecord.invoiceNumber,
       amountPaise: totalPaise,
       link: pdfUrl
-    }).catch(e => console.warn('[invoice][generate][email_async_failed]', { paymentId, error: (e as Error).message }))
+    }).catch(e => console.warn('[invoice][generate][email_async_failed]', { paymentId, errorType: e instanceof Error ? 'Error' : typeof e })))
   }
 
   console.log('[invoice][generate][created]', { paymentId, invoiceNumber: invoiceRecord.invoiceNumber, pdf: !!pdfUrl })

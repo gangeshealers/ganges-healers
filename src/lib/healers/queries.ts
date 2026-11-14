@@ -1,4 +1,16 @@
 import { prisma } from '@/lib/prisma'
+import { cache } from 'react'
+import type { Prisma } from '@prisma/client'
+
+/** Share active service names within a server render without caching publication across requests. */
+export const getHealerServiceOptions = cache(async () => prisma.service.findMany({ where: { isActive: true }, select: { slug: true, name: true } }))
+
+export type HealerDirectorySort = 'default' | 'experience'
+
+/** Unknown sort values must leave the directory in its existing stable order. */
+export function parseHealerDirectorySort(value: unknown): HealerDirectorySort {
+  return value === 'experience' ? 'experience' : 'default'
+}
 
 export type HealerListItem = {
   id: string
@@ -7,6 +19,7 @@ export type HealerListItem = {
   title: string | null
   yearsExperience: number
   ratingAvg: number
+  reviewCount: number
   avatarUrl: string | null
   shortBio: string
   services: Array<{ slug: string; title: string }>
@@ -19,6 +32,21 @@ export type HealerDetail = HealerListItem & {
   gallery?: Array<string>
 }
 
+/** Read public rating summaries for the selected practitioners without loading review bodies. */
+export async function getHealerReviewSummaries(healerIds: string[]) {
+  if (healerIds.length === 0) return new Map<string, { ratingAvg: number; reviewCount: number }>()
+  const summaries = await prisma.review.groupBy({
+    by: ['healerId'],
+    where: { healerId: { in: [...new Set(healerIds)] } },
+    _avg: { rating: true },
+    _count: { rating: true },
+  })
+  return new Map(summaries.map(summary => [summary.healerId, {
+    ratingAvg: summary._avg.rating ?? 0,
+    reviewCount: summary._count.rating,
+  }]))
+}
+
 function specializationKeyFromServiceName(name: string) {
   const map: Record<string, string> = {
     'Yoga Therapy': 'Yoga',
@@ -28,18 +56,19 @@ function specializationKeyFromServiceName(name: string) {
   return map[name] ?? name
 }
 
-export async function listHealers(params?: { serviceSlug?: string; q?: string; limit?: number; cursor?: string }): Promise<{ items: HealerListItem[]; nextCursor: string | null }> {
-  const limit = Math.max(1, Math.min(params?.limit ?? 20, 50))
+export async function listHealers(params?: { serviceSlug?: string; q?: string; limit?: number; cursor?: string; sort?: HealerDirectorySort }): Promise<{ items: HealerListItem[]; nextCursor: string | null }> {
+  const limit = Math.max(1, Math.min(Math.trunc(params?.limit !== undefined && Number.isFinite(params.limit) ? params.limit : 20), 50))
   const q = params?.q?.trim()
 
   // Optional filter by serviceSlug → translate to specialization key via service name
   let specializationFromService: string | undefined
   if (params?.serviceSlug) {
-    const svc = await prisma.service.findUnique({ where: { slug: params.serviceSlug }, select: { name: true } })
-    if (svc?.name) specializationFromService = specializationKeyFromServiceName(svc.name)
+    const svc = await prisma.service.findUnique({ where: { slug: params.serviceSlug, isActive: true }, select: { name: true } })
+    if (!svc?.name) return { items: [], nextCursor: null }
+    specializationFromService = specializationKeyFromServiceName(svc.name)
   }
 
-  const where: any = { isActive: true } // eslint-disable-line @typescript-eslint/no-explicit-any
+  const where: any = { isActive: true, isVerified: true } // eslint-disable-line @typescript-eslint/no-explicit-any
   if (q) {
     where.OR = [
       { bio: { contains: q, mode: 'insensitive' } },
@@ -53,23 +82,29 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
   }
 
   const cursor = params?.cursor ? { id: params.cursor } : undefined
-  const healers = await prisma.healer.findMany({
+  const orderBy: Prisma.HealerOrderByWithRelationInput[] = params?.sort === 'experience'
+    ? [{ experienceYears: 'desc' }, { id: 'asc' }]
+    : [{ id: 'asc' }]
+  const page = await prisma.healer.findMany({
     where,
-    orderBy: { id: 'asc' },
+    orderBy,
     ...(cursor ? { cursor, skip: 1 } : {}),
-    take: limit,
+    take: limit + 1,
     select: {
       id: true,
       bio: true,
       experienceYears: true,
-      rating: true,
       specializations: true,
       user: { select: { name: true, image: true } },
     },
   })
+  const healers = page.slice(0, limit)
 
   // Fetch all services once to map specializations → services
-  const allServices = await prisma.service.findMany({ select: { slug: true, name: true } })
+  const [allServices, ratings] = await Promise.all([
+    getHealerServiceOptions(),
+    getHealerReviewSummaries(healers.map(healer => healer.id)),
+  ])
 
   const items: HealerListItem[] = healers.map((h) => {
     const name = h.user?.name || 'Healer'
@@ -86,26 +121,26 @@ export async function listHealers(params?: { serviceSlug?: string; q?: string; l
       name,
       title,
       yearsExperience: h.experienceYears ?? 0,
-      ratingAvg: Number(h.rating ?? 0),
+      ratingAvg: ratings.get(h.id)?.ratingAvg ?? 0,
+      reviewCount: ratings.get(h.id)?.reviewCount ?? 0,
       avatarUrl: h.user?.image || null,
       shortBio: (h.bio || '').slice(0, 180),
       services,
     }
   })
 
-  const nextCursor = healers.length === limit ? healers[healers.length - 1].id : null
+  const nextCursor = page.length > limit ? healers[healers.length - 1].id : null
   return { items, nextCursor }
 }
 
 export async function getHealerBySlug(slug: string): Promise<HealerDetail | null> {
   // slug is healer.id for now
   const h = await prisma.healer.findUnique({
-    where: { id: slug },
+    where: { id: slug, isActive: true, isVerified: true },
     select: {
       id: true,
       bio: true,
       experienceYears: true,
-      rating: true,
       specializations: true,
       certifications: true,
       user: { select: { name: true, image: true } },
@@ -113,7 +148,11 @@ export async function getHealerBySlug(slug: string): Promise<HealerDetail | null
   })
   if (!h) return null
 
-  const allServices = await prisma.service.findMany({ select: { slug: true, name: true } })
+  const [allServices, ratings] = await Promise.all([
+    getHealerServiceOptions(),
+    getHealerReviewSummaries([h.id]),
+  ])
+  const rating = ratings.get(h.id)
   const services = (h.specializations || []).flatMap((spec) =>
     allServices
       .filter((s) => s.name.toLowerCase().includes(spec.toLowerCase()))
@@ -121,18 +160,25 @@ export async function getHealerBySlug(slug: string): Promise<HealerDetail | null
       .map((s) => ({ slug: s.slug, title: s.name }))
   )
 
+  const certifications = Array.isArray(h.certifications) ? h.certifications.flatMap(value => {
+    const name = typeof value === 'string' ? value
+      : value && typeof value === 'object' && !Array.isArray(value) && typeof value.name === 'string' ? value.name : ''
+    return name.trim() ? [name.trim()] : []
+  }) : []
+
   return {
     id: h.id,
     slug: h.id,
     name: h.user?.name || 'Healer',
     title: h.specializations?.[0] ? `${h.specializations[0]} Healer` : null,
     yearsExperience: h.experienceYears ?? 0,
-    ratingAvg: Number(h.rating ?? 0),
+    ratingAvg: rating?.ratingAvg ?? 0,
+    reviewCount: rating?.reviewCount ?? 0,
     avatarUrl: h.user?.image || null,
     shortBio: (h.bio || '').slice(0, 180),
     services,
     longBio: h.bio || '',
-  certifications: Array.isArray(h.certifications) ? (h.certifications as unknown[]).map((x) => String(x)) : [],
+    certifications: [...new Set(certifications)],
     languages: [],
     gallery: [],
   }

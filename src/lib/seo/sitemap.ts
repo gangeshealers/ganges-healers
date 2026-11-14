@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { canonicalOf } from '@/config/site'
+import { LEGAL_DOCUMENT_SLUGS } from '@/lib/legal/routes'
 
 export type SitemapItem = {
   url: string
@@ -16,12 +17,15 @@ export async function getSitemapItems(): Promise<SitemapItem[]> {
 
   const [services, programs, healers, courses, products, blogPosts, audioTracks] = await Promise.all([
     safe(() => prisma.service.findMany({
+      where: { isActive: true },
       select: { slug: true, updatedAt: true },
     })) as Promise<Array<{ slug?: string; updatedAt?: Date | null }>>,
     safe(() => prisma.program.findMany({
+      where: { isActive: true },
       select: { slug: true, updatedAt: true },
     })) as Promise<Array<{ slug?: string; updatedAt?: Date | null }>>,
     safe(() => prisma.healer.findMany({
+      where: { isActive: true, isVerified: true },
       select: { id: true, updatedAt: true },
     })),
     safe(() => prisma.course.findMany({
@@ -33,10 +37,11 @@ export async function getSitemapItems(): Promise<SitemapItem[]> {
       select: { slug: true, updatedAt: true },
     })),
     safe(() => prisma.blogPost.findMany({
-      where: { published: true },
+      where: { published: true, slug: { notIn: LEGAL_DOCUMENT_SLUGS } },
       select: { slug: true, updatedAt: true },
     })),
     safe(() => prisma.audioTrack.findMany({
+      where: { isPublished: true },
       select: { slug: true, createdAt: true },
     })),
   ])

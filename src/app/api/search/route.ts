@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { cached } from '@/lib/cache'
+import { POLICY_PAGES } from '@/lib/legal/routes'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,7 +22,7 @@ function toTsquery(q: string): string {
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const q = searchParams.get('q')?.trim()
+    const q = searchParams.get('q')?.trim().slice(0, 200)
 
     if (!q || q.length < 2) {
       return NextResponse.json({
@@ -52,8 +52,30 @@ export async function GET(req: Request) {
       })
     }
 
-    const results = await cached(`search:${tsquery}`, async () => {
-      const [services, healers, programs, courses, products, blog, audio] =
+    const freshBlog = prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; excerpt: string | null; createdAt: Date }>>(
+      `SELECT id, slug, title, excerpt, "createdAt" FROM "BlogPost"
+       WHERE published = true AND slug NOT IN ($2, $3) AND "searchVector" @@ to_tsquery('english', $1)
+       ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
+       LIMIT 10`,
+      tsquery, POLICY_PAGES.privacy.slug, POLICY_PAGES.terms.slug,
+    )
+    const freshCourses = prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; pricePaise: number; imageUrl: string | null }>>(
+      `SELECT id, slug, title, "pricePaise", "imageUrl" FROM "Course"
+       WHERE "isActive" = true AND "searchVector" @@ to_tsquery('english', $1)
+       ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
+       LIMIT 10`,
+      tsquery,
+    )
+    const freshAudio = prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; category: string; duration: number; isPremium: boolean }>>(
+      `SELECT id, slug, title, category, duration, "isPremium" FROM "AudioTrack"
+       WHERE "isPublished" = true AND "searchVector" @@ to_tsquery('english', $1)
+       ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
+       LIMIT 10`, tsquery,
+    )
+    // Do not cache active/publication state: staff can withdraw content at any time.
+    // Reading these groups fresh avoids stale suggestions on other server instances.
+    const freshCatalogs = (async () => {
+      const [services, healers, programs, products] =
       await Promise.all([
         prisma.$queryRawUnsafe<Array<{ id: string; slug: string; name: string; category: string; tagline: string | null }>>(
           `SELECT id, slug, name, category, tagline FROM "Service"
@@ -65,7 +87,7 @@ export async function GET(req: Request) {
         prisma.$queryRawUnsafe<Array<{ id: string; bio: string | null; specializations: string[]; userName: string | null; userImage: string | null }>>(
           `SELECT h.id, h.bio, h.specializations, u.name AS "userName", u.image AS "userImage"
            FROM "Healer" h JOIN "User" u ON h."userId" = u.id
-           WHERE h."isActive" = true AND (
+           WHERE h."isActive" = true AND h."isVerified" = true AND (
              h."searchVector" @@ to_tsquery('english', $1)
              OR u.name ILIKE '%' || $2 || '%'
            )
@@ -80,37 +102,19 @@ export async function GET(req: Request) {
           tsquery
         ),
         prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; pricePaise: number; imageUrl: string | null }>>(
-          `SELECT id, slug, title, "pricePaise", "imageUrl" FROM "Course"
-           WHERE "isActive" = true AND "searchVector" @@ to_tsquery('english', $1)
-           ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
-           LIMIT 10`,
-          tsquery
-        ),
-        prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; pricePaise: number; imageUrl: string | null }>>(
           `SELECT id, slug, title, "pricePaise", "imageUrl" FROM "Product"
            WHERE "isActive" = true AND "searchVector" @@ to_tsquery('english', $1)
            ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
            LIMIT 10`,
           tsquery
         ),
-        prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; excerpt: string | null; createdAt: Date }>>(
-          `SELECT id, slug, title, excerpt, "createdAt" FROM "BlogPost"
-           WHERE published = true AND "searchVector" @@ to_tsquery('english', $1)
-           ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
-           LIMIT 10`,
-          tsquery
-        ),
-        prisma.$queryRawUnsafe<Array<{ id: string; slug: string; title: string; category: string; duration: number; isPremium: boolean }>>(
-          `SELECT id, slug, title, category, duration, "isPremium" FROM "AudioTrack"
-           WHERE "searchVector" @@ to_tsquery('english', $1)
-           ORDER BY ts_rank("searchVector", to_tsquery('english', $1)) DESC
-           LIMIT 10`,
-          tsquery
-        ),
       ])
 
-      return { services, healers, programs, courses, products, blog, audio }
-    })
+      return { services, healers, programs, products }
+    })()
+
+    // Every published/active group is evaluated against the current database state.
+    const [results, blog, courses, audio] = await Promise.all([freshCatalogs, freshBlog, freshCourses, freshAudio])
 
     // Reshape healers to match previous API contract
     const shapedHealers = results.healers.map((h) => ({
@@ -124,11 +128,11 @@ export async function GET(req: Request) {
       services: results.services,
       healers: shapedHealers,
       programs: results.programs,
-      courses: results.courses,
+      courses,
       products: results.products,
-      blog: results.blog,
-      audio: results.audio,
-    })
+      blog,
+      audio,
+    }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (err) {
     console.error('[search][error]', err)
     return NextResponse.json({ error: 'Search failed' }, { status: 500 })

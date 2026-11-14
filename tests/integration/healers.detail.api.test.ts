@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest } from 'next/server'
 
-const row = { id: 'h1', user: { name: 'Alice' }, bio: 'Long biography about Alice', experienceYears: 7, rating: 4.7, specializations: ['Yoga'], certifications: ['RYT-200'] }
+const row = { isActive: true, isVerified: true, id: 'h1', user: { name: 'Alice' }, bio: 'Long biography about Alice', experienceYears: 7, rating: 4.7, specializations: ['Yoga'], certifications: ['RYT-200', { name: 'Reiki Master', year: 2015 }] }
 
 const prismaMock = {
+  review: { groupBy: async () => [] },
   healer: {
     findUnique: async ({ where }: any) => {
-      if (where?.id === row.id) return { ...row }
+      if (where?.id === row.id && where.isActive === true && where.isVerified === true && row.isVerified) return { ...row }
       return null
     },
   },
@@ -34,7 +35,17 @@ describe('Healers detail API', () => {
     expect(json.name).toBe('Alice')
     expect(typeof json.longBio).toBe('string')
     expect(Array.isArray(json.certifications)).toBe(true)
+    expect(json.certifications).toEqual(['RYT-200', 'Reiki Master'])
+    expect(json).toMatchObject({ ratingAvg: 0, reviewCount: 0 })
     expect(Array.isArray(json.services)).toBe(true)
+  })
+
+  test('GET /api/healers/[slug] returns 404 when verification is withdrawn', async () => {
+    row.isVerified = false
+    try {
+      const response = await Detail.GET(get('http://localhost/api/healers/h1'), { params: Promise.resolve({ slug: 'h1' }) })
+      expect(response.status).toBe(404)
+    } finally { row.isVerified = true }
   })
 
   test('GET /api/healers/[slug] → 404 when not found', async () => {

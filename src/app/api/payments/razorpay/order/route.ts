@@ -32,6 +32,9 @@ export async function POST(req: Request) {
   if (!booking) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (booking.userId !== session.user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   if (booking.status !== 'PENDING') return NextResponse.json({ error: 'Invalid booking state' }, { status: 400 })
+  if (booking.scheduledAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: 'The appointment start time has passed' }, { status: 400 })
+  }
 
   const amountPaise = booking.pricePaise || Math.round(booking.service.price * 100)
 
@@ -49,6 +52,10 @@ export async function POST(req: Request) {
     receipt: `bk_${booking.id}`,
     notes: { bookingId: booking.id, serviceId: booking.serviceId },
   })
+
+  if (booking.scheduledAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: 'The appointment start time has passed' }, { status: 400 })
+  }
 
   await prisma.payment.upsert({
     where: { bookingId: booking.id },

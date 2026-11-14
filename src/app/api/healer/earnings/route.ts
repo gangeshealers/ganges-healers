@@ -1,19 +1,21 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireHealer } from '@/lib/auth/requireHealer'
+import { healerActivityStart } from '@/lib/healer/payment-activity'
 
 export async function GET() {
   try {
     const { healer } = await requireHealer()
 
     const now = new Date()
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthStart = healerActivityStart('month', now)!
 
     // Total earnings (all time)
     const totalAgg = await prisma.payment.aggregate({
       where: {
         booking: { healerId: healer.id },
         statusEnum: 'SUCCESS',
+        currency: 'INR',
       },
       _sum: { amountPaise: true },
       _count: { id: true },
@@ -24,6 +26,7 @@ export async function GET() {
       where: {
         booking: { healerId: healer.id },
         statusEnum: 'SUCCESS',
+        currency: 'INR',
         createdAt: { gte: monthStart },
       },
       _sum: { amountPaise: true },

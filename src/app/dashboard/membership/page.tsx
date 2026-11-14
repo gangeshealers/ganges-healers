@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
@@ -8,16 +9,21 @@ import { invoiceViewerHref } from '@/lib/invoices/viewer-link'
 
 interface PlanBenefits { freeSessions?: number; priorityBooking?: boolean; discountPct?: number }
 interface Plan { slug: string; title: string; pricePaise: number; interval: string; benefits: PlanBenefits | null }
-interface MembershipResp { membership: { id: string; status: string; startDate?: string; nextBillingAt?: string; plan?: { title: string; pricePaise: number; interval: string } } | null; credits: { total: number } }
+interface MembershipResp { membership: { id: string; status: string; isExpired?: boolean; startDate?: string; nextBillingAt?: string; plan?: { title: string; pricePaise: number; interval: string } } | null; credits: { total: number } }
 
 export default function MembershipPage() {
-  useSession() // session data fetched for potential future reactive UI (suppresses unused var lint)
+  const { update, status } = useSession()
+  // NextAuth replaces update() when session/loading changes. Keep the fetch callback stable.
+  const updateSession = useRef(update)
+  useEffect(() => { updateSession.current = update }, [update])
   const [plans, setPlans] = useState<Plan[]>([])
   const [loadingPlans, setLoadingPlans] = useState(false)
   const [membership, setMembership] = useState<MembershipResp['membership'] | null>(null)
   const [credits, setCredits] = useState<number>(0)
   const [submitting, setSubmitting] = useState<Record<string, boolean>>({})
   const [polling, setPolling] = useState(false)
+  const [endingMembership, setEndingMembership] = useState(false)
+  const [confirmEnding, setConfirmEnding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   interface InvoiceLite { id: string; issuedAt: string; totalPaise: number; pdfUrl: string | null; invoiceNumber?: string | null; paymentId?: string | null }
   const [recentInvoices, setRecentInvoices] = useState<InvoiceLite[]>([])
@@ -30,6 +36,8 @@ export default function MembershipPage() {
         const data: MembershipResp = await res.json()
         setMembership(data.membership)
         setCredits(data.credits.total)
+        await updateSession.current()
+        return data.membership?.status
       }
     } catch { /* noop */ }
   }, [])
@@ -62,19 +70,21 @@ export default function MembershipPage() {
     load()
   }, [])
 
+  useEffect(() => { setPolling(membership?.status === 'pending') }, [membership?.status])
+
   useEffect(() => {
     if (polling) {
       const start = Date.now()
       const id = setInterval(async () => {
-        await fetchMembership()
-        if (membership?.status === 'active' || Date.now() - start > 60000) {
+        const status = await fetchMembership()
+        if (status !== 'pending' || Date.now() - start > 60000) {
           setPolling(false)
           clearInterval(id)
         }
       }, 4000)
       return () => clearInterval(id)
     }
-  }, [polling, membership, fetchMembership])
+  }, [polling, fetchMembership])
 
   const handleSubscribe = async (plan: Plan) => {
     setError(null)
@@ -112,6 +122,35 @@ export default function MembershipPage() {
     }
   }
 
+  const handleEndMembership = async () => {
+    if (!membership || endingMembership) return
+    setEndingMembership(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/memberships/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ membershipId: membership.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const message = data.error || 'Cancellation could not be confirmed. Please contact support.'
+        setError(message)
+        toast.error(message)
+        return
+      }
+      setMembership(current => current ? { ...current, status: 'cancelled' } : current)
+      setConfirmEnding(false)
+      toast.success('Membership ended. Your existing session credits are retained.')
+      await fetchMembership()
+    } catch {
+      setError('Could not confirm cancellation. Refresh your membership or contact support.')
+      toast.error('Cancellation could not be confirmed.')
+    } finally {
+      setEndingMembership(false)
+    }
+  }
+
   const renderPlans = () => (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mt-6">
       {plans.map(p => (
@@ -130,13 +169,17 @@ export default function MembershipPage() {
           {(() => {
             const busy = !!submitting[p.slug]
             return (
-              <Button
+              status === 'unauthenticated' ? (
+                <Button asChild className="mt-4">
+                  <Link href={{ pathname: '/auth/signin', query: { callbackUrl: '/dashboard/membership' } }}>Sign in to subscribe</Link>
+                </Button>
+              ) : <Button
                 data-cy={p.slug === 'vip-monthly' ? 'subscribe-monthly' : p.slug === 'vip-yearly' ? 'subscribe-yearly' : undefined}
-                disabled={busy}
+                disabled={busy || status === 'loading'}
                 className="mt-4"
                 onClick={() => handleSubscribe(p)}
               >
-                {busy ? 'Loading...' : 'Subscribe'}
+                {busy ? 'Loading...' : membership?.status === 'pending' ? 'Continue checkout' : 'Subscribe'}
               </Button>
             )
           })()}
@@ -148,20 +191,46 @@ export default function MembershipPage() {
   const renderMembership = () => membership && (
     <div className="mt-6 border rounded-lg p-4">
       <h3 className="font-semibold text-lg mb-2">Your Membership</h3>
-      <p className="text-sm">Status: <span className="font-medium capitalize">{membership.status}</span></p>
+      <p className="text-sm">Status: <span className="font-medium capitalize">{membership.isExpired ? 'expired' : membership.status}</span></p>
       {membership.plan && <p className="text-sm">Plan: {membership.plan.title} (₹{(membership.plan.pricePaise/100).toFixed(2)} / {membership.plan.interval.toLowerCase()})</p>}
       {membership.nextBillingAt && <p className="text-sm">Next Billing: {new Date(membership.nextBillingAt).toLocaleString()}</p>}
       <p className="text-sm mt-2">Credits: {credits}</p>
       {membership.status === 'pending' && <p className="text-xs text-muted-foreground mt-2">Pending confirmation... waiting for payment activation webhook.</p>}
       {membership.status === 'paused' && <p className="text-xs text-muted-foreground mt-2">Membership paused. Reactivate in Razorpay or contact support.</p>}
-      {membership.status === 'cancelled' && <p className="text-xs text-muted-foreground mt-2">Membership cancelled. You keep previously granted credits.</p>}
+      {membership.status === 'cancelled' && <p className="text-xs text-muted-foreground mt-2">Membership ended. You keep previously granted credits.</p>}
+      {['pending', 'active', 'paused', 'halted'].includes(membership.status) && (
+        <div className="mt-5 border-t pt-4 space-y-3">
+          {!confirmEnding ? (
+            <Button type="button" variant="outline" disabled={endingMembership} onClick={() => setConfirmEnding(true)}>
+              End membership now
+            </Button>
+          ) : (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3 text-sm text-slate-800">
+              <p className="font-semibold">End your VIP membership immediately?</p>
+              <p>VIP access ends now, even if the paid period has time remaining. Existing session credits remain available. Ending membership does not automatically refund a payment.</p>
+              <p>This is a single-cycle purchase and does not automatically renew. You can also keep your membership until its current term finishes.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="destructive" disabled={endingMembership} onClick={handleEndMembership}>
+                  {endingMembership ? 'Confirming with Razorpay…' : 'Yes, end access now'}
+                </Button>
+                <Button type="button" variant="outline" disabled={endingMembership} onClick={() => setConfirmEnding(false)}>
+                  Keep membership
+                </Button>
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Need help with billing? <Link href="/dashboard/support" className="underline">Contact support</Link>.
+          </p>
+        </div>
+      )}
     </div>
   )
 
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-2xl font-bold">VIP Membership</h1>
-      {!membership || (membership.status !== 'active' && membership.status !== 'pending') ? (
+      {!membership || membership.status !== 'active' || membership.isExpired ? (
         <>
           <p className="text-sm text-muted-foreground mt-2">Choose a plan to unlock VIP benefits.</p>
           {loadingPlans ? <p className="mt-6 text-sm">Loading plans...</p> : renderPlans()}

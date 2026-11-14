@@ -4,70 +4,54 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const startTime = Date.now()
+let databasePing: Promise<unknown> | null = null
+
+function withinBudget<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Health check timed out')), 5000) })
+  return Promise.race([operation, deadline]).finally(() => clearTimeout(timer))
+}
 
 async function checkDatabase(): Promise<{ status: 'ok' | 'error'; latencyMs?: number; error?: string }> {
   const start = Date.now()
   try {
-    await prisma.$queryRaw`SELECT 1`
+    // A timed-out driver query may still settle later. Share it instead of piling
+    // additional probes onto the application's connection pool during an outage.
+    if (!databasePing) {
+      const running = Promise.resolve(prisma.$queryRaw`SELECT 1`).finally(() => { if (databasePing === running) databasePing = null })
+      databasePing = running
+    }
+    await withinBudget(databasePing)
     return { status: 'ok', latencyMs: Date.now() - start }
-  } catch (err) {
-    return { status: 'error', latencyMs: Date.now() - start, error: String(err) }
+  } catch {
+    return { status: 'error', latencyMs: Date.now() - start, error: 'Database check unavailable' }
   }
 }
 
-async function checkRedis(): Promise<{ status: 'ok' | 'unavailable' | 'error'; latencyMs?: number }> {
-  if (!process.env.REDIS_URL) return { status: 'unavailable' }
+type DependencyStatus = { status: 'ok' | 'unavailable' | 'error'; latencyMs?: number }
+type QueueStatus = { status: 'ok' | 'unavailable' | 'error'; counts?: Record<string, number> }
+
+async function checkRedisAndQueues(): Promise<{ redis: DependencyStatus; queues: QueueStatus }> {
+  if (!process.env.REDIS_URL) return { redis: { status: 'unavailable' }, queues: { status: 'unavailable' } }
   const start = Date.now()
   try {
-    const IORedis = (await import('ioredis')).default
-    const redis = new IORedis(process.env.REDIS_URL, { connectTimeout: 3000, lazyConnect: true })
-    await redis.connect()
-    await redis.ping()
+    const { probeQueueRedis, getQueueHealthCounts } = await import('@/lib/queues/jobs')
+    if (!await probeQueueRedis()) return { redis: { status: 'error', latencyMs: Date.now() - start }, queues: { status: 'error' } }
     const latencyMs = Date.now() - start
-    await redis.disconnect()
-    return { status: 'ok', latencyMs }
-  } catch {
-    return { status: 'error', latencyMs: Date.now() - start }
-  }
-}
-
-async function checkQueues(): Promise<{ status: 'ok' | 'unavailable' | 'error'; counts?: Record<string, number> }> {
-  if (!process.env.REDIS_URL) return { status: 'unavailable' }
-  try {
-    const { getEmailQueue, getNotificationQueue, getActivityQueue } = await import('@/lib/queues/jobs')
-    const eq = getEmailQueue()
-    const nq = getNotificationQueue()
-    const aq = getActivityQueue()
-    if (!eq || !nq || !aq) return { status: 'unavailable' }
-    const [email, notification, activity] = await Promise.all([
-      eq.getJobCounts('waiting', 'active', 'failed'),
-      nq.getJobCounts('waiting', 'active', 'failed'),
-      aq.getJobCounts('waiting', 'active', 'failed'),
-    ])
-    return {
-      status: 'ok',
-      counts: {
-        emailWaiting: email.waiting ?? 0,
-        emailActive: email.active ?? 0,
-        emailFailed: email.failed ?? 0,
-        notificationWaiting: notification.waiting ?? 0,
-        notificationActive: notification.active ?? 0,
-        notificationFailed: notification.failed ?? 0,
-        activityWaiting: activity.waiting ?? 0,
-        activityActive: activity.active ?? 0,
-        activityFailed: activity.failed ?? 0,
-      },
+    try {
+      return { redis: { status: 'ok', latencyMs }, queues: { status: 'ok', counts: await getQueueHealthCounts() } }
+    } catch {
+      return { redis: { status: 'ok', latencyMs }, queues: { status: 'error' } }
     }
   } catch {
-    return { status: 'error' }
+    return { redis: { status: 'error', latencyMs: Date.now() - start }, queues: { status: 'error' } }
   }
 }
 
 export async function GET() {
-  const [database, redis, queues] = await Promise.all([
+  const [database, { redis, queues }] = await Promise.all([
     checkDatabase(),
-    checkRedis(),
-    checkQueues(),
+    checkRedisAndQueues(),
   ])
 
   const overallOk = database.status === 'ok'
@@ -75,6 +59,7 @@ export async function GET() {
 
   const body = {
     ok: overallOk,
+    degraded: !overallOk || redis.status === 'error' || queues.status === 'error' || Object.entries(queues.counts ?? {}).some(([key, value]) => key.endsWith('Failed') && value > 0),
     ts: Date.now(),
     uptime: {
       ms: uptimeMs,

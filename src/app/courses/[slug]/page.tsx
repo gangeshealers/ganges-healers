@@ -1,8 +1,10 @@
-import { prisma } from '@/lib/prisma'
+import { readCourseForViewer } from '@/lib/courses/access'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import Image from 'next/image'
+import CourseIntroduction from '@/components/courses/CourseIntroduction'
 import CourseEnrollButton from '@/components/courses/CourseEnrollButton'
+
+export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -10,9 +12,7 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const course = await prisma.course.findFirst({
-    where: { OR: [{ id: slug }, { slug }], isActive: true },
-  })
+  const course = await readCourseForViewer(slug)
   if (!course) return { title: 'Course Not Found' }
   return {
     title: `${course.title} | Courses | Ganges Healers`,
@@ -23,34 +23,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function CourseDetailPage({ params }: Props) {
   const { slug } = await params
 
-  const course = await prisma.course.findFirst({
-    where: { OR: [{ id: slug }, { slug }], isActive: true },
-    include: {
-      lessons: { orderBy: { order: 'asc' }, select: { id: true, title: true, order: true } },
-      _count: { select: { enrollments: true } },
-    },
-  })
+  const course = await readCourseForViewer(slug)
 
   if (!course) notFound()
 
   return (
     <div className="container mx-auto p-6 max-w-3xl">
-      {course.imageUrl && (
-        <Image
-          src={course.imageUrl}
-          alt={course.title}
-          width={800}
-          height={224}
-          className="w-full h-56 object-cover rounded-lg mb-6"
-        />
-      )}
-      <h1 className="text-3xl font-bold mb-2">{course.title}</h1>
-      <p className="text-muted-foreground mb-4">
-        {course._count.enrollments} student{course._count.enrollments !== 1 ? 's' : ''} enrolled
-        {' · '}
-        {course.lessons.length} lesson{course.lessons.length !== 1 ? 's' : ''}
-      </p>
-      <p className="mb-6 whitespace-pre-line">{course.description}</p>
+      <CourseIntroduction course={course} enrollmentCount={course._count.enrollments}
+        lessonCount={course.lessons.length} archived={!course.isActive} />
 
       <div className="mb-8">
         <CourseEnrollButton course={course} />

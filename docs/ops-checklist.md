@@ -1,8 +1,27 @@
 # Ops Checklist (Payments, Invoices, Webhooks)
 
+## Queue and health acceptance
+
+- Configure Redis and a separately running worker together; the default web build
+  does not consume queued jobs. Use the same validated Redis URI/database on both.
+- Monitor `/api/health` HTTP status for database liveness and its additive
+  `degraded` flag / existing counters for optional transport failures and failed
+  jobs. Missing optional Redis remains supported. Healthy counters do not prove
+  consumer or provider delivery.
+- Rehearse an outage and recovery, an accepted job with a lost reply, worker
+  restart and failed email triage in an isolated environment. Unconfirmed enqueue
+  errors must not invoke a second notification fallback. Preserve producer IDs
+  and read state on notification retries.
+- Confirm real provider message IDs and duplicate/retry behavior before enabling
+  customer delivery. Queue workers now reject disabled/unconfirmed email results;
+  existing retries remain at least once. No live message is part of CI.
+- See `docs/deployment.md` for the bounded probe/queue budgets, explicit worker
+  startup, dedicated Redis test command and rollback. Connection and provider
+  errors must be redacted; the health response never includes a raw database error.
+
 ## Environments & Secrets Audit
 
-- Vercel envs: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `DATABASE_URL`, `NEXTAUTH_SECRET`, `BLOB_READ_WRITE_TOKEN`, `REFUNDS_ENABLED`.
+- Vercel envs: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `DATABASE_URL`, `NEXTAUTH_SECRET`, `BLOB_READ_WRITE_TOKEN`.
 - Confirm no duplicates or outdated secrets.
 - Rotate `RAZORPAY_WEBHOOK_SECRET`:
   1) Generate new secret (securely)
@@ -31,13 +50,43 @@
 
 ## Public Contract Quick Checks
 
-- Programs: Program detail shows a UI-only "Enroll (coming soon)" banner; no backend calls are made.
+- Programs: owners can enroll, resume a saved checkout, and view purchased sessions in My Programs. Staff assigns practitioners and reserves program-owned appointments; proposals remain unconfirmed until reservation succeeds.
 - Product Detail CTA → navigates to `/services/<serviceSlug>?openBooking=1&productSlug=<slug>` and opens BookingModal (context only).
   - Emits client-only analytics event `product_service_cta_click` on click; no server/API/DB changes.
 
 - Empty states render consistent copy; Clear filters removes q/filters only.
+- Booking delivery: reschedule an unpaid appointment and verify both booking
+  workspaces hide its room, its calendar is TENTATIVE without a URL, and the
+  practitioner cannot save a room or complete it. After payment verifies, the
+  owned room/calendar flow must work again. Paid, credit-funded and explicitly
+  free reschedules remain supported; historical CONFIRMED rows remain usable.
+- Free pending appointments explain that practitioner confirmation is pending
+  without checkout or session-credit buttons. Practitioner confirmation must
+  create its durable confirmation intent and inbox notices without a payment
+  row or credit deduction. Retained payment proof remains recoverable.
+- Initial booking dialog: lose a creation or credit reply and verify that only
+  My Bookings review is offered. Lose a payment reply and verify that its signed
+  receipt survives in My Bookings, with one reservation/order and no second
+  checkout. Repeated clicks and account changes must not start another mutation.
+  Reconcile an unknown gateway result through the existing owned flow; do not
+  create another booking as a payment retry.
 
 ## Refunds & Cancellations
+
+- My Bookings → Past shows recorded cancellation/refund outcomes after refresh.
+  A lost cancel/reschedule response requires **Reload bookings**, which reads
+  current owned data without repeating the mutation or contacting a gateway.
+- Review a fresh appointment before another change. The customer UI sends its
+  saved version through `If-Match`; a stale version returns 409 and creates no
+  cancellation/refund intent. Existing headerless operational clients keep their
+  existing contracts and must still apply the documented ownership/policy rules.
+- PENDING requires provider follow-up; UNKNOWN, FAILED, UNAVAILABLE and legacy
+  cancellations need deliberate reconciliation. A stored simulated result is
+  never proof of a real refund. Reads cannot resolve a provider's uncertain
+  outcome or authorize a second refund. Preserve saved payment/refund identifiers
+  and follow the existing reconciliation workflow before making a new decision.
+- This change adds no provider configuration or schema. Roll back the UI/read
+  projections/preconditions together while retaining all financial records.
 
 
 ## On-call Runbook (tiny)
@@ -45,3 +94,93 @@
 - “Invoices not opening” → hit `/api/invoices/[id]`, confirm 302; if 404, run admin generate: `POST /api/admin/invoices/generate { id }`.
 - “Webhook 401 spikes” → compare secret on Razorpay vs Vercel; re-run simulator.
 - “Subscribe errors” → check DB plan row has `razorpayPlanId` set.
+
+## Dependency release checks
+
+Use the committed lockfile with the pinned pnpm version. CI rejects high and critical
+production dependency advisories before the build. This threshold does not assert
+that lower-severity findings are resolved or that the site is exploitation-free;
+review the complete `pnpm audit --prod` report when preparing a release.
+
+The November 5, 2026 dependency follow-up stays on Next.js 15, Auth.js v5 beta,
+React 19.1, Prisma 6, and the existing major versions of other runtime packages.
+It replaces versions identified by the published
+[Next.js image optimization advisory](https://github.com/vercel/next.js/security/advisories/GHSA-2464-fhr4-w9xw),
+[Auth.js configuration advisory](https://github.com/nextauthjs/next-auth/security/advisories/GHSA-8fpg-xm3f-6cx3),
+[Auth.js email normalization advisory](https://github.com/nextauthjs/next-auth/security/advisories/GHSA-7rqj-j65f-68wh)
+and [Sentry tunnel advisory](https://github.com/getsentry/sentry-javascript/security/advisories/GHSA-mchm-gjx6-7h55).
+Advisory applicability depends on configuration; package findings alone do not
+establish exploitation of the deployed site. Keep route-level authorization and
+existing credential/session checks. Password hashing is a runtime dependency;
+the email development CLI belongs to development dependencies. The unused legacy
+Prisma authentication adapter is removed; runtime uses `@auth/prisma-adapter`.
+
+Run the existing unit, UI, database, build and browser suites against the resolved
+versions before merging. No schema migration or hosting setting change is included.
+Rollback the dependency commit and its lockfile together if compatibility checks
+fail; that also restores the earlier vulnerable versions and is not a release fix.
+
+The final compatibility follow-up pins Prisma config's `deepmerge-ts` to 8.0.0,
+Sentry bundler plugins' `glob` to 14.0.2, and that glob's `minimatch` to 11.0.1.
+The published engines support the existing Node 20 CI runtime. Deepmerge v8 changes
+Map/deepmergeInto behavior; the existing Prisma configuration supplies ordinary
+configuration records and Prisma uses `deepmerge` through c12. Generated-client,
+configuration-loading and full application/build/browser checks verify this usage.
+Glob keeps the `glob` API used by Sentry; the real build verifies plugin behavior.
+These narrowly scoped resolutions avoid upgrading the application framework or
+Prisma major. Keep them until the parent packages adopt supported fixed versions.
+
+The production dependency audit is **0 critical, 0 high, 0 moderate, 1 low** after
+these fixes, compared with 7 critical, 77 high, 74 moderate and 10 low before the
+first dependency patch. No findings are suppressed. The CI gate now rejects high
+as well as critical findings. See the full audit output for lower-severity results.
+
+| Resolved dependency | Fix / verification |
+| --- | --- |
+| Prisma → config → deepmerge-ts 7.1.5 | Pinned 8.0.0 after reviewing the v8 changes and current configuration API usage. [Release](https://github.com/RebeccaStevens/deepmerge-ts/releases/tag/v8.0.0) |
+| Sentry → bundler plugins → glob 13 | Pinned 14.0.2; cancellation returns immediately instead of continuing traversal. [Advisory](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) |
+| Glob → minimatch | Pinned 11.0.1, compatible with glob 14's declared dependency. [Advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249) |
+
+One low-severity finding remains visible: email render → html-to-text →
+`deepmerge` 4.3.1. The [published advisory](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)
+reports no patched release. The application passes its own fixed React templates to Resend without
+caller-controlled render/plain-text options; user text is rendered as content,
+not as a deepmerge options object. This is a bounded code assessment, not proof about every upstream path.
+Do not invent a fixed version or remove the finding from audit results. Track an
+upstream patch. The audit threshold is not a complete security review or evidence
+of a production deployment. Roll back the dependency resolutions and lockfile
+together if compatibility fails; doing so restores the earlier package findings.
+
+
+## Browser CI setup
+
+The configured browser project is Chromium. CI installs Chromium and its system
+dependencies instead of also downloading unused Firefox/WebKit runtimes. Keep
+this installer aligned if another project is added to `playwright.config.ts`.
+All browser scenarios remain enabled. Installation has a ten-minute step limit;
+the suite has a fifteen-minute Playwright global timeout so reporters can finish,
+and the overall browser job has a thirty-minute limit. A setup timeout is a
+failed check, never evidence that application journeys passed. These bounds
+require no provider credentials or hosting change.
+
+
+## Administrator launch readiness page
+
+Authenticated administrators can open `/admin/launch` from the Admin home to
+review active catalog counts, presence-only provider configuration and the
+manual launch acceptance checklist. The route reads current database counts and
+uses only **booleans** derived from runtime environment variables; no secret,
+URL, password or masked credential is sent to the page. Non-administrators
+cannot open it.
+
+The counts indicate whether listings are active or published, **not** whether
+content, prices, licensed media or real delivery are owner-approved. The
+integration labels say only "Variables present" or "Needs configuration review".
+They do not validate live/test-mode keys, OAuth callback URLs, Razorpay webhook
+signatures, refunds, actual email or SMS delivery, Sentry reports, Redis worker
+liveness or cron schedules. Blob uploads may use Vercel OIDC instead of a
+`BLOB_READ_WRITE_TOKEN`, so that flag is informational rather than definitive.
+
+An admin must complete the manual acceptance items in the deployment and
+operations runbooks before production promotion. This page does not execute
+provider requests, turn on payment events or write any application data.

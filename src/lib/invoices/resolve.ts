@@ -18,16 +18,16 @@ export async function resolveInvoiceUrl(id: string): Promise<string | null> {
   const lookup = (id ?? '').toString()
   if (!lookup) return null
 
-  // 1) Fast path: raw SQL direct lookup of Payment.invoiceUrl (column may exist even if not in Prisma model)
+  // 1) Legacy column is optional; JSONB row lookup returns null when it is absent.
   try {
     const rows: Array<{ invoiceUrl: string | null }> = await prisma.$queryRaw`
-      SELECT "invoiceUrl"
-      FROM "Payment"
-      WHERE "paymentId" = ${lookup}
-         OR "gatewayPaymentId" = ${lookup}
-         OR "orderId" = ${lookup}
-         OR "gatewayOrderId" = ${lookup}
-         OR "id" = ${lookup}
+      SELECT to_jsonb(p)->>'invoiceUrl' AS "invoiceUrl"
+      FROM "Payment" p
+      WHERE p."paymentId" = ${lookup}
+         OR p."gatewayPaymentId" = ${lookup}
+         OR p."orderId" = ${lookup}
+         OR p."gatewayOrderId" = ${lookup}
+         OR p."id" = ${lookup}
       LIMIT 1
     `
     const url = rows?.[0]?.invoiceUrl

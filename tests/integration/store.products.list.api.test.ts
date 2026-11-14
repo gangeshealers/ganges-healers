@@ -62,6 +62,21 @@ describe('API /api/store/products (list)', () => {
     expect(body).toHaveProperty('nextCursor')
   })
 
+  test('price sort is stable across cursor pages and does not alter the response shape', async () => {
+    const base = 'http://localhost/api/store/products?q=Oil&categorySlug=oils&sort=price_desc&limit=2'
+    const res = await ListHandlers.GET!(makeNextRequest(base))
+    expect(res.status).toBe(200)
+    const first = await readJSON(res)
+    expect(Array.isArray(first.items)).toBe(true)
+    expect(first).toHaveProperty('nextCursor')
+    if (first.items.length > 1) expect(first.items[0].pricePaise).toBeGreaterThanOrEqual(first.items[1].pricePaise)
+    if (first.nextCursor) {
+      const next = await readJSON(await ListHandlers.GET!(makeNextRequest(base + '&cursor=' + encodeURIComponent(first.nextCursor))))
+      expect(next.items.every((item: { id: string }) => !first.items.some((current: { id: string }) => current.id === item.id))).toBe(true)
+      if (next.items.length) expect(first.items.at(-1).pricePaise).toBeGreaterThanOrEqual(next.items[0].pricePaise)
+    }
+  })
+
   test('q search and category filter', async () => {
     const req = makeNextRequest('http://localhost/api/store/products?q=Oil&categorySlug=oils&limit=10')
     const res = await ListHandlers.GET!(req)

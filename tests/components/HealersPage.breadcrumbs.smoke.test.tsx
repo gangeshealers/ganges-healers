@@ -2,6 +2,8 @@ import { render, screen, within } from '@testing-library/react'
 import HealersPage from '@/app/healers/page'
 
 jest.mock('@/lib/healers/queries', () => ({
+  parseHealerDirectorySort: (value: unknown) => value === 'experience' ? 'experience' : 'default',
+  getHealerServiceOptions: jest.fn(async () => []),
   listHealers: jest.fn(async () => ({ items: [], nextCursor: null }))
 }))
 

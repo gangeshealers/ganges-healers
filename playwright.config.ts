@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  globalTimeout: 20 * 60_000, // Bound the growing serial suite and leave time for failure reports/teardown.
   timeout: 30_000,
   workers: 1, // run serially for deterministic server load (analytics endpoints are heavy)
   use: {

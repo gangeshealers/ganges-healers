@@ -1,11 +1,29 @@
-# Ganges Healers - Healthcare Management System
+# Ganges Healers — Holistic Wellness Marketplace
 
-A modern healthcare management system built with Next.js 14, TypeScript, and a comprehensive tech stack for managing medical services, appointments, and patient records.
+Next.js 15.5, React 19, Prisma/PostgreSQL, and Auth.js application for healing services, practitioner bookings, guided programs, courses, audio, community, and wellness products.
+
+### Current development release branch
+
+The latest integrated application is maintained on **`codex/site-completion-release`**, not the older `main` or historical feature branches. For an existing **clean** checkout in Windows Git Bash or another terminal:
+
+```bash
+git status
+git fetch origin --prune
+git switch codex/site-completion-release || git switch --track origin/codex/site-completion-release
+git pull --ff-only origin codex/site-completion-release
+pnpm install --frozen-lockfile
+```
+
+If you have local edits or commits, preserve them first with a backup branch, commit or stash; do not force-switch over your own work. The release branch is a development candidate, **not a production launch approval**.
 
 > Project roadmap: See docs/IMPLEMENTATION_PLAN.md for the 24-week implementation plan and sprint breakdown.
 > Engineering process: See docs/GUARDRAILS.md for change management and contribution rules.
 > Contracts & Invariants: See docs/contracts.md for pinned API/logging/DB/env contracts and Patch Plan template.
 > Authentication: See docs/AUTH_IMPLEMENTATION.md for NextAuth setup and testing guide.
+> Blog publishing: See [docs/blog-publishing.md](docs/blog-publishing.md) for admin drafts, review, publication, and withdrawal.
+> Support desk: See [docs/support-desk.md](docs/support-desk.md) for member requests, private replies, admin triage and migration setup.
+> Notifications: See [docs/notifications.md](docs/notifications.md) for the member inbox, read controls, optional Redis delivery, and authenticated real-time updates.
+> Navigation: See [docs/navigation.md](docs/navigation.md) for live search, session/role shortcuts, verified sign-out, mobile controls, and cart access.
 > Analytics: See docs/analytics.md for the client-only analytics shim and events.
 > SEO: See docs/seo.md for canonical URLs, Breadcrumbs & JSON-LD components.
 > Sitemap: Generated via app/sitemap.ts using a helper that outputs canonical URLs only; see docs/seo.md.
@@ -13,7 +31,7 @@ A modern healthcare management system built with Next.js 14, TypeScript, and a c
 
 ## Tech Stack
 
-- **Framework:** Next.js 14 with App Router
+- **Framework:** Next.js 15.5 with App Router
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS
 - **UI Components:** shadcn/ui
@@ -47,79 +65,92 @@ A modern healthcare management system built with Next.js 14, TypeScript, and a c
   - Medical records access
   - Profile management
 
-## Getting Started
+## Getting Started (development only)
 
-### Prerequisites
+### Requirements
 
-- Node.js 18+ and npm
-- PostgreSQL database
-- Google OAuth credentials (optional)
+- Node.js 20 or newer; Corepack and the package's pinned pnpm version
+- Access to a **separate development** PostgreSQL/Neon branch, distinct from production
+- Optional providers (Google OAuth, Razorpay, email, Redis and uploads) configured only when testing their respective workflows
 
-### Installation
+### Safe setup
 
-1. **Clone the repository**
+1. Open the repo directory and install the lockfile's exact dependencies:
+
    ```bash
-   git clone <repository-url>
-   cd ganges-healers
+   corepack enable
+   pnpm install --frozen-lockfile
    ```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+2. Create a **local, Git-ignored** `.env` file. The repository does not ship `.env.example`. Supply your own secrets; never copy credentials from an untrusted example or commit `.env`:
 
-3. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Update the `.env` file with your configuration:
-   ```env
-   # Database
-   DATABASE_URL="postgresql://username:password@localhost:5432/ganges_healers"
-   AUTH_SECRET="your-auth-secret-here"
+   ```dotenv
+   DATABASE_URL="postgresql://<dev-user>:<dev-password>@<isolated-development-host>/neondb?sslmode=require"
+   AUTH_SECRET="<random-long-secret-for-local-development>"
    NEXTAUTH_URL="http://localhost:3000"
-   
-   # Google OAuth (optional)
-   GOOGLE_CLIENT_ID="your-google-client-id"
-   GOOGLE_CLIENT_SECRET="your-google-client-secret"
-   
-   # Razorpay (for payments - optional)
-   RAZORPAY_KEY_ID="your-razorpay-key-id"
-   RAZORPAY_KEY_SECRET="your-razorpay-key-secret"
-   
-   # Redis (optional)
-   REDIS_URL="redis://localhost:6379"
    ```
 
-4. **Set up the database**
+   The `DATABASE_URL` host **must** belong to your intended, isolated development database. Verify the actual branch in Neon before applying schema changes. Do not paste this connection string into tickets or chat.
+
+3. Inspect missing migrations **without changing any data**:
+
    ```bash
-   # Run database migrations
-   npm run prisma:migrate
-   
-   # Generate Prisma client
-   npx prisma generate
-   
-   # Seed the database with initial data
-   npm run seed
+   pnpm exec prisma migrate status
    ```
 
-5. **Start the development server**
+   If migrations are pending and you have verified the database is the isolated development branch, apply the committed migrations:
+
    ```bash
-   npm run dev
+   pnpm exec prisma migrate deploy
+   pnpm exec prisma generate
    ```
 
-   Open [http://localhost:3000](http://localhost:3000) in your browser.
+4. Catalog content is database-driven. Preview the guarded sample catalog setup, then decide whether to add example data to the isolated development database. **Do not use the full `pnpm seed` command for public catalog restoration**—it creates demo accounts and financial records. See [catalog seeding](docs/catalog-seeding.md).
+
+   ```bash
+   pnpm seed:catalog
+   ```
+
+5. Start the local server:
+
+   ```bash
+   pnpm dev
+   ```
+
+   Open http://localhost:3000. Optional providers may log configuration notices; see [implementation contracts](docs/contracts.md) before treating a paid/authenticated workflow as launch-ready.
+
+## Public sample catalog for local development
+
+The catalog pages use database records, not hard-coded listings. To restore the 10 example services, 6 programs and 8 courses on an isolated development database without creating demo users or payments, use the guarded **`pnpm seed:catalog`** command. It starts as a dry run and requires an exact hostname confirmation before writing. See [docs/catalog-seeding.md](docs/catalog-seeding.md) for instructions, branch-safety requirements, and the distinction from the full `pnpm seed` fixture.
+
+## Safe test database setup
+
+`pnpm test:unit` runs without database credentials, reset, or seed. Integration
+tests use `jest.integration.config.ts`; all test reset/seed paths verify the
+dedicated target before changing data. Keep `.env.test` Git-ignored, with exactly
+one active `DATABASE_URL` for `ganges_healers_test` and `TEST_DATABASE_HOST` set to
+that URL's direct, unpooled hostname. Test hosts must differ from production hosts
+in `.env`, `.env.local`, `.env.production`, and `.env.production.local`.
+
+Use `pnpm db:test:push`, `pnpm db:test:seed`, or `pnpm test:int` after configuration.
+Each database command first checks `current_database()` in a separate process.
+Missing, ambiguous, production, or misrouted settings fail closed without logging
+connection strings. CI may use an isolated loopback database named
+`ganges_healers_test` without a private environment file. `pnpm dev:test` performs
+the same checks before preparing data and starting the E2E server on port 3010
+with Turbopack, matching the application's development and production build
+commands. CI retains browser failure screenshots, video, and error context for
+three days.
 
 ## Available Scripts
 
-- `npm run dev` - Start development server with Turbopack
-- `npm run build` - Build the application for production
-- `npm start` - Start the production server
-- `npm run lint` - Run ESLint
-- `npm run prisma:migrate` - Run database migrations
-- `npm run prisma:studio` - Open Prisma Studio
-- `npm run seed` - Seed the database with initial data
+- `pnpm dev` — Next.js Turbopack development server.
+- `pnpm build` — production build and associated Next.js checks.
+- `pnpm exec prisma migrate status` — read-only migration status.
+- `pnpm exec prisma migrate deploy` — apply committed migrations **only after confirming the target database**.
+- `pnpm seed:catalog` — guarded, dry-run public sample catalog setup.
+- `pnpm seed` — full **demo/test fixtures** including accounts; never run against real customer data.
+- `pnpm test:unit`, `pnpm test:ui`, `pnpm test:integration`, `pnpm test:e2e` — dedicated verification suites.
 
 ## Database Schema
 
@@ -130,11 +161,16 @@ The application uses the following main models:
 - **Session** - User sessions
 - **VerificationToken** - Email verification tokens
 
-### Default Admin Account
+### Admin accounts and credentials
 
-After running the seed script, you can log in with:
-- **Email:** admin@ganges-healers.com
-- **Password:** admin123
+Do not rely on sample passwords or demo users from `prisma/seed.ts` in any shared or production environment. Create an administrator through the reviewed administrative provisioning workflow, with a unique strong password, and enforce your normal role/access controls. A public repository example password is **not** a safe login credential.
+
+### Administrator workspaces
+
+The administrator dashboard and account menu link to the existing services,
+healers, courses/lessons, audio, products, programs/enrollments, community,
+articles, payments and analytics workspaces. Their server-side administrator
+checks remain required; navigation does not grant access to another role.
 
 ## Project Structure
 
@@ -171,24 +207,15 @@ The app supports two authentication methods:
 1. **Google OAuth** - Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
 2. **Credentials** - Email/password authentication with bcrypt hashing
 
-## Deployment
+## Deployment and database cutover
 
-### Environment Setup
+The live `main` branch and `codex/site-completion-release` are distinct; merging and production promotion require explicit release acceptance. The release Preview database may differ from your local Neon development branch.
 
-1. Set up a PostgreSQL database
-2. Configure environment variables
-3. Run database migrations
-4. Build and deploy the application
+Before deployment, confirm the target Vercel environment has its own `AUTH_SECRET`, `DATABASE_URL`, and any enabled provider credentials. Inspect that environment's branch-specific variables without revealing their values.
 
-### Database Migration
+**Do not** use `pnpm prisma:migrate` (which invokes development migration creation) against production. Production migrations require a separately reviewed cutover and the committed `pnpm exec prisma migrate deploy` command, pointed at the explicitly verified database. Check provider acceptance, background workers, real payments/webhooks, transactional notifications, content approval, and private/role-gated routes before promotion.
 
-```bash
-# Run migrations in production
-npm run prisma:migrate
-
-# Generate Prisma client
-npx prisma generate
-```
+See [contracts](docs/contracts.md), [guardrails](docs/GUARDRAILS.md), and the release PR for readiness gates.
 
 ## Contributing
 
@@ -200,7 +227,7 @@ npx prisma generate
 
 ## License
 
-This project is licensed under the MIT License.
+Review the repository's licensing terms with the project maintainers before external redistribution; no standalone license file is currently bundled.
 
 ## Support
 
@@ -210,7 +237,7 @@ For support and questions:
 
 ---
 
-Built with ❤️ using Next.js 14 and modern web technologies.
+Built with ❤️ using Next.js 15.5 and modern web technologies.
 
 ## Accessibility
 

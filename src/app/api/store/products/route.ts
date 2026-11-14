@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { listProducts } from '@/lib/store/queries'
+import { listProducts, parseProductSort } from '@/lib/store/queries'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -7,7 +7,8 @@ export async function GET(req: Request) {
   const q = searchParams.get('q') || undefined
   const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined
   const cursor = searchParams.get('cursor') || undefined
+  const sort = parseProductSort(searchParams.get('sort'))
 
-  const { items, nextCursor } = await listProducts({ categorySlug, q, limit, cursor })
+  const { items, nextCursor } = await listProducts({ categorySlug, q, limit, cursor, sort })
   return NextResponse.json({ items, nextCursor })
 }

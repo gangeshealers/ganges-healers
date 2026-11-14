@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState, useMemo, useCallback } from 'react'
+import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -18,8 +19,10 @@ interface MetricsResponse {
 }
 interface SeriesPoint { date: string; grossPaise: number; refundsPaise: number; netPaise: number; byType: Record<string, number> }
 
+type RefundRow = { id: string; paymentId: string; bookingId: string | null; createdAt: string; currency: string; amountPaise: number; outcome: string }
+
 type RangeOpt = '7'|'30'|'90'
-type TypeFilter = 'ALL' | 'SESSION' | 'PROGRAM' | 'MEMBERSHIP'
+type TypeFilter = 'ALL' | 'SESSION' | 'PROGRAM' | 'MEMBERSHIP' | 'STORE' | 'COURSE'
 
 function formatINR(paise: number) { return `₹${(paise/100).toLocaleString('en-IN',{ minimumFractionDigits:2, maximumFractionDigits:2 })}` }
 
@@ -28,6 +31,8 @@ const TYPE_OPTIONS: Array<{label:string; value: TypeFilter}> = [
   { label: 'Session', value: 'SESSION' },
   { label: 'Program', value: 'PROGRAM' },
   { label: 'Membership', value: 'MEMBERSHIP' },
+  { label: 'Store', value: 'STORE' },
+  { label: 'Course', value: 'COURSE' },
 ]
 
 export default function MetricsDashboard() {
@@ -37,8 +42,11 @@ export default function MetricsDashboard() {
   const [metrics, setMetrics] = useState<MetricsResponse|null>(null)
   const [series, setSeries] = useState<SeriesPoint[]>([])
   const [payments, setPayments] = useState<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any
-  const [refunds, setRefunds] = useState<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [refunds, setRefunds] = useState<RefundRow[]>([])
+  const [reportError, setReportError] = useState(false)
+  const [reload, setReload] = useState(0)
   const [tableLoading, setTableLoading] = useState(true)
+  const [exporting, setExporting] = useState<'payments' | 'refunds' | null>(null)
   const [paymentsSort, setPaymentsSort] = useState<{field:'createdAt'|'amountPaise'; dir:'asc'|'desc'}>({ field: 'createdAt', dir: 'desc' })
   const [refundsSort, setRefundsSort] = useState<{field:'createdAt'|'amountPaise'; dir:'asc'|'desc'}>({ field: 'createdAt', dir: 'desc' })
 
@@ -49,44 +57,55 @@ export default function MetricsDashboard() {
     return { from: fromD.toISOString().slice(0,10), to: to.toISOString().slice(0,10) }
   }, [range])
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (signal: AbortSignal) => {
     const { from, to } = dateRange
     const tFetch = performance.now()
     setLoading(true)
+    setReportError(false)
     try {
       const qsType = type ? `&type=${type}` : ''
       const [mResp, tsResp, latestResp, refundsResp] = await Promise.all([
-        fetch(`/api/admin/payments/metrics?from=${from}&to=${to}${qsType}`),
-        fetch(`/api/admin/payments/timeseries?from=${from}&to=${to}${qsType}`),
-        fetch(`/api/admin/payments/latest?limit=20&type=${type}`),
-        fetch(`/api/admin/payments/refunds?from=${from}&to=${to}&limit=20`)
+        fetch(`/api/admin/payments/metrics?from=${from}&to=${to}${qsType}`, { signal }),
+        fetch(`/api/admin/payments/timeseries?from=${from}&to=${to}${qsType}`, { signal }),
+        fetch(`/api/admin/payments/latest?limit=20&from=${from}&to=${to}${qsType}`, { signal }),
+        fetch(`/api/admin/payments/refunds?from=${from}&to=${to}&limit=20${qsType}`, { signal })
       ])
       if (!mResp.ok || !tsResp.ok || !latestResp.ok || !refundsResp.ok) throw new Error('fetch_failed')
       const [mJson, tsJson, latestJson, refundsJson] = await Promise.all([mResp.json(), tsResp.json(), latestResp.json(), refundsResp.json()])
+      if (signal.aborted) return
       setMetrics(mJson)
       setSeries(Array.isArray(tsJson) ? tsJson : tsJson.series || [])
       setPayments(latestJson.items || [])
       setRefunds(refundsJson.items || [])
       console.log('[admin][payments][ui_fetch]', { from, to, type, ms: Math.round(performance.now()-tFetch) })
     } catch (e) {
+      if (signal.aborted) return
+      setReportError(true)
+      setMetrics(null)
+      setSeries([])
+      setPayments([])
+      setRefunds([])
       console.error('[admin][payments][ui_error]', { from, to, type, error: e instanceof Error ? e.message : String(e) })
-      toast.error('Failed to load analytics data')
     } finally {
-      setLoading(false)
-      setTableLoading(false)
+      if (!signal.aborted) { setLoading(false); setTableLoading(false) }
     }
   }, [dateRange, type])
 
-  useEffect(() => { setTableLoading(true); fetchAll() }, [fetchAll])
+  useEffect(() => {
+    const controller = new AbortController()
+    setTableLoading(true)
+    void fetchAll(controller.signal)
+    return () => controller.abort()
+  }, [fetchAll, reload])
 
   const kpis = useMemo(() => {
     if (!metrics) return []
     return [
       { label: 'Gross', key: 'grossPaise', value: formatINR(metrics.kpi.grossPaise), raw: metrics.kpi.grossPaise },
-      { label: 'Refunds', key: 'refundsPaise', value: formatINR(metrics.kpi.refundsPaise), raw: metrics.kpi.refundsPaise },
+      { label: 'Confirmed refunds', key: 'refundsPaise', value: formatINR(metrics.kpi.refundsPaise), raw: metrics.kpi.refundsPaise },
       { label: 'Net', key: 'netPaise', value: formatINR(metrics.kpi.netPaise), raw: metrics.kpi.netPaise },
       { label: 'Payments', key: 'paymentsCount', value: String(metrics.kpi.paymentsCount), raw: metrics.kpi.paymentsCount },
-      { label: 'Refunds Cnt', key: 'refundsCount', value: String(metrics.kpi.refundsCount), raw: metrics.kpi.refundsCount },
+      { label: 'Confirmed refund count', key: 'refundsCount', value: String(metrics.kpi.refundsCount), raw: metrics.kpi.refundsCount },
       { label: 'AOV', key: 'aovPaise', value: formatINR(metrics.kpi.aovPaise), raw: metrics.kpi.aovPaise },
       { label: 'MRR', key: 'mrrPaise', value: formatINR(metrics.kpi.mrrPaise), raw: metrics.kpi.mrrPaise }
     ]
@@ -115,6 +134,34 @@ export default function MetricsDashboard() {
     setRefundsSort(s => s.field === field ? { field, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'desc' })
   }
 
+  async function downloadCsv(kind: 'payments' | 'refunds') {
+    if (exporting) return
+    setExporting(kind)
+    const { from, to } = dateRange
+    try {
+      const qs = new URLSearchParams({ kind, from, to, type })
+      const response = await fetch('/api/admin/payments/export?' + qs.toString(), { cache: 'no-store' })
+      if (!response.ok) {
+        if (response.status === 413) throw new Error('This report exceeds 5,000 rows. Select a shorter date range.')
+        throw new Error('Could not export ' + kind + '. Please try again.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = 'ganges-healers-' + kind + '-' + from + '-to-' + to + '.csv'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      console.error('[admin][payments][ui_error]', { action: 'export', kind })
+      toast.error(error instanceof Error ? error.message : 'Export failed')
+    } finally {
+      setExporting(null)
+    }
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 space-y-8" data-test="payments-analytics-root">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -131,9 +178,19 @@ export default function MetricsDashboard() {
           >
             {TYPE_OPTIONS.map(o=> <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+          <Button variant="outline" size="sm" disabled={exporting !== null} onClick={() => downloadCsv('payments')} data-test="export-payments-csv">
+            {exporting === 'payments' ? 'Exporting...' : 'Payments CSV'}
+          </Button>
+          <Button variant="outline" size="sm" disabled={exporting !== null} onClick={() => downloadCsv('refunds')} data-test="export-refunds-csv">
+            {exporting === 'refunds' ? 'Exporting...' : 'Refunds CSV'}
+          </Button>
         </div>
       </div>
 
+      {reportError && <div role="alert" className="rounded-md border p-4 text-sm">
+        The report could not be loaded. <button className="font-medium underline" onClick={() => setReload(value => value + 1)}>Retry report</button>
+      </div>}
+      {!reportError && <>
       {/* KPI Row */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4" data-test="kpi-row">
         {loading && Array.from({ length: 7 }).map((_,i)=>(<Skeleton key={i} className="h-20" />))}
@@ -197,7 +254,7 @@ export default function MetricsDashboard() {
                   <div key={p.id} className="grid grid-cols-5 px-2 py-1 items-center">
                     <span>{new Date(p.createdAt).toISOString().slice(0,10)}</span>
                     <span className="text-xs font-medium">{p.type || 'OTHER'}</span>
-                    <span>{formatINR(p.amountPaise)}</span>
+                    <span>{p.currency && p.currency !== 'INR' ? p.amountPaise + ' minor units (' + p.currency + ')' : formatINR(p.amountPaise)}</span>
                     <span><SourcePill source={p.source} /></span>
                     <span className="text-muted-foreground" title={p.userId || ''}>{p.userId ? p.userId.slice(0,6) : '-'}</span>
                   </div>
@@ -208,31 +265,34 @@ export default function MetricsDashboard() {
         </div>
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-medium">Recent Refunds</h3>
+            <h3 className="font-medium">Recent refund attempts</h3>
             <div className="flex gap-2 text-xs">
               <SortButton active={refundsSort.field==='createdAt'} dir={refundsSort.dir} label="Date" onClick={()=>toggleSortRefunds('createdAt')} />
               <SortButton active={refundsSort.field==='amountPaise'} dir={refundsSort.dir} label="Amount" onClick={()=>toggleSortRefunds('amountPaise')} />
             </div>
           </div>
           {tableLoading && <Skeleton className="h-48" />}
-          {!tableLoading && !sortedRefunds.length && <Empty message="No refunds" />}
+          {!tableLoading && !sortedRefunds.length && <Empty message="No refund attempts" />}
           {!tableLoading && sortedRefunds.length>0 && (
-            <div className="border rounded overflow-hidden" data-test="table-refunds">
-              <div className="grid grid-cols-4 bg-muted/50 text-xs font-medium px-2 py-1"> <div>Date</div><div>Amount</div><div>Payment</div><div>Status</div></div>
-              <div className="divide-y text-sm">
-                {sortedRefunds.map(r => (
-                  <div key={r.id} className="grid grid-cols-4 px-2 py-1 items-center">
-                    <span>{new Date(r.createdAt).toISOString().slice(0,10)}</span>
-                    <span>{formatINR(r.amountPaise)}</span>
-                    <span className="text-muted-foreground" title={r.paymentId}>{r.paymentId.slice(0,6)}</span>
-                    <span className="text-xs text-muted-foreground">—</span>
-                  </div>
-                ))}
-              </div>
+            <div className="overflow-x-auto rounded border" data-test="table-refunds">
+              <table aria-label="Recent refund attempts" className="w-full text-left text-sm">
+                <thead className="bg-muted/50 text-xs"><tr>
+                  {['Date (UTC)', 'Amount', 'Outcome', 'Payment / booking'].map(label => <th key={label} scope="col" className="p-2">{label}</th>)}
+                </tr></thead>
+                <tbody className="divide-y">{sortedRefunds.map(r => <tr key={r.id}>
+                  <td className="whitespace-nowrap p-2">{r.createdAt.slice(0, 10)}</td>
+                  <td className="p-2">{r.currency === 'INR' ? formatINR(r.amountPaise) : r.amountPaise + ' minor units (' + r.currency + ')'}</td>
+                  <td className="p-2 font-medium">{r.outcome}</td>
+                  <td className="p-2"><span className="block break-all text-xs text-muted-foreground">{r.paymentId}</span>
+                    {r.bookingId && <Link className="text-primary underline" href={'/admin/bookings/' + encodeURIComponent(r.bookingId)}>Review booking</Link>}
+                  </td>
+                </tr>)}</tbody>
+              </table>
             </div>
           )}
         </div>
       </section>
+      </>}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { requireVIP } from '@/lib/auth/requireVIP'
 import { z } from 'zod'
 import { logActivity } from '@/lib/activity-log'
 import { Prisma } from '@prisma/client'
+import { CommunityCatalogError, requireActivePublishingTopic } from '@/lib/community/catalog'
 
 // GET /api/community/posts — list posts with pagination, filtering, sorting, search (auth required)
 export async function GET(request: NextRequest) {
@@ -15,44 +16,51 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const cursor = searchParams.get('cursor') ?? undefined
-    const take = Math.min(Number(searchParams.get('take')) || 20, 50)
+    const cursor = searchParams.get('cursor') || undefined
+    const requestedTake = Number(searchParams.get('take'))
+    const take = Number.isFinite(requestedTake) && requestedTake >= 1 ? Math.min(Math.floor(requestedTake), 50) : 20
     const topicId = searchParams.get('topicId') ?? undefined
     const tagId = searchParams.get('tagId') ?? undefined
-    const sort = searchParams.get('sort') ?? 'latest'
-    const search = searchParams.get('search')?.trim() ?? undefined
+    const requestedSort = searchParams.get('sort')
+    const sort = requestedSort === 'most_liked' || requestedSort === 'most_commented' ? requestedSort : 'latest'
+    const search = searchParams.get('search')?.trim().slice(0, 200) || undefined
+    const mine = searchParams.get('mine') === '1'
 
     // Build where clause (always exclude soft-deleted)
     const where: Prisma.CommunityPostWhereInput = {
       deletedAt: null,
+      ...(mine ? { userId: session.user.id } : {}),
       ...(topicId ? { topicId } : {}),
       ...(tagId ? { tags: { some: { tagId } } } : {}),
     }
 
-    // Full-text search: use raw SQL to get matching post IDs via tsvector
+    // Apply the same ownership and topic/tag scope before limiting full-text hits.
     if (search) {
-      const sanitized = search.replace(/[&|!():*<>'"\\]/g, ' ').trim()
-      if (sanitized) {
-        const tsquery = sanitized.split(/\s+/).filter(Boolean).join(' & ')
-        const matchingIds: { id: string }[] = await prisma.$queryRawUnsafe(
-          `SELECT "id" FROM "CommunityPost" WHERE "deletedAt" IS NULL AND "searchVector" @@ to_tsquery('english', $1) LIMIT 200`,
-          tsquery,
-        )
-        where.id = { in: matchingIds.map((r) => r.id) }
-      }
+      const conditions = [Prisma.sql`p."deletedAt" IS NULL`, Prisma.sql`p."searchVector" @@ plainto_tsquery('english', ${search})`]
+      if (mine) conditions.push(Prisma.sql`p."userId" = ${session.user.id}`)
+      if (topicId) conditions.push(Prisma.sql`p."topicId" = ${topicId}`)
+      if (tagId) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "CommunityPostTag" pt WHERE pt."postId" = p."id" AND pt."tagId" = ${tagId})`)
+      const matchingIds = await prisma.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`SELECT p."id" FROM "CommunityPost" p WHERE ${Prisma.join(conditions, ' AND ')} ORDER BY p."createdAt" DESC, p."id" DESC LIMIT 200`,
+      )
+      where.id = { in: matchingIds.map(row => row.id) }
     }
 
     // Determine ordering
     let orderBy: Prisma.CommunityPostOrderByWithRelationInput[]
     switch (sort) {
       case 'most_liked':
-        orderBy = [{ likes: { _count: 'desc' } }, { createdAt: 'desc' }]
+        orderBy = [{ likes: { _count: 'desc' } }, { createdAt: 'desc' }, { id: 'desc' }]
         break
       case 'most_commented':
-        orderBy = [{ comments: { _count: 'desc' } }, { createdAt: 'desc' }]
+        orderBy = [{ comments: { _count: 'desc' } }, { createdAt: 'desc' }, { id: 'desc' }]
         break
       default: // 'latest'
-        orderBy = [{ createdAt: 'desc' }]
+        // Pinned discussions occupy real slots in the same cursor-paginated feed.
+        // For full-text searches, keep the existing chronological relevance window.
+        orderBy = !search
+          ? [{ isPinned: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }]
+          : [{ createdAt: 'desc' }, { id: 'desc' }]
     }
 
     const postInclude = {
@@ -62,41 +70,23 @@ export async function GET(request: NextRequest) {
       _count: { select: { comments: { where: { deletedAt: null } }, likes: true } },
     } as const
 
-    // Fetch pinned posts separately (only on first page, no cursor, default sort, no search)
-    type PostWithIncludes = Prisma.CommunityPostGetPayload<{ include: typeof postInclude }>
-    let pinnedPosts: PostWithIncludes[] = []
-    if (!cursor && sort === 'latest' && !search) {
-      pinnedPosts = await prisma.communityPost.findMany({
-        where: { ...where, isPinned: true },
-        orderBy: [{ createdAt: 'desc' }],
-        include: postInclude,
-      })
-    }
-
-    const pinnedIds = pinnedPosts.map((p) => p.id)
-
+    // One bounded query for both pinned and ordinary posts. The compound
+    // order remains stable when the cursor moves between pinned and non-pinned
+    // rows; no pinned post can disappear or bypass the page size.
     const posts = await prisma.communityPost.findMany({
       take: take + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      where: {
-        ...where,
-        ...(pinnedIds.length > 0 ? { id: { notIn: pinnedIds } } : {}),
-      },
+      where,
       orderBy,
       include: postInclude,
     })
-
     const hasMore = posts.length > take
     if (hasMore) posts.pop()
-
     const nextCursor = hasMore ? posts[posts.length - 1]?.id : null
-
-    // Combine pinned + regular for first page
-    const allPosts = cursor ? posts : [...pinnedPosts, ...posts]
 
     return NextResponse.json({
       success: true,
-      data: allPosts,
+      data: posts,
       nextCursor,
     })
   } catch (error) {
@@ -126,27 +116,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const post = await prisma.communityPost.create({
-      data: {
-        userId: session.user!.id,
-        title: parsed.data.title,
-        content: parsed.data.content,
-        topicId: parsed.data.topicId || undefined,
-        ...(parsed.data.tagIds?.length
-          ? { tags: { create: parsed.data.tagIds.map((tagId) => ({ tagId })) } }
-          : {}),
-      },
-      include: {
-        user: { select: { id: true, name: true, image: true } },
-        topic: { select: { id: true, slug: true, name: true } },
-        tags: { include: { tag: { select: { id: true, slug: true, name: true } } } },
-        _count: { select: { comments: { where: { deletedAt: null } }, likes: true } },
-      },
-    })
+    const post = await prisma.$transaction(async tx => {
+      const topicId = parsed.data.topicId || undefined
+      if (topicId) await requireActivePublishingTopic(tx, topicId)
+      const tagIds = [...new Set(parsed.data.tagIds || [])]
+      if (tagIds.length && await tx.communityTag.count({ where: { id: { in: tagIds } } }) !== tagIds.length) {
+        throw new CommunityCatalogError('One or more tags are no longer available. Please choose again.', 400, 'TAG_UNAVAILABLE')
+      }
+      return tx.communityPost.create({
+        data: {
+          userId: session.user!.id,
+          title: parsed.data.title,
+          content: parsed.data.content,
+          topicId,
+          ...(tagIds.length ? { tags: { create: tagIds.map(tagId => ({ tagId })) } } : {}),
+        },
+        include: {
+          user: { select: { id: true, name: true, image: true } },
+          topic: { select: { id: true, slug: true, name: true } },
+          tags: { include: { tag: { select: { id: true, slug: true, name: true } } } },
+          _count: { select: { comments: { where: { deletedAt: null } }, likes: true } },
+        },
+      })
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted })
 
     logActivity({ userId: session.user!.id, action: 'community_post_created', entityType: 'community_post', entityId: post.id })
     return NextResponse.json({ success: true, data: post }, { status: 201 })
   } catch (error: unknown) {
+    if (error instanceof CommunityCatalogError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     const status = (error as { status?: number }).status
     if (status === 401 || status === 403) {
       return NextResponse.json({ error: (error as Error).message }, { status })

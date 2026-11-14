@@ -1,3 +1,5 @@
+import { referencedRefundStatus } from '@/lib/bookings/refund-policy'
+import { capturedPaymentWhere, inrPaymentWhere, reportType } from '@/lib/admin/payment-report'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/rbac'
@@ -19,20 +21,19 @@ export async function GET(req: NextRequest) {
   const typeFilter = searchParams.get('type') // ALL | SESSION | PROGRAM | MEMBERSHIP | STORE | COURSE
   const { from, to } = parseRange(fromStr, toStr)
 
-  const paymentWhere: any = { // eslint-disable-line @typescript-eslint/no-explicit-any
-    createdAt: { gte: from, lte: to },
-    statusEnum: 'SUCCESS'
-  }
-  if (typeFilter && typeFilter !== 'ALL') paymentWhere.type = typeFilter
+  const types = reportType(typeFilter)
+  if (!types) return NextResponse.json({ error: 'invalid-payment-type' }, { status: 400 })
+  const date = { gte: from, lte: to }
+  const paymentWhere = { createdAt: date, ...types, AND: [capturedPaymentWhere, inrPaymentWhere] }
+  const refundWhere = { createdAt: date, payment: { ...types, ...inrPaymentWhere } }
 
-  // Payments in range (success only)
   const payments = await prisma.payment.findMany({
     where: paymentWhere,
     select: { amountPaise: true, type: true, metadata: true }
   })
   const refunds = await prisma.refund.findMany({
-    where: { createdAt: { gte: from, lte: to } },
-    select: { amountPaise: true }
+    where: refundWhere,
+    select: { amountPaise: true, status: true, gatewayRefundId: true }
   })
 
   let gross = 0
@@ -42,10 +43,11 @@ export async function GET(req: NextRequest) {
     const key = (p.type || 'OTHER') as string
     byTypeRaw[key] = (byTypeRaw[key] || 0) + p.amountPaise
   }
-  const refundsSum = refunds.reduce((a: number,r:{amountPaise:number})=>a+r.amountPaise,0)
+  const confirmed = refunds.filter(row => referencedRefundStatus(row) === 'SUCCESS')
+  const refundsSum = confirmed.reduce((sum, row) => sum + row.amountPaise, 0)
   const net = gross - refundsSum
   const paymentsCount = payments.length
-  const refundsCount = refunds.length
+  const refundsCount = confirmed.length
   const aov = paymentsCount ? Math.round(gross / paymentsCount) : 0
 
   // MRR: active memberships (monthly + yearly/12)

@@ -1,3 +1,5 @@
+import { referencedRefundStatus } from '@/lib/bookings/refund-policy'
+import { capturedPaymentWhere, inrPaymentWhere, reportType } from '@/lib/admin/payment-report'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/rbac'
@@ -24,13 +26,17 @@ export async function GET(req: NextRequest) {
   const typeFilter = searchParams.get('type')
   const { from, to } = parseRange(fromStr, toStr)
 
-  const paymentWhere: any = { createdAt: { gte: from, lte: to }, statusEnum: 'SUCCESS' } // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (typeFilter && typeFilter !== 'ALL') paymentWhere.type = typeFilter
+  const types = reportType(typeFilter)
+  if (!types) return NextResponse.json({ error: 'invalid-payment-type' }, { status: 400 })
+  const date = { gte: from, lte: to }
+  const paymentWhere = { createdAt: date, ...types, AND: [capturedPaymentWhere, inrPaymentWhere] }
+  const refundWhere = { createdAt: date, payment: { ...types, ...inrPaymentWhere } }
+
   const payments = await prisma.payment.findMany({
     where: paymentWhere,
     select: { createdAt: true, amountPaise: true, type: true }
   })
-  const refunds = await prisma.refund.findMany({ where: { createdAt: { gte: from, lte: to } }, select: { createdAt: true, amountPaise: true } })
+  const refunds = await prisma.refund.findMany({ where: refundWhere, select: { createdAt: true, amountPaise: true, status: true, gatewayRefundId: true } })
 
   const buckets: Record<string, { gross: number; refunds: number; byType: Record<string, number> }> = {}
   for (const p of payments) {
@@ -41,6 +47,7 @@ export async function GET(req: NextRequest) {
     buckets[day].byType[t] = (buckets[day].byType[t] || 0) + p.amountPaise
   }
   for (const r of refunds) {
+    if (referencedRefundStatus(r) !== 'SUCCESS') continue
     const day = r.createdAt.toISOString().slice(0,10)
     if (!buckets[day]) buckets[day] = { gross: 0, refunds: 0, byType: {} }
     buckets[day].refunds += r.amountPaise

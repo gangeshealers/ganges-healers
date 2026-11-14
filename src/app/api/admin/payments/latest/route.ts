@@ -1,3 +1,5 @@
+import { capturedPaymentWhere, reportType } from '@/lib/admin/payment-report'
+import { parseRange } from '@/lib/time-range'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/rbac'
@@ -8,15 +10,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const limit = Math.min(Number(searchParams.get('limit')) || 20, 100)
   const typeFilter = searchParams.get('type')
-  const where: any = { statusEnum: 'SUCCESS' } // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (typeFilter && typeFilter !== 'ALL') where.type = typeFilter
+  const types = reportType(typeFilter)
+  if (!types) return NextResponse.json({ error: 'invalid-payment-type' }, { status: 400 })
+  const { from, to } = parseRange(searchParams.get('from'), searchParams.get('to'))
+  const dated = searchParams.has('from') || searchParams.has('to')
+  const where = { ...capturedPaymentWhere, ...types, ...(dated ? { createdAt: { gte: from, lte: to } } : {}) }
   const payments = await prisma.payment.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     take: limit,
-    select: { id: true, createdAt: true, amountPaise: true, type: true, metadata: true, userId: true }
+    select: { id: true, createdAt: true, amountPaise: true, currency: true, type: true, metadata: true, userId: true }
   })
-  const items = payments.map((p: { id: string; createdAt: Date; amountPaise: number; type: string | null; metadata: unknown; userId: string | null }) => {
+  const items = payments.map((p: { id: string; createdAt: Date; amountPaise: number; type: string | null; currency: string | null; metadata: unknown; userId: string | null }) => {
     const md: any = p.metadata || {} // eslint-disable-line @typescript-eslint/no-explicit-any
     let source: string | null = null
     if (md.programId) source = 'Program'
@@ -26,6 +31,7 @@ export async function GET(req: NextRequest) {
       id: p.id,
       createdAt: p.createdAt,
       amountPaise: p.amountPaise,
+      currency: p.currency ?? 'INR',
       type: p.type,
       source,
       userId: p.userId

@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button"
 import { useCart } from "@/components/store/CartProvider"
 import { toast } from "sonner"
 import { ShoppingCart } from "lucide-react"
+import { trackAddToCart } from "@/lib/analytics/meta-pixel"
+import { trackClientEvent } from "@/lib/analytics/track-client-event"
+import { getStockPresentation } from "@/lib/store/stock-presentation"
 
 interface Props {
   productId: string
@@ -12,12 +15,13 @@ interface Props {
   pricePaise: number
   imageUrl: string | null
   stockStatus: string
+  stockCount?: number | null
 }
 
-export default function AddToCartButton({ productId, slug, title, pricePaise, imageUrl, stockStatus }: Props) {
+export default function AddToCartButton({ productId, slug, title, pricePaise, imageUrl, stockStatus, stockCount }: Props) {
   const { addItem, setIsOpen } = useCart()
 
-  if (stockStatus === "OUT") {
+  if (!getStockPresentation(stockStatus, stockCount).available) {
     return (
       <Button disabled variant="outline" className="w-full mt-4">
         Out of stock
@@ -27,6 +31,15 @@ export default function AddToCartButton({ productId, slug, title, pricePaise, im
 
   const handleAdd = () => {
     addItem({ productId, slug, title, pricePaise, imageUrl })
+    trackAddToCart({
+      content_name: title,
+      content_ids: [productId],
+      value: pricePaise / 100,
+      currency: 'INR',
+    })
+    trackClientEvent('add_to_cart', {
+      metadata: { productId, title, pricePaise },
+    })
     toast.success(`${title} added to cart`)
     setIsOpen(true)
   }

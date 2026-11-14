@@ -4,6 +4,8 @@
 
 jest.setTimeout(20000)
 
+import { randomUUID } from 'node:crypto'
+
 import { prisma } from '@/lib/prisma'
 import { makeNextRequest, readJSON } from '../helpers/next-handler'
 import * as ProductDetail from '@/app/api/store/products/[slug]/route'
@@ -49,6 +51,29 @@ describe('API /api/store/products/[slug] (detail)', () => {
       const body = await readJSON(res)
       expect(body.slug).toBe(slug)
       expect(body).toHaveProperty('longDescription')
+    }
+  })
+
+  test('archived product cannot be opened through the public detail API', async () => {
+    const archivedSlug = `archived-product-${randomUUID()}`
+    const row = await prisma.product.create({
+      data: {
+        slug: archivedSlug,
+        title: 'Archived store test item',
+        shortDescription: 'Unavailable product',
+        longDescription: 'This product must not be discoverable.',
+        pricePaise: 10000,
+        stockStatus: 'IN_STOCK',
+        isActive: false,
+      },
+    })
+    try {
+      const req = makeNextRequest(`http://localhost/api/store/products/${archivedSlug}`)
+      const response = await DetailHandlers.GET!(req, { params: Promise.resolve({ slug: archivedSlug }) })
+      expect(response.status).toBe(404)
+      expect(await readJSON(response)).toEqual({ error: 'Not found' })
+    } finally {
+      await prisma.product.delete({ where: { id: row.id } })
     }
   })
 

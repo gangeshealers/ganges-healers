@@ -45,10 +45,10 @@ export function formatInvoiceData(payment: PaymentLike): InvoicePDFData {
 export async function createAndStoreInvoicePdf(lookupId: string, opts?: { force?: boolean }): Promise<string | null> {
   // Raw flexible lookup (legacy-safe). Using $queryRawUnsafe with parameter binding simulation.
   console.log('[invoices][gen] start_lookup', { lookupId })
-  interface RawPaymentRow { id: string; paymentId?: string | null; gatewayPaymentId?: string | null; orderId?: string | null; gatewayOrderId?: string | null; userId?: string | null; bookingId?: string | null; amountPaise?: number | null; currency?: string | null; invoiceUrl?: string | null }
+  interface RawPaymentRow { id: string; paymentId?: string | null; gatewayPaymentId?: string | null; orderId?: string | null; gatewayOrderId?: string | null; userId?: string | null; bookingId?: string | null; amountPaise?: number | null; currency?: string | null; invoiceUrl?: string | null; type?: string | null }
   const rows = await prisma.$queryRawUnsafe(
-    `SELECT id, "paymentId", "gatewayPaymentId", "orderId", "gatewayOrderId", "userId", "bookingId", "amountPaise", currency, "invoiceUrl"
-     FROM "Payment"
+    `SELECT id, "paymentId", "gatewayPaymentId", "orderId", "gatewayOrderId", "userId", "bookingId", "amountPaise", currency, to_jsonb(p)->>'invoiceUrl' AS "invoiceUrl", type::text
+     FROM "Payment" p
      WHERE $1 IN ("paymentId","gatewayPaymentId","orderId","gatewayOrderId","id")
      LIMIT 1`,
     lookupId
@@ -100,7 +100,7 @@ export async function createAndStoreInvoicePdf(lookupId: string, opts?: { force?
   const currency = (row.currency || 'INR').toUpperCase()
   const customerName = user?.name || 'Customer'
   const customerEmail = user?.email || 'unknown@example.com'
-  const serviceTitle = service?.name || 'Session'
+  const serviceTitle = service?.name || (row.type === 'MEMBERSHIP' ? 'VIP Membership' : 'Session')
 
   console.log('[invoices][gen] start_pdf', { lookupId, invoiceNo: invoiceNumber })
   let pdfBytes: Uint8Array
@@ -156,8 +156,24 @@ export async function createAndStoreInvoicePdf(lookupId: string, opts?: { force?
     // Still return URL since PDF exists and was uploaded
   }
 
-  // Try to persist invoiceUrl column if it exists (ignore failure)
-  try { await prisma.$executeRawUnsafe(`UPDATE "Payment" SET "invoiceUrl" = $1 WHERE id = $2`, url, row.id) } catch (e) { console.warn('[invoices][gen][warn][persist_invoiceUrl]', { lookupId, paymentId: row.id, error: (e as Error).message }) }
+  // Legacy Payment.invoiceUrl exists on some old databases but is absent in the
+  // current Prisma schema. Probe before updating to avoid a PostgreSQL 42703 error
+  // on every successful invoice, while retaining compatibility with legacy rows.
+  try {
+    const column: Array<{ present: boolean }> = await prisma.$queryRaw`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'Payment'
+          AND column_name = 'invoiceUrl'
+      ) AS present
+    `
+    if (column[0]?.present) {
+      await prisma.$executeRawUnsafe(`UPDATE "Payment" SET "invoiceUrl" = $1 WHERE id = $2`, url, row.id)
+    }
+  } catch (e) {
+    console.warn('[invoices][gen][warn][persist_invoiceUrl]', { lookupId, paymentId: row.id, error: (e as Error).name })
+  }
   console.log('[invoices][gen][done]', { lookupId, paymentId: row.id, url, force: !!opts?.force })
   return url
 }

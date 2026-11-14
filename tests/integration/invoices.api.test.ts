@@ -10,6 +10,12 @@ import * as ListMine from '@/app/api/invoices/me/route'
 
 jest.setTimeout(30000)
 
+// Only replace the request-context helper; payment verification and invoices remain real.
+jest.mock('@/lib/analytics/session', () => ({
+  getSessionId: async () => null,
+  getExperimentVariants: async () => ({}),
+}))
+
 // Auth mock – single test user
 jest.mock('@/lib/auth', () => ({
   auth: async () => ({ user: { id: process.env.TEST_INV_USER_ID, role: 'USER', email: 'invoice@example.com' } })
@@ -24,25 +30,31 @@ describe('Invoices Generation Flow', () => {
   let user: any
   let paymentId: string
   let orderId: string
+  let storeOrderId: string
+  let productId: string
 
   beforeAll(async () => {
     user = await prisma.user.create({ data: { email: `inv_${Date.now()}@ex.com`, password: 'x', role: 'USER', name: 'Invoice User' } })
     process.env.TEST_INV_USER_ID = user.id
+    productId = (await prisma.product.create({ data: { slug: `invoice-${crypto.randomUUID()}`, title: 'Invoice product fixture', pricePaise: 12345, stockCount: 3 } })).id
+    const order = await prisma.order.create({ data: { userId: user.id, totalPaise: 12345, items: { create: { productId, quantity: 1, pricePaise: 12345 } } } })
+    storeOrderId = order.id
   })
 
   afterAll(async () => {
     if (paymentId) await prisma.invoice.deleteMany({ where: { paymentId } }).catch(()=>{})
     if (paymentId) await prisma.payment.deleteMany({ where: { id: paymentId } }).catch(()=>{})
     await prisma.user.deleteMany({ where: { id: user.id } }).catch(()=>{})
+    if (productId) await prisma.product.delete({ where: { id: productId } })
     await prisma.$disconnect()
   })
 
   test('create order, verify -> auto invoice generated', async () => {
-    // Create generic payment order
+    // Create a payment bound to an owned order with a server-side price.
     const reqCreate = makeNextRequest('http://localhost/api/payments/create-order', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'SESSION', amountPaise: 12345 })
+      body: JSON.stringify({ type: 'STORE', metadata: { orderId: storeOrderId } })
     })
     const resCreate = await (CreateOrder as any).POST(reqCreate)
     expect(resCreate.status).toBeLessThan(300)

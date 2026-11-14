@@ -6,9 +6,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Button } from '@/components/ui/button'
 import { Calendar, User, CheckCircle, AlertCircle } from 'lucide-react'
-import { openRazorpayCheckout } from '@/lib/payments/openRazorpayCheckout'
+import { openRazorpayCheckout, type RazorpayResult } from '@/lib/payments/openRazorpayCheckout'
+import { bookingCheckoutClosed, decodeBookingPaymentProof, saveBookingPaymentProof, clearBookingPaymentProof } from '@/lib/bookings/payment-recovery'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { clinicDate, clinicSlotInstant } from '@/lib/bookings/time'
+import { authPathWithCallback } from '@/lib/auth/callback-url'
 
 interface Healer {
   id: string
@@ -35,7 +38,18 @@ interface BookingModalProps {
   productSlug?: string
 }
 
-export default function BookingModal({
+type SavedBooking = { id: string; ownerId: string; scheduledAt: string; pricePaise: number }
+type BookingAttempt = SavedBooking & { credit: boolean; paymentStarted: boolean; proof: RazorpayResult | null }
+const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })
+
+export default function BookingModal(props: BookingModalProps) {
+  const { data: session, status } = useSession()
+  const ownerId = session?.user?.id || ''
+  if (status === 'loading' && !ownerId) return <Dialog open={props.isOpen} onOpenChange={open => { if (!open) props.onClose() }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{props.serviceName ? `Book ${props.serviceName}` : 'Book a session'}</DialogTitle><DialogDescription>Checking your account before booking.</DialogDescription></DialogHeader><p role="status">Loading your account…</p></DialogContent></Dialog>
+  return <BookingFlow key={`${ownerId || 'guest'}:${props.healer.id}:${props.serviceId}:${props.isOpen}`} {...props} />
+}
+
+function BookingFlow({
   isOpen,
   onClose,
   healer,
@@ -44,24 +58,39 @@ export default function BookingModal({
   programSlug,
   productSlug,
 }: BookingModalProps) {
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus, update } = useSession()
   const router = useRouter()
   
-  const [step, setStep] = useState<'date' | 'time' | 'confirm' | 'processing' | 'success'>('date')
+  const [step, setStep] = useState<'date' | 'time' | 'confirm' | 'processing' | 'success' | 'requested' | 'recovery'>('date')
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedTime, setSelectedTime] = useState<string>('')
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([])
+  const [pricePaise, setPricePaise] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
-  // Track created booking id locally (if needed for future UI)
-  const [, setCreatedBookingId] = useState<string | null>(null)
-  const verifyingRef = useRef(false)
+  const [savedBooking, setSavedBooking] = useState<SavedBooking | null>(null)
+  const [hasProof, setHasProof] = useState(false)
+  const [proofStored, setProofStored] = useState(true)
+  const attempt = useRef<BookingAttempt | null>(null)
+  const inFlight = useRef(false)
+  const requiresReview = useRef(false)
+  const mounted = useRef(true)
+  const currentOwner = useRef(session?.user?.id || '')
+  currentOwner.current = session?.user?.id || ''
+  const currentAuthStatus = useRef(sessionStatus)
+  currentAuthStatus.current = sessionStatus
+  const selectedDateRef = useRef(selectedDate)
+  selectedDateRef.current = selectedDate
+  const availabilityVersion = useRef(0)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const dateInputRef = useRef<HTMLInputElement | null>(null)
   const dateId = useId()
   const titleId = useId()
   const titleText = serviceName ? `Book ${serviceName}` : 'Book a session'
 
-  // (Replaced by shared helper openRazorpayCheckout)
+  const isTest = process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1'
+  const needsSignIn = !session?.user?.id && !isTest
+  const useCredit = Boolean(session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0) || (isTest && !session?.user?.id)
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -79,12 +108,16 @@ export default function BookingModal({
   }, [isOpen])
 
   const fetchAvailability = useCallback(async () => {
+    const version = ++availabilityVersion.current
+    const current = () => mounted.current && version === availabilityVersion.current && selectedDateRef.current === selectedDate
+    setAvailableSlots([])
+    setPricePaise(null)
     setLoading(true)
     setError('')
     
     try {
       const response = await fetch(
-        `/api/availability?healerId=${healer.id}&date=${selectedDate}`
+        `/api/availability?healerId=${encodeURIComponent(healer.id)}&date=${selectedDate}&serviceId=${encodeURIComponent(serviceId)}`
       )
       
       if (!response.ok) {
@@ -93,17 +126,23 @@ export default function BookingModal({
       }
 
       const data = await response.json()
-      setAvailableSlots(data.data.slots.filter((slot: TimeSlot) => slot.available))
+      if (!current()) return
+      const slots: unknown = data?.data?.slots
+      if (!Array.isArray(slots) || !slots.every(slot => slot && typeof slot.time === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(slot.time) && typeof slot.available === 'boolean')) throw new Error('Available times could not be confirmed. Select the date again.')
+      const price = data.data.pricePaise
+      if (!Number.isSafeInteger(price) || price < 0) throw new Error('The session price could not be confirmed. Select the date again.')
+      setPricePaise(price)
+      setAvailableSlots(slots.filter((slot: TimeSlot) => slot.available))
       
-      if (data.data.slots.filter((slot: TimeSlot) => slot.available).length === 0) {
+      if (slots.filter((slot: TimeSlot) => slot.available).length === 0) {
         setError('No available slots for this date. Please select another date.')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load availability')
+      if (current()) { setAvailableSlots([]); setError(err instanceof Error ? err.message : 'Failed to load availability') }
     } finally {
-      setLoading(false)
+      if (current()) setLoading(false)
     }
-  }, [healer.id, selectedDate])
+  }, [healer.id, selectedDate, serviceId])
 
   // Fetch availability when date is selected
   useEffect(() => {
@@ -113,9 +152,12 @@ export default function BookingModal({
   }, [selectedDate, healer.id, fetchAvailability])
 
   const handleDateSelect = (date: string) => {
+    selectedDateRef.current = date
+    setAvailableSlots([])
     setSelectedDate(date)
     setSelectedTime('')
-    setStep('time')
+    setStep(date ? 'time' : 'date')
+    if (!date) setLoading(false)
   }
 
   const handleTimeSelect = (time: string) => {
@@ -124,166 +166,132 @@ export default function BookingModal({
   }
 
   const handleBooking = async () => {
-    const isTest = (process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1')
-    if (!session && !isTest) {
-      router.push('/auth/signin')
+    if (inFlight.current || requiresReview.current || sessionStatus === 'loading') return
+    const ownerId = session?.user?.id || ''
+    if (!ownerId && !isTest) {
+      const params = new URLSearchParams(window.location.search)
+      params.set('openBooking', '1'); params.set('healerId', healer.id)
+      if (programSlug) params.set('programSlug', programSlug)
+      if (productSlug) params.set('productSlug', productSlug)
+      router.push(authPathWithCallback('/auth/signin', `${window.location.pathname}?${params}`))
       return
     }
-
-    setLoading(true)
-    setError('')
-
+    const checkOwner = () => {
+      if (!mounted.current || currentOwner.current !== ownerId || (ownerId && currentAuthStatus.current !== 'authenticated')) throw new Error('Your account changed. Open My Bookings before continuing.')
+    }
+    const markConfirmed = () => {
+      checkOwner()
+      if (attempt.current?.proof) clearBookingPaymentProof(attempt.current.ownerId, attempt.current.id)
+      setStep('success')
+      if (isTest) (window as unknown as { __e2eBookingConfirmed?: boolean }).__e2eBookingConfirmed = true
+      if (ownerId) {
+        router.refresh?.()
+        void Promise.resolve(update?.()).catch(() => {})
+      }
+    }
+    inFlight.current = true
+    setLoading(true); setError('')
+    let stage: 'create' | 'credit' | 'order' | 'checkout' | 'verify' = attempt.current ? 'order' : 'create'
+    let creationSubmitted = false, creationRejected = false
     try {
-      const scheduledAt = new Date(`${selectedDate}T${selectedTime}:00.000Z`)
-
-      // In TEST_MODE, if not logged in, create a test session cookie first
-      const isTest = (process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1')
-      if (isTest && !session?.user?.id) {
-        try { await fetch('/api/test/login?role=USER&vip=1&credits=5', { method: 'GET' }) } catch { /* noop */ }
-      }
-
-      const response = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          healerId: healer.id,
-          serviceId,
-          scheduledAt: scheduledAt.toISOString(),
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create booking')
-      }
-      const data = await response.json()
-      const newBookingId = data?.data?.id as string
-      setCreatedBookingId(newBookingId)
-      // E2E test hook: expose booking id when in TEST_MODE
-      if (typeof window !== 'undefined' && (process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1')) {
-        try {
-          const w = window as unknown as { __e2eBookingId?: string }
-          w.__e2eBookingId = newBookingId
-        } catch { /* noop */ }
-      }
-
-      // Decide payment path
-  const vip = session?.user?.vip
-  const credits = session?.user?.freeSessionCredits ?? 0
-
-      if ((vip && credits > 0) || isTest) {
-        // Use VIP credit path
-        setStep('processing')
-        const creditRes = await fetch(`/api/bookings/${newBookingId}/confirm-with-credits`, { method: 'POST' })
-        if (!creditRes.ok) {
-          const errJ = await creditRes.json().catch(() => ({}))
-          throw new Error(errJ.error || 'Failed to confirm with credits')
+      checkOwner()
+      if (!attempt.current) {
+        if (pricePaise === null) throw new Error('Select a date to review the session price.')
+        const scheduledAt = clinicSlotInstant(selectedDate, selectedTime).toISOString()
+        if (!availableSlots.some(slot => slot.time === selectedTime)) throw new Error('Select an available time before requesting this appointment.')
+        if (!(Date.parse(scheduledAt) > Date.now())) throw new Error(bookingCheckoutClosed)
+        if (isTest && !ownerId) {
+          const login = await fetch('/api/test/login?role=USER&vip=1&credits=5', { method: 'GET' })
+          checkOwner()
+          if (!login.ok) throw new Error('Test sign-in failed')
         }
-        setStep('success')
-        if (typeof window !== 'undefined' && (process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1')) {
-          try {
-            const w = window as unknown as { __e2eBookingConfirmed?: boolean }
-            w.__e2eBookingConfirmed = true
-          } catch { /* noop */ }
-        }
-      } else {
-        // Razorpay path
-        setStep('processing')
-        // In TEST_MODE, short-circuit to success to avoid real gateway flake
-        if (process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1') {
-          try {
-            const vipC = !!(session?.user?.vip && (session?.user?.freeSessionCredits ?? 0) > 0)
-            if (vipC && newBookingId) {
-              const creditRes = await fetch(`/api/bookings/${newBookingId}/confirm-with-credits`, { method: 'POST' })
-              if (creditRes.ok) {
-                setStep('success')
-                return
-              }
-            }
-            // Otherwise simulate a generic payment verify to unlock success UI
-            await fetch('/api/payments/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: 'order_mocked_123', paymentId: 'pay_simulated_123', signature: 'sig_simulated_123' }) })
-          } catch { /* noop */ }
-          setStep('success')
-          return
-        }
-        const orderRes = await fetch('/api/payments/create-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingId: newBookingId }),
-        })
-        if (!orderRes.ok) {
-          const errJ = await orderRes.json().catch(() => ({}))
-            
-          throw new Error(errJ.error || 'Failed to create payment order')
-        }
-        const order = await orderRes.json()
-
-        try {
-          const result = await openRazorpayCheckout({
-            orderId: order.orderId,
-            amountPaise: order.amountPaise || order.amount || 0,
-            key: order.key || order.key_id || (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || ''),
-            notes: { bookingId: newBookingId },
-            prefill: { email: session?.user?.email || '', name: session?.user?.name || '' },
-            description: 'Session payment'
-          })
-          if (verifyingRef.current) return
-          verifyingRef.current = true
-          const verifyRes = await fetch('/api/payments/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              orderId: result.razorpay_order_id,
-              paymentId: result.razorpay_payment_id,
-              signature: result.razorpay_signature,
-            })
-          })
-          if (!verifyRes.ok) {
-            const vErr = await verifyRes.json().catch(() => ({}))
-            throw new Error(vErr.error || 'Verification failed')
+        creationSubmitted = true
+        const response = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ healerId: healer.id, serviceId, scheduledAt, expectedPricePaise: pricePaise }) })
+        checkOwner()
+        const data = await response.json().catch(() => null)
+        checkOwner()
+        if (!response.ok) {
+          creationRejected = response.status >= 400 && response.status < 500
+          if (response.status === 409 && Number.isSafeInteger(data?.currentPricePaise) && data.currentPricePaise >= 0) {
+            setPricePaise(data.currentPricePaise)
           }
-          setStep('success')
-          if (typeof window !== 'undefined' && (process.env.NEXT_PUBLIC_TEST_MODE === '1' || process.env.TEST_MODE === '1')) {
-            try {
-              const w = window as unknown as { __e2eBookingConfirmed?: boolean }
-              w.__e2eBookingConfirmed = true
-            } catch { /* noop */ }
-          }
-          router.refresh()
-        } catch (gatewayErr) {
-          setError(gatewayErr instanceof Error ? gatewayErr.message : 'Payment cancelled')
-          setStep('confirm')
-        } finally {
-          verifyingRef.current = false
+          throw new Error(data?.error || 'The booking request could not be confirmed.')
         }
+        const row = data?.data
+        if (!row || typeof row.id !== 'string' || !row.id || row.status !== 'PENDING' || row.scheduledAt !== scheduledAt
+          || row.pricePaise !== pricePaise || typeof row.userId !== 'string' || !row.userId || (ownerId && row.userId !== ownerId)) throw new Error('The booking request could not be confirmed.')
+        const saved: SavedBooking = { id: row.id, ownerId: ownerId || row.userId, scheduledAt, pricePaise: row.pricePaise }
+        attempt.current = { ...saved, credit: useCredit, paymentStarted: false, proof: null }
+        setSavedBooking(saved)
+        if (isTest) (window as unknown as { __e2eBookingId?: string }).__e2eBookingId = saved.id
+        if (saved.pricePaise === 0) { setStep('requested'); return }
       }
+      const saved = attempt.current
+      if (!saved.proof && !(Date.parse(saved.scheduledAt) > Date.now())) throw new Error(bookingCheckoutClosed)
+      setStep('processing')
+      if (saved.credit && !saved.paymentStarted) {
+        stage = 'credit'
+        const response = await fetch(`/api/bookings/${encodeURIComponent(saved.id)}/confirm-with-credits`, { method: 'POST' })
+        const body = await response.json().catch(() => null)
+        checkOwner()
+        if (!response.ok || body?.ok !== true) throw new Error('The session credit result could not be confirmed. Check My Bookings before continuing.')
+        markConfirmed()
+        return
+      }
+      if (!saved.proof) {
+        stage = 'order'; saved.paymentStarted = true
+        const response = await fetch('/api/payments/create-order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bookingId: saved.id }) })
+        const quote = await response.json().catch(() => null)
+        checkOwner()
+        if (!response.ok) throw new Error(quote?.error || 'Payment could not be prepared. Try again for this saved appointment.')
+        if (!quote || typeof quote.orderId !== 'string' || !quote.orderId || typeof quote.key !== 'string' || !quote.key
+          || !Number.isSafeInteger(quote.amountPaise) || quote.amountPaise <= 0 || quote.amountPaise !== saved.pricePaise || quote.currency !== 'INR') { requiresReview.current = true; throw new Error('The saved payment quote could not be confirmed. Open My Bookings before continuing.') }
+        if (!(Date.parse(saved.scheduledAt) > Date.now())) throw new Error(bookingCheckoutClosed)
+        stage = 'checkout'
+        const result = await openRazorpayCheckout({ orderId: quote.orderId, amountPaise: quote.amountPaise, key: quote.key, notes: { bookingId: saved.id }, prefill: { email: session?.user?.email || '', name: session?.user?.name || '' }, description: 'Session payment' })
+        const proof = decodeBookingPaymentProof(result)
+        if (!proof || proof.razorpay_order_id !== quote.orderId) { requiresReview.current = true; throw new Error('The payment receipt does not match this appointment. Open My Bookings before continuing.') }
+        // Retain a submitted receipt under its ORIGINAL owner even if the dialog/account changed.
+        saved.proof = proof
+        const stored = saveBookingPaymentProof(saved.ownerId, saved.id, proof)
+        if (mounted.current) { setHasProof(true); setProofStored(stored) }
+        checkOwner()
+      }
+      stage = 'verify'
+      const proof = saved.proof!
+      const response = await fetch('/api/payments/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: proof.razorpay_order_id, paymentId: proof.razorpay_payment_id, signature: proof.razorpay_signature }) })
+      const body = await response.json().catch(() => null)
+      checkOwner()
+      if (!response.ok || body?.verified !== true) throw new Error('Payment confirmation is pending. Select Confirm payment to check the submitted receipt again.')
+      markConfirmed()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create booking')
+      if (!mounted.current || currentOwner.current !== ownerId) return
+      if ((stage === 'create' && creationSubmitted && !creationRejected && !attempt.current) || stage === 'credit' || requiresReview.current) {
+        requiresReview.current = true
+        setStep('recovery')
+        setError(stage === 'credit' ? 'The session credit result could not be confirmed. Check My Bookings before requesting or paying for another appointment.' : stage === 'create' ? 'The booking request could not be confirmed. Check My Bookings before requesting another appointment.' : err instanceof Error ? err.message : 'The payment result could not be confirmed. Open My Bookings before continuing.')
+      } else {
+        setStep('confirm')
+        setError(attempt.current?.proof && err instanceof TypeError ? 'We could not confirm your payment. Select Confirm payment to check the submitted receipt again.'
+          : err instanceof Error && err.message === 'Payment dismissed' ? 'Payment was cancelled. Your appointment request is saved; you can continue payment when ready.'
+            : err instanceof Error ? err.message : 'Your appointment could not be confirmed.')
+      }
     } finally {
-      setLoading(false)
+      inFlight.current = false
+      if (mounted.current && currentOwner.current === ownerId) setLoading(false)
     }
   }
 
-  const handleClose = () => {
-    onClose()
-    // Reset after modal closes
-    setTimeout(() => {
-      setStep('date')
-      setSelectedDate('')
-      setSelectedTime('')
-      setAvailableSlots([])
-      setError('')
-    }, 300)
-  }
+  const handleClose = () => { if (!inFlight.current) onClose() }
+  const viewBookings = () => { if (!inFlight.current) { onClose(); router.push('/dashboard/bookings') } }
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'UTC'
     })
   }
 
@@ -294,6 +302,14 @@ export default function BookingModal({
       hour12: true
     })
   }
+
+  let confirmLabel = 'Confirm & Pay'
+  if (loading) confirmLabel = 'Processing...'
+  else if (hasProof) confirmLabel = 'Confirm payment'
+  else if (savedBooking) confirmLabel = 'Continue payment'
+  else if (needsSignIn) confirmLabel = 'Sign in to book'
+  else if (pricePaise === 0) confirmLabel = 'Request free session'
+  else if (useCredit) confirmLabel = 'Use 1 session credit'
 
   return (
     <Dialog open={isOpen} onOpenChange={(next) => { if (!next) handleClose() }}>
@@ -327,7 +343,7 @@ export default function BookingModal({
             <div>
               <h3 className="font-semibold">{healer.user.name}</h3>
               <p className="text-sm text-gray-600">
-                {healer.experienceYears} years experience • ⭐ {healer.rating}
+                {healer.experienceYears} years experience{healer.rating > 0 ? ` • ⭐ ${healer.rating.toFixed(1)}` : ' • No reviews yet'}
               </p>
             </div>
           </div>
@@ -336,7 +352,7 @@ export default function BookingModal({
           {error && (
             <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
               <AlertCircle className="w-4 h-4 text-red-500" />
-              <p className="text-sm text-red-700">{error}</p>
+              <p role="alert" className="text-sm text-red-700">{error}</p>
             </div>
           )}
 
@@ -350,8 +366,8 @@ export default function BookingModal({
                   type="date"
                   value={selectedDate}
                   onChange={(e) => handleDateSelect(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                  min={clinicDate(new Date())}
+                  max={clinicDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))}
                   className="flex-1 outline-none"
                   ref={dateInputRef}
                   id={dateId}
@@ -365,7 +381,7 @@ export default function BookingModal({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">
-                  Available times for {formatDate(selectedDate)}
+                  Available times for {formatDate(selectedDate)} (India time)
                 </label>
                 <Button 
                   variant="ghost" 
@@ -416,9 +432,15 @@ export default function BookingModal({
                   <span className="font-medium">{formatDate(selectedDate)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Time:</span>
+                  <span className="text-gray-600">Time (India):</span>
                   <span className="font-medium">{formatTime(selectedTime)}</span>
                 </div>
+                {pricePaise !== null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">{savedBooking ? 'Saved price' : 'Session price'}</span>
+                    <span className="font-medium">{pricePaise === 0 ? 'Free' : rupees.format(pricePaise / 100)}</span>
+                  </div>
+                )}
               </div>
               
               <div className="flex gap-3">
@@ -426,16 +448,19 @@ export default function BookingModal({
                   variant="outline" 
                   onClick={() => setStep('time')} 
                   className="flex-1"
-                  disabled={loading}
+                  disabled={loading || !!savedBooking}
                 >
                   Back
                 </Button>
-                <Button onClick={handleBooking} disabled={loading} className="flex-1">
-                  {loading ? 'Processing...' : 'Confirm & Pay'}
+                <Button onClick={handleBooking} disabled={loading || sessionStatus === 'loading'} className="flex-1">
+                  {confirmLabel}
                 </Button>
               </div>
             </div>
           )}
+
+          {savedBooking && step === 'confirm' ? <div className="space-y-2 text-sm"><p role="status">Your appointment request is saved. Continue with this appointment or open My Bookings to review it.</p>{hasProof && !proofStored ? <p role="alert">Your browser could not retain the payment receipt. Keep this window open while confirming payment.</p> : null}<Button variant="outline" onClick={viewBookings}>View My Bookings</Button></div> : null}
+          {step === 'recovery' ? <Button onClick={viewBookings} className="w-full">View My Bookings</Button> : null}
 
           {/* Step 4: Processing Payment / Credits */}
           {step === 'processing' && (
@@ -446,13 +471,20 @@ export default function BookingModal({
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">Processing...</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  {session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0 ? 'Applying VIP credit' : 'Opening secure payment gateway'}
+                  {hasProof ? 'Checking the payment receipt you already submitted' : session?.user?.vip && (session.user.freeSessionCredits ?? 0) > 0 ? 'Applying VIP credit' : 'Opening secure payment gateway'}
                 </p>
               </div>
             </div>
           )}
 
           {/* Step 5: Success */}
+          {step === 'requested' && (
+            <div className="text-center space-y-4">
+              <h3 className="text-lg font-semibold">Booking request received</h3>
+              <p role="status" className="text-sm text-gray-600">This free appointment is awaiting practitioner confirmation. No payment or session credit is required. Check My Bookings for updates.</p>
+              <Button onClick={viewBookings} className="w-full">View My Bookings</Button>
+            </div>
+          )}
           {step === 'success' && (
             <div className="text-center space-y-4">
               <div className="flex justify-center">

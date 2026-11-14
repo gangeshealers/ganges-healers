@@ -7,6 +7,7 @@ import { Star, CheckCircle, Clock } from "lucide-react"
 import BookingModal from "@/components/booking/BookingModal"
 import { useCallback, useState, useMemo } from "react"
 import { track } from "@/lib/analytics/client"
+import { getWeeklyScheduleCue } from "@/lib/bookings/availability-rules"
 
 interface HealerCardProps {
   healer: {
@@ -22,27 +23,6 @@ interface HealerCardProps {
   }
   serviceId: string
   serviceName: string
-}
-
-const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-
-function getAvailabilitySignal(
-  availability: Record<string, { start: string; end: string }> | null,
-): string | null {
-  if (!availability) return null
-  const now = new Date()
-  const todayName = dayNames[now.getDay()]
-  if (availability[todayName]) return "Available today"
-  // Find next available day
-  for (let i = 1; i <= 7; i++) {
-    const nextDay = dayNames[(now.getDay() + i) % 7]
-    const slot = availability[nextDay]
-    if (slot) {
-      const label = i === 1 ? "Tomorrow" : nextDay
-      return `Next: ${label} ${slot.start}`
-    }
-  }
-  return null
 }
 
 function StarRating({ rating }: { rating: number }) {
@@ -70,7 +50,7 @@ export default function HealerCard({ healer, serviceId, serviceName }: HealerCar
   const [open, setOpen] = useState(false)
   const name = healer.user?.name ?? "Healer"
   const availSignal = useMemo(
-    () => getAvailabilitySignal(healer.availability),
+    () => getWeeklyScheduleCue(healer.availability),
     [healer.availability],
   )
 
@@ -107,11 +87,13 @@ export default function HealerCard({ healer, serviceId, serviceName }: HealerCar
             )}
           </div>
           <div className="flex items-center gap-2 mt-1">
+            {healer.reviewCount > 0 ? <>
             <StarRating rating={healer.rating ?? 0} />
             <span className="text-sm text-muted-foreground">
               {(healer.rating ?? 0).toFixed(1)}
               {healer.reviewCount > 0 && ` (${healer.reviewCount})`}
             </span>
+            </> : <span className="text-sm text-muted-foreground">No reviews yet</span>}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {healer.experienceYears} years experience
@@ -137,9 +119,14 @@ export default function HealerCard({ healer, serviceId, serviceName }: HealerCar
       )}
 
       {availSignal && (
-        <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-          <Clock className="h-3.5 w-3.5" />
-          {availSignal}
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+            <Clock className="h-3.5 w-3.5" />
+            <span>{availSignal}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Working hours only. Check the booking calendar for open appointments.
+          </p>
         </div>
       )}
 
@@ -154,7 +141,7 @@ export default function HealerCard({ healer, serviceId, serviceName }: HealerCar
           id: healer.id,
           user: { name },
           experienceYears: healer.experienceYears,
-          rating: healer.rating ?? 5,
+          rating: healer.reviewCount > 0 ? healer.rating ?? 0 : 0,
         }}
         serviceId={serviceId}
         serviceName={serviceName}
