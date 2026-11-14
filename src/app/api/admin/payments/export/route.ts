@@ -1,11 +1,11 @@
+import { refundReviewLabel } from '@/lib/bookings/refund-policy'
+import { capturedPaymentWhere, reportType } from '@/lib/admin/payment-report'
 import { NextRequest, NextResponse } from 'next/server'
-import type { PaymentType, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/rbac'
 import { parseRange } from '@/lib/time-range'
 
 const MAX_EXPORT_ROWS = 5000
-const PAYMENT_TYPES = new Set(['ALL', 'SESSION', 'PROGRAM', 'MEMBERSHIP', 'STORE', 'COURSE'])
 
 function validDay(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
   const fromParam = params.get('from')
   const toParam = params.get('to')
 
-  if ((kind !== 'payments' && kind !== 'refunds') || !PAYMENT_TYPES.has(type)) {
+  const types = reportType(type)
+  if ((kind !== 'payments' && kind !== 'refunds') || !types) {
     return NextResponse.json({ error: 'invalid-export-filter' }, { status: 400 })
   }
   if ((fromParam === null) !== (toParam === null) ||
@@ -65,42 +66,42 @@ export async function GET(req: NextRequest) {
     let rowCount: number
 
     if (kind === 'payments') {
-      const where: Prisma.PaymentWhereInput = { ...dateFilter, statusEnum: 'SUCCESS' }
-      if (type !== 'ALL') where.type = type as PaymentType
+      const where = { ...dateFilter, ...capturedPaymentWhere, ...types }
       const payments = await prisma.payment.findMany({
         where,
         orderBy: sort,
         take: MAX_EXPORT_ROWS + 1,
-        select: { id: true, createdAt: true, type: true, amountPaise: true, userId: true },
+        select: { id: true, createdAt: true, type: true, amountPaise: true, userId: true, currency: true },
       })
       if (payments.length > MAX_EXPORT_ROWS) {
         return NextResponse.json({ error: 'export-too-large', maxRows: MAX_EXPORT_ROWS }, { status: 413 })
       }
       rowCount = payments.length
       csv = asCsv(
-        ['Created At (UTC)', 'Payment ID', 'Type', 'Amount (INR)', 'User ID'],
+        ['Created At (UTC)', 'Payment ID', 'Type', 'Amount (INR)', 'User ID', 'Currency', 'Amount (minor units)'],
         payments.map((payment) => [
           payment.createdAt.toISOString(), payment.id, payment.type,
-          (payment.amountPaise / 100).toFixed(2), payment.userId,
+          (payment.currency ?? 'INR') === 'INR' ? (payment.amountPaise / 100).toFixed(2) : null, payment.userId,
+          payment.currency ?? 'INR', payment.amountPaise,
         ]),
       )
     } else {
-      // Like the existing dashboard, refund totals are not filtered by payment type.
       const refunds = await prisma.refund.findMany({
-        where: dateFilter,
+        where: { ...dateFilter, payment: types },
         orderBy: sort,
         take: MAX_EXPORT_ROWS + 1,
-        select: { id: true, createdAt: true, paymentId: true, amountPaise: true },
+        select: { id: true, createdAt: true, paymentId: true, amountPaise: true, status: true, gatewayRefundId: true, payment: { select: { bookingId: true, currency: true } } },
       })
       if (refunds.length > MAX_EXPORT_ROWS) {
         return NextResponse.json({ error: 'export-too-large', maxRows: MAX_EXPORT_ROWS }, { status: 413 })
       }
       rowCount = refunds.length
       csv = asCsv(
-        ['Created At (UTC)', 'Refund ID', 'Payment ID', 'Amount (INR)'],
+        ['Created At (UTC)', 'Refund ID', 'Payment ID', 'Amount (INR)', 'Refund outcome', 'Booking ID', 'Currency', 'Amount (minor units)'],
         refunds.map((refund) => [
           refund.createdAt.toISOString(), refund.id, refund.paymentId,
-          (refund.amountPaise / 100).toFixed(2),
+          (refund.payment.currency ?? 'INR') === 'INR' ? (refund.amountPaise / 100).toFixed(2) : null,
+          refundReviewLabel(refund), refund.payment.bookingId, refund.payment.currency ?? 'INR', refund.amountPaise,
         ]),
       )
     }

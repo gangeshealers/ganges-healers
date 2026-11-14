@@ -56,7 +56,7 @@ describe('admin payment CSV export', () => {
     expect(body).toContain('"12.99"')
     expect(body).toContain('"' + "'=HYPERLINK(" + '""https://invalid.example"",""click"")"')
     const query = findPayments.mock.calls[0][0]
-    expect(query.where.statusEnum).toBe('SUCCESS')
+    expect(query.where.OR).toContainEqual({ statusEnum: { in: ['SUCCESS', 'REFUNDED'] } })
     expect(query.where.type).toBe('SESSION')
     expect(query.where.createdAt.gte.toISOString()).toBe('2026-11-01T00:00:00.000Z')
     expect(query.where.createdAt.lte.toISOString()).toBe('2026-11-02T23:59:59.999Z')
@@ -64,9 +64,9 @@ describe('admin payment CSV export', () => {
     expect(findRefunds).not.toHaveBeenCalled()
   })
 
-  test('exports refunds independently of the payment type filter', async () => {
+  test('exports every refund attempt for the selected payment type with its supported outcome', async () => {
     findRefunds.mockResolvedValue([{
-      id: 'refund-1', createdAt: day, amountPaise: 425, paymentId: 'payment-1',
+      id: 'refund-1', createdAt: day, amountPaise: 425, paymentId: 'payment-1', status: 'SUCCESS', gatewayRefundId: null, payment: { bookingId: null, currency: 'INR' },
     }])
     const response = await GET(request('?kind=refunds&type=COURSE&from=2026-11-01&to=2026-11-02'))
     expect(response.status).toBe(200)
@@ -74,7 +74,9 @@ describe('admin payment CSV export', () => {
     expect(body).toContain('"refund-1"')
     expect(body).toContain('"payment-1"')
     expect(body).toContain('"4.25"')
+    expect(body).toContain('"Needs review"')
     expect(findRefunds.mock.calls[0][0].where).toEqual({
+      payment: { type: 'COURSE' },
       createdAt: {
         gte: new Date('2026-11-01T00:00:00.000Z'),
         lte: new Date('2026-11-02T23:59:59.999Z'),

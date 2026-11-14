@@ -215,11 +215,9 @@ Both use the new, read-only GET /api/admin/payments/export endpoint:
 - type=ALL|SESSION|PROGRAM|MEMBERSHIP|STORE|COURSE (defaults to ALL)
 
 The export requires the existing administrator session and returns 403
-{ "error": "forbidden" } otherwise. Payment CSVs include **successful**
-payments only and honor the payment-type filter. Refund CSVs always include
-refunds within the date range regardless of payment type, consistent with
-the existing analytics dashboard. Money is exported as fixed-decimal INR
-values converted from persisted integer paise. Download responses are
+{ "error": "forbidden" } otherwise. Both reports honor the payment type and UTC date range. A capture stays in gross even after a full refund. Confirmed refund totals include only saved successful or processed attempts with a gateway reference. Daily totals use the recorded payment and refund creation dates. INR totals include historical records whose currency was left empty.
+
+**Recent refund attempts** and **Refunds CSV** include every outcome. Staff can follow **Review booking** to see the appointment, issued invoice number, confirmed refund total and individual attempts. The CSV retains the original identifier and amount columns and adds the outcome, booking reference, currency and minor-unit amount. For non-INR rows, the INR column is empty. Download responses are
 UTF-8 CSV with Content-Disposition: attachment, Cache-Control: private, no-store
 and X-Content-Type-Options: nosniff; spreadsheet-formula-like string cells
 are escaped to text.
@@ -229,5 +227,5 @@ Exports are intentionally capped at **5,000 rows**, with a query limited to
 Larger exports return 413 { "error": "export-too-large", "maxRows": 5000 };
 choose a shorter date range in that case. Unsupported filters/dates return
 400 and data-access failures return 500 { "error": "export-unavailable" }.
-No financial records are changed. Existing metrics, timeseries, latest,
+No financial records are changed. Existing checkout, payment verification,
 refunds, payment, invoice, and webhook endpoints keep their contracts.
