@@ -1,13 +1,10 @@
 import { prisma } from '@/lib/prisma'
 import { lockTransaction } from '@/lib/db/locks'
 import { z } from 'zod'
+import { referencedRefundStatus } from '@/lib/bookings/refund-policy'
 
 type RefundStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'UNKNOWN'
 type ExpectedRefund = { gatewayPaymentId: string; amountPaise: number; currency: 'INR' }
-
-function confirmed(status: string | null) {
-  return ['SUCCESS', 'PROCESSED'].includes((status ?? '').toUpperCase())
-}
 
 /** Persist gateway outcomes under one payment lock; a delayed response cannot undo confirmation. */
 export async function recordRefundOutcome(
@@ -39,19 +36,21 @@ export async function recordRefundOutcome(
         || refund.amountPaise !== expected.amountPaise || payment.currency !== expected.currency))) {
       throw new Error('REFUND_BINDING_MISMATCH')
     }
-    const previous = (refund.status ?? '').toUpperCase()
-    const next: RefundStatus = confirmed(previous) ? 'SUCCESS'
-      : previous === 'FAILED' && ['PENDING', 'UNKNOWN'].includes(status) ? 'FAILED' : status
+    const reference = refund.gatewayRefundId ?? gatewayRefundId
+    const previous = referencedRefundStatus(refund)
+    const incoming = status === 'SUCCESS' && !reference ? 'UNKNOWN' : status
+    const next: RefundStatus = previous === 'SUCCESS' ? 'SUCCESS'
+      : previous === 'FAILED' && ['PENDING', 'UNKNOWN'].includes(incoming) ? 'FAILED' : incoming
     const refunds = await tx.refund.findMany({ where: { paymentId: payment.id } })
     const total = refunds.reduce((sum, row) => {
-      if (!(row.id === refund.id ? next === 'SUCCESS' : confirmed(row.status))) return sum
+      if (!(row.id === refund.id ? next === 'SUCCESS' : referencedRefundStatus(row) === 'SUCCESS')) return sum
       if (!Number.isSafeInteger(row.amountPaise) || row.amountPaise <= 0) throw new Error('REFUND_AMOUNT_INVALID')
       return sum + row.amountPaise
     }, 0)
     if (!Number.isSafeInteger(total) || total > payment.amountPaise) throw new Error('REFUND_TOTAL_EXCEEDS_PAYMENT')
     const updated = await tx.refund.update({
       where: { id: refund.id },
-      data: { status: next, gatewayRefundId: refund.gatewayRefundId ?? gatewayRefundId },
+      data: { status: next, gatewayRefundId: reference },
     })
     if (total === payment.amountPaise) {
       await tx.payment.update({ where: { id: payment.id }, data: { status: 'refunded', statusEnum: 'REFUNDED' } })

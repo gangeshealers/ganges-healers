@@ -171,6 +171,8 @@ wait for activity/analytics side effects rather than forcing Jest to exit.
     balance owed under the policy at the time of cancellation. Pending or uncertain
     outcomes must be reconciled before another submission. An eligible retry reuses
     the original unsubmitted intent, capped at both its recorded amount and the balance.
+    A saved success counts toward that balance only when it has a gateway refund ID.
+    A success without a reference remains under review on cancellation and reload.
 
 - Testing (contracts pinned by)
   - `membership.plans.api.contract.test.ts`

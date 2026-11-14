@@ -151,12 +151,21 @@ test('desktop account navigation follows real session roles and signs out throug
 
 test('mobile account navigation signs out through Auth.js in its own session', async ({ page }) => {
   test.setTimeout(120_000)
-  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-  // A fixture login must start in a fresh browser context. Reusing the desktop
-  // page can overlap its post-sign-out refresh with an injected mobile session.
-  expect((await page.goto(`/api/test/login?role=USER&email=nav-mobile-${token}@example.test`))?.ok()).toBeTruthy()
-  await page.goto('/')
+  const email = `nav-mobile-${randomUUID()}@example.test`
+  const password = `Test-${randomUUID()}!`
+  const registered = await page.request.post('/api/auth/register', {
+    data: { name: 'Mobile navigation test member', email, password },
+  })
+  expect(registered.status()).toBe(201)
   await page.setViewportSize({ width: 390, height: 844 })
+  // The real credentials flow sets the session and CSRF cookies that Auth.js will sign out.
+  await page.goto('/auth/signin?callbackUrl=%2F')
+  await page.getByLabel('Email', { exact: true }).fill(email)
+  await page.getByLabel('Password', { exact: true }).fill(password)
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click()
+  await expect(page).toHaveURL(url => url.pathname === '/')
+  const authenticated = await page.request.get('/api/auth/session')
+  expect((await authenticated.json()).user.email).toBe(email)
   await page.getByRole('button', { name: 'Open navigation menu' }).click()
   const mobile = page.getByRole('dialog', { name: 'Mobile navigation' })
   await expect(mobile.getByRole('link', { name: 'Dashboard', exact: true })).toHaveAttribute('href', '/dashboard')

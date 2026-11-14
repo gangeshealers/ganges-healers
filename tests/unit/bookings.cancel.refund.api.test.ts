@@ -500,6 +500,33 @@ describe('booking cancellation and Razorpay refunds', () => {
     expect(deferred.status).toBe('UNAVAILABLE')
   })
 
+  test.each(['captured', 'refunded'] as const)('an unreferenced historical success leaves a %s payment under review', async state => {
+    const payment = state === 'refunded' ? { status: 'refunded', statusEnum: 'REFUNDED' } : undefined
+    const booking = seedBooking({ status: 'CANCELLED', payment })
+    mockDb.refunds.push({
+      id: 'unverified', paymentId: mockDb.payments[0].id, amountPaise: 15000,
+      reason: 'booking-cancellation', status: 'processed', gatewayRefundId: null, createdAt: new Date(),
+    })
+
+    const response = await cancel('PATCH', booking.id)
+    expect((await response.json()).refund.status).toBe('UNKNOWN')
+    expect(mockRefundPayment).not.toHaveBeenCalled()
+    expect(mockFetchRefundStatus).not.toHaveBeenCalled()
+  })
+
+  test('a partial unreferenced success blocks submission of a new cancellation refund', async () => {
+    const booking = seedBooking()
+    mockDb.refunds.push({
+      id: 'unverified', paymentId: mockDb.payments[0].id, amountPaise: 2500,
+      reason: 'other', status: 'SUCCESS', gatewayRefundId: null, createdAt: new Date(),
+    })
+
+    const response = await cancel('DELETE', booking.id)
+    expect((await response.json()).refund.status).toBe('UNKNOWN')
+    expect(mockRefundPayment).not.toHaveBeenCalled()
+    expect(mockDb.refunds).toHaveLength(1)
+  })
+
   test('a payment already marked refunded requires review unless a confirmed refund is stored', async () => {
     const booking = seedBooking({ payment: { status: 'refunded', statusEnum: 'REFUNDED' } })
 

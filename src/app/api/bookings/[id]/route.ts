@@ -9,12 +9,11 @@ import { BookingError, lockOwnedBooking, bookingReviewVersion, assertBookingRevi
 import { recordBookingNotifications } from '@/lib/bookings/notifications'
 import { bookingDeliveryState } from '@/lib/bookings/session-delivery'
 import { RescheduleBody } from '../types'
-import { computeRefund, refundStatusFromStored, cancellationRefundMessage, storedCancellationRefund, type CancellationRefund, type CancellationRefundStatus } from '@/lib/bookings/refund-policy'
+import { computeRefund, summarizeRefunds, refundStatusFromStored, cancellationRefundMessage, storedCancellationRefund, type CancellationRefund } from '@/lib/bookings/refund-policy'
 import { fetchRefundStatus, hasRazorpayRefundCredentials, refundPayment } from '@/lib/payments/razorpay-refunds'
 import { recordRefundOutcome as updateRefundOutcome } from '@/lib/payments/refunds'
 
 const CANCELLABLE_BOOKING_STATUSES = ['PENDING', 'SCHEDULED', 'CONFIRMED', 'RESCHEDULED'] as const
-const REFUND_IN_FLIGHT_STATUSES = new Set(['PENDING', 'UNKNOWN'])
 
 type PreparedCancellation = {
   booking: Booking
@@ -230,7 +229,7 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
     }
 
     if (payment.statusEnum === 'REFUNDED' || payment.status.toLowerCase() === 'refunded') {
-      if (payment.amountPaise !== booking.pricePaise) {
+      if (payment.amountPaise !== booking.pricePaise || payment.gateway.toLowerCase() !== 'razorpay' || !payment.gatewayPaymentId) {
         return {
           booking: cancelledBooking,
           alreadyCancelled,
@@ -240,9 +239,8 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
         }
       }
       const priorRefunds = await tx.refund.findMany({ where: { paymentId: payment.id } })
-      const confirmedPaise = priorRefunds.reduce((total, refund) =>
-        refundStatusFromStored(refund.status) === 'SUCCESS' ? total + refund.amountPaise : total, 0)
-      const refundStatus = confirmedPaise >= policy.refundPaise ? 'SUCCESS' : 'UNAVAILABLE'
+      const { confirmedPaise, unresolvedStatus } = summarizeRefunds(priorRefunds)
+      const refundStatus = unresolvedStatus ?? (confirmedPaise >= policy.refundPaise ? 'SUCCESS' : 'UNAVAILABLE')
       return {
         booking: cancelledBooking,
         alreadyCancelled,
@@ -291,33 +289,27 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
       where: { paymentId: payment.id },
       orderBy: { createdAt: 'desc' },
     })
-    const confirmedPaise = refunds.reduce((total, refund) =>
-      refundStatusFromStored(refund.status) === 'SUCCESS' ? total + refund.amountPaise : total, 0)
-    const inFlight = refunds.filter(refund => REFUND_IN_FLIGHT_STATUSES.has(refundStatusFromStored(refund.status)))
+    const { confirmedPaise, unresolvedStatus, unresolved } = summarizeRefunds(refunds)
+    if (unresolvedStatus) {
+      return {
+        booking: cancelledBooking,
+        alreadyCancelled,
+        refund: { ...baseRefund, status: unresolvedStatus, message: cancellationRefundMessage(unresolvedStatus) },
+        refundId: unresolved?.id,
+        gatewayRefundId: unresolved?.gatewayRefundId || undefined,
+        gatewayPaymentId: payment.gatewayPaymentId,
+        paymentId: payment.id,
+        action: unresolved?.gatewayRefundId ? 'FETCH' as const : undefined,
+        bookingId: id,
+        userId,
+      }
+    }
+
     if (confirmedPaise >= policy.refundPaise) {
       return {
         booking: cancelledBooking,
         alreadyCancelled,
         refund: { ...baseRefund, status: 'SUCCESS' as const, message: cancellationRefundMessage('SUCCESS') },
-        bookingId: id,
-        userId,
-      }
-    }
-    if (inFlight.length > 0) {
-      const status: 'UNKNOWN' | 'PENDING' =
-        inFlight.some(refund =>
-          refundStatusFromStored(refund.status) === 'UNKNOWN' || !refund.gatewayRefundId
-        ) ? 'UNKNOWN' : 'PENDING'
-      const latestInFlight = inFlight[0]
-      return {
-        booking: cancelledBooking,
-        alreadyCancelled,
-        refund: { ...baseRefund, status, message: cancellationRefundMessage(status) },
-        refundId: latestInFlight?.id,
-        gatewayRefundId: latestInFlight?.gatewayRefundId || undefined,
-        gatewayPaymentId: payment.gatewayPaymentId,
-        paymentId: payment.id,
-        action: latestInFlight?.gatewayRefundId ? 'FETCH' as const : undefined,
         bookingId: id,
         userId,
       }
@@ -391,15 +383,9 @@ async function cancelOwnedBooking(id: string, userId: string, ifMatch: string | 
   if (prepared.action === 'FETCH' && prepared.paymentId && refund.status === 'SUCCESS') {
     try {
       const refunds = await prisma.refund.findMany({ where: { paymentId: prepared.paymentId } })
-      const confirmedPaise = refunds.reduce((total, row) =>
-        refundStatusFromStored(row.status) === 'SUCCESS' ? total + row.amountPaise : total, 0)
-      const inFlight = refunds.filter(row => REFUND_IN_FLIGHT_STATUSES.has(refundStatusFromStored(row.status)))
-      if (confirmedPaise < refund.refundPaise || inFlight.length > 0) {
-        const status: CancellationRefundStatus = inFlight.length === 0
-          ? 'UNAVAILABLE'
-          : inFlight.some(row =>
-            refundStatusFromStored(row.status) === 'UNKNOWN' || !row.gatewayRefundId
-          ) ? 'UNKNOWN' : 'PENDING'
+      const { confirmedPaise, unresolvedStatus } = summarizeRefunds(refunds)
+      if (unresolvedStatus || confirmedPaise < refund.refundPaise) {
+        const status = unresolvedStatus ?? 'UNAVAILABLE'
         return {
           booking: prepared.booking,
           alreadyCancelled: prepared.alreadyCancelled,
