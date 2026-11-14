@@ -32,7 +32,17 @@ type StoredRefundOutcome = { status: string | null; gatewayRefundId: string | nu
 /** A pending or successful status without a gateway reference still needs reconciliation. */
 export function referencedRefundStatus(refund: StoredRefundOutcome): CancellationRefundStatus {
   const status = refundStatusFromStored(refund.status)
-  return !refund.gatewayRefundId && (status === 'SUCCESS' || status === 'PENDING') ? 'UNKNOWN' : status
+  return !refund.gatewayRefundId?.trim() && (status === 'SUCCESS' || status === 'PENDING') ? 'UNKNOWN' : status
+}
+
+export function refundReviewLabel(refund: StoredRefundOutcome): string {
+  switch (referencedRefundStatus(refund)) {
+    case 'SUCCESS': return 'Confirmed'
+    case 'PENDING': return 'Processing'
+    case 'FAILED': return 'Failed'
+    case 'UNAVAILABLE': return 'Not submitted'
+    default: return 'Needs review'
+  }
 }
 
 /** Use the same gateway evidence to decide what customers see and whether a retry can proceed. */

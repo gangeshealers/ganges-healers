@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import { PrismaClient } from '@prisma/client'
+import { loadTestDatabaseEnvironment, verifyTestDatabaseConnection } from '../../../scripts/test-database'
 import { test, expect } from '@playwright/test';
 
 // Basic admin payments analytics smoke test
@@ -70,4 +73,44 @@ test('exports the current payment and refund date filters as downloadable CSV', 
   await page.locator('[data-test="export-refunds-csv"]').click()
   expect((await refundResponse).ok()).toBe(true)
   expect((await refundDownload).suggestedFilename()).toMatch(/^ganges-healers-refunds-.*\.csv$/)
+})
+
+test('staff can follow an unresolved refund to its booking and issued invoice', async ({ page }) => {
+  test.setTimeout(120_000)
+  const settings = loadTestDatabaseEnvironment()
+  await verifyTestDatabaseConnection(settings)
+  const db = new PrismaClient({ datasources: { db: { url: settings.environment.DATABASE_URL } } })
+  const tag = randomUUID()
+  const emails = [tag + '-member@example.test', tag + '-staff@example.test']
+  try {
+    const member = await db.user.create({ data: { email: emails[0] } })
+    const service = await db.service.findUniqueOrThrow({ where: { slug: 'yoga-therapy' } })
+    const healer = await db.healer.findFirstOrThrow({ where: { isActive: true, isVerified: true } })
+    const booking = await db.booking.create({ data: {
+      userId: member.id, serviceId: service.id, healerId: healer.id, scheduledAt: new Date(),
+      durationMin: 60, pricePaise: 10000, status: 'CANCELLED',
+    } })
+    const payment = await db.payment.create({ data: {
+      userId: member.id, bookingId: booking.id, gateway: 'razorpay', amountPaise: 10000,
+      type: 'SESSION', statusEnum: 'SUCCESS', status: 'success',
+    } })
+    await db.refund.createMany({ data: [
+      { paymentId: payment.id, amountPaise: 2500, status: 'processed', gatewayRefundId: 'rf-' + tag },
+      { paymentId: payment.id, amountPaise: 7500, status: 'success' },
+    ] })
+    const invoice = await db.invoice.create({ data: {
+      paymentId: payment.id, invoiceNumber: 'test-' + tag, billTo: {}, lineItems: [], subtotalPaise: 10000, totalPaise: 10000, pdfUrl: '',
+    } })
+    expect((await page.request.get('/api/test/login?role=ADMIN&email=' + emails[1])).ok()).toBe(true)
+    await page.goto('/admin/payments')
+    const row = page.getByRole('row').filter({ hasText: payment.id }).filter({ hasText: 'Needs review' })
+    await row.getByRole('link', { name: 'Review booking' }).click()
+    await expect(page).toHaveURL(new RegExp('/admin/bookings/' + booking.id + '$'))
+    await expect(page.getByText(invoice.invoiceNumber, { exact: true })).toBeVisible()
+    await expect(page.getByText('Confirmed refund total').locator('..')).toContainText('₹25.00')
+    await expect(page.getByText(/₹75.00 · Needs review/)).toBeVisible()
+  } finally {
+    await db.user.deleteMany({ where: { email: { in: emails } } })
+    await db.$disconnect()
+  }
 })

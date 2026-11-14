@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { auth } from '@/lib/auth'
 import { requireCurrentAdmin } from '@/lib/admin/auth'
 import { prisma } from '@/lib/prisma'
+import { refundReviewLabel, summarizeRefunds } from '@/lib/bookings/refund-policy'
 import { bookingDeliveryState } from '@/lib/bookings/session-delivery'
 
 export const dynamic = 'force-dynamic'
@@ -35,7 +36,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
       healer: { select: { user: { select: { name: true } } } },
       payment: { select: {
         status: true, statusEnum: true, amountPaise: true, gateway: true, currency: true,
-        refunds: { select: { id: true, status: true, amountPaise: true, createdAt: true } },
+        invoice: { select: { invoiceNumber: true } },
+        refunds: {
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: { id: true, status: true, gatewayRefundId: true, amountPaise: true, createdAt: true },
+        },
       } },
       emails: {
         orderBy: { createdAt: 'desc' }, take: 10,
@@ -47,11 +52,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
 
   const delivery = bookingDeliveryState(booking)
   const payment = booking.payment
-  const amountLabel = payment
-    ? payment.currency == null || payment.currency === 'INR'
-      ? money(payment.amountPaise)
-      : payment.amountPaise + ' minor units (' + payment.currency + ')'
-    : null
+  const paymentAmount = (amount: number) => payment?.currency && payment.currency !== 'INR'
+    ? amount + ' minor units (' + payment.currency + ')' : money(amount)
 
   return (
     <main className="container mx-auto max-w-4xl space-y-7 px-4 py-8">
@@ -83,16 +85,18 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           <>
             <dl className="grid gap-4 text-sm sm:grid-cols-2">
               <div><dt className="font-medium">Recorded payment status</dt><dd>{payment.statusEnum || payment.status}</dd></div>
-              <div><dt className="font-medium">Recorded amount</dt><dd>{amountLabel}</dd></div>
+              <div><dt className="font-medium">Recorded amount</dt><dd>{paymentAmount(payment.amountPaise)}</dd></div>
               <div><dt className="font-medium">Payment route</dt><dd>{payment.gateway === 'vip_credit' ? 'Session credit' : payment.gateway}</dd></div>
               <div><dt className="font-medium">Funding matches appointment</dt><dd>{delivery.funded ? 'Yes' : 'Not confirmed'}</dd></div>
+              {payment.invoice && <div><dt className="font-medium">Issued invoice</dt><dd>{payment.invoice.invoiceNumber}</dd></div>}
+              {payment.refunds.length > 0 && <div><dt className="font-medium">Confirmed refund total</dt><dd>{paymentAmount(summarizeRefunds(payment.refunds).confirmedPaise)}</dd></div>}
             </dl>
             <h3 className="font-semibold">Recorded refund attempts</h3>
             {payment.refunds.length === 0 ? <p className="text-sm text-muted-foreground">No refund record attached to this payment.</p> : (
               <ul className="space-y-2">
                 {payment.refunds.map(refund => (
                   <li key={refund.id} className="rounded-lg border p-3 text-sm">
-                    {payment.currency && payment.currency !== 'INR' ? refund.amountPaise + ' minor units (' + payment.currency + ')' : money(refund.amountPaise)} · {refund.status || 'Status unavailable'} · recorded {ist.format(refund.createdAt)} IST
+                    {paymentAmount(refund.amountPaise)} · {refundReviewLabel(refund)} · recorded {ist.format(refund.createdAt)} IST
                   </li>
                 ))}
               </ul>

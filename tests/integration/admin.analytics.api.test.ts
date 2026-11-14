@@ -100,6 +100,46 @@ describe('Admin Payments Analytics API', () => {
     }
   })
 
+  test('INR report reconciles confirmed refunds by payment type and preserves the original capture', async () => {
+    process.env.TEST_USER_ROLE = 'ADMIN'
+    const createdAt = new Date('2034-04-02T12:00:00Z')
+    const ids: string[] = []
+    try {
+      for (const [type, amountPaise, currency, status] of [
+        ['SESSION', 10000, 'INR', 'REFUNDED'],
+        ['SESSION', 3000, null, 'success'],
+        ['COURSE', 2600, 'INR', 'SUCCESS'],
+        ['SESSION', 1800, 'USD', 'SUCCESS'],
+      ] as const) {
+        const payment = await prisma.payment.create({ data: { createdAt, gateway: 'razorpay', type,
+          status, statusEnum: status === 'success' ? null : status, amountPaise, currency } })
+        ids.push(payment.id)
+      }
+      for (const [paymentId, amountPaise, status, confirmed] of [
+        [ids[0], 10000, 'processed', true], [ids[1], 800, 'SUCCESS', false],
+        [ids[1], 400, 'PENDING', true], [ids[1], 100, 'FAILED', false],
+        [ids[2], 2600, 'SUCCESS', true], [ids[3], 1800, 'SUCCESS', true],
+      ] as const) {
+        await prisma.refund.create({ data: { paymentId, amountPaise, status, createdAt,
+          gatewayRefundId: confirmed ? 'fixture-' + paymentId + status : null } })
+      }
+      const req = makeNextRequest('http://localhost/?from=2034-04-02&to=2034-04-02&type=SESSION')
+      const metrics = await import('@/app/api/admin/payments/metrics/route')
+      const series = await import('@/app/api/admin/payments/timeseries/route')
+      const attempts = await import('@/app/api/admin/payments/refunds/route')
+      expect((await readJSON(await metrics.GET(req))).kpi).toMatchObject({
+        grossPaise: 13000, refundsPaise: 10000, netPaise: 3000, paymentsCount: 2, refundsCount: 1,
+      })
+      expect((await readJSON(await series.GET(req)))[0]).toMatchObject({ grossPaise: 13000, refundsPaise: 10000, netPaise: 3000 })
+      const { items } = await readJSON(await attempts.GET(req))
+      expect(items).toHaveLength(5)
+      expect(items.map((row: { outcome: string }) => row.outcome).sort()).toEqual(['Confirmed', 'Confirmed', 'Failed', 'Needs review', 'Processing'])
+      expect(JSON.stringify(items)).not.toContain('fixture-')
+    } finally {
+      await prisma.payment.deleteMany({ where: { id: { in: ids } } })
+    }
+  })
+
   test('latest limit respected', async () => {
     process.env.TEST_USER_ROLE = 'ADMIN'
     const req = makeNextRequest('http://localhost/api/admin/payments/latest?limit=5')
