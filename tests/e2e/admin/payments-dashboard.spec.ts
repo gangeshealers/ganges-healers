@@ -3,16 +3,13 @@ import { PrismaClient } from '@prisma/client'
 import { loadTestDatabaseEnvironment, verifyTestDatabaseConnection } from '../../../scripts/test-database'
 import { test, expect } from '@playwright/test';
 
-// Basic admin payments analytics smoke test
-// Assumptions: seeded admin user credentials (email/password) exist.
-// If password auth not configured for admin in test env, this test can be adapted to programmatic session injection.
-
-// In TEST_MODE the RBAC check auto-allows admin, so we can skip authentication flows.
-
 test.describe('Admin Payments Dashboard', () => {
   test('shows KPIs, charts and filters react', async ({ page }) => {
     // Allow extra time – underlying analytics queries intentionally slow-ish in test env
     test.setTimeout(120000);
+    await page.goto('/admin/payments')
+    await expect(page).toHaveURL(/\/auth\/signin\?callbackUrl=%2Fadmin%2Fpayments/i)
+    expect((await page.request.get('/api/test/login?role=ADMIN&email=analytics-staff@example.test')).ok()).toBe(true)
     await page.goto('/admin/payments');
 
     // The dashboard is a lazy client chunk; cold dev compilation can take time.
@@ -51,6 +48,7 @@ test.describe('Admin Payments Dashboard', () => {
 
 test('exports the current payment and refund date filters as downloadable CSV', async ({ page }) => {
   test.setTimeout(120000)
+  expect((await page.request.get('/api/test/login?role=ADMIN&email=analytics-staff@example.test')).ok()).toBe(true)
   await page.goto('/admin/payments')
   await expect(page.locator('[data-test="payments-analytics-root"]')).toBeVisible({ timeout: 30000 })
   await page.locator('[data-test="filter-type"]').selectOption('STORE')
