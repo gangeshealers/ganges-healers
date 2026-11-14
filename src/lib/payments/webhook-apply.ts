@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { finalizePayment } from '@/lib/payments/finalize'
 import { z } from 'zod'
 import { createAndStoreInvoicePdf } from '@/lib/invoices'
+import { generateInvoiceForPayment } from '@/lib/invoices/generate'
 import { applyRefundEvent } from '@/lib/payments/refunds'
 
 type RazorpayEvent = {
@@ -60,7 +61,13 @@ export async function applyWebhookSideEffects(evt: unknown): Promise<ApplyResult
         const userId = payment.userId ?? payment.booking?.userId
         if (!userId) throw new Error('PAYMENT_OWNER_MISSING')
         await finalizePayment({ orderId: captured.order_id, paymentId: captured.id, userId, captured: { amountPaise: captured.amount, currency: captured.currency } })
-        await createAndStoreInvoicePdf(captured.id, { force: false })
+        if (payment.bookingId) {
+          // The browser can close after checkout. Issue the same saved receipt on capture.
+          const receipt = await generateInvoiceForPayment({ paymentId: payment.id, sendEmail: false })
+          if (!receipt.ok) return { applied: false, reason: 'apply-error' }
+        } else {
+          await createAndStoreInvoicePdf(captured.id, { force: false })
+        }
         return { applied: true, action: 'payment.fulfill' }
       }
       // Legacy identifier-only invoice events retain their existing contract; they cannot fulfill a purchase.

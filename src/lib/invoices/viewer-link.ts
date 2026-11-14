@@ -17,6 +17,7 @@ export function invoiceViewerHref(x: InvoiceLike): string {
   return `/invoices/${encodeURIComponent(raw)}/view`
 }
 
+/** Link to the issued receipt in the signed-in payment owner’s billing history. */
 export function memberReceiptHref(invoiceId: string): string {
   return `/dashboard/billing/${encodeURIComponent(invoiceId)}`
 }
