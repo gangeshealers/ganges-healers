@@ -9,3 +9,9 @@ The personal account menu includes **My courses**, and the dashboard always offe
 Verification includes signed-out redirect, account ownership, nonconsecutive lesson numbering, legacy premature completion, archived enrollment access, bounded pagination and search, and a real browser free-enrollment journey through the archived-course continuation path.
 
 No migration, new provider, environment variable, or payment changes. Rollback by reverting the page/navigation/tests/docs; enrollments and completed lesson progress remain intact.
+
+## Previewing a course before publication
+
+In **Admin → Courses**, open **Manage lessons and details**, then **Preview saved course**. Review the cover, price and description, choose a lesson from the curriculum, and step through the lesson text and media. The preview uses the last saved course. Returning to the editor preserves unsaved fields. Staff can review drafts, archived courses and published courses through the same editor.
+
+The preview uses the course already loaded by the admin editor. Opening it and navigating lessons do not enroll the reviewer, change progress, or publish the course. Learners see the saved material after the usual publish and enrollment steps.
