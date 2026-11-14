@@ -132,3 +132,9 @@ The production database, connection settings, provider credentials and hosting
 schedules were not changed. Retain the additive table/history during code rollback
 and reconcile unresolved provider attempts before resuming delivery. Production
 still needs a fresh synchronized cutover; this Preview upgrade is not that cutover.
+
+## Protected release Preview support conversations
+
+The release Preview database on `br-winter-sun-ado4pted` in `holy-block-51695227` had 30 completed migrations before the support desk and conversation migrations. Both migrations ran in one transaction after checking the database name, earlier migration checksums and absence of the new tables. The resulting schema has 32 completed migrations, four indexes and two foreign keys on `SupportMessage`. Both support tables were empty at cutover. A separate local PostgreSQL rehearsal verified the migration with an existing staff reply and an unanswered request.
+
+Both support flags are scoped to the `codex/site-completion-release` Vercel Preview branch. The next deployment of that branch reads these settings.

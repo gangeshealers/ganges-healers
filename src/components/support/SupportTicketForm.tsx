@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
 /** Authenticated request form; replies appear in the member's private ticket list. */
-export default function SupportTicketForm() {
+export default function SupportTicketForm({ conversationsEnabled = false }: { conversationsEnabled?: boolean }) {
   const router = useRouter()
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
@@ -24,7 +24,7 @@ export default function SupportTicketForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject, message }),
       })
-      const payload: { error?: string } = await response.json()
+      const payload: { error?: string; id?: string } = await response.json()
       if (!response.ok) {
         setError(payload.error || 'Your request could not be sent. Please try again.')
         return
@@ -32,6 +32,7 @@ export default function SupportTicketForm() {
       setSubject('')
       setMessage('')
       setNotice('Your support request was received. You can track it below.')
+      if (conversationsEnabled && payload.id) router.push(`/dashboard/support/${encodeURIComponent(payload.id)}`)
       router.refresh()
     } catch {
       setError('Unable to reach support right now. Check your connection and retry.')

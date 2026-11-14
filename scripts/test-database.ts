@@ -165,7 +165,7 @@ async function main() {
     const result = spawnSync(process.execPath, [nextCli, 'dev', '--turbopack', '-p', '3010'], {
       cwd: settings.rootDir,
       // Browser tests must never inherit live SMS credentials; positive checks use isolated provider fixtures in Jest.
-      env: { ...settings.environment, NODE_ENV: 'development', TEST_MODE: '1', TWILIO_VERIFY_SERVICE_SID: '', TWILIO_API_KEY_SID: '', TWILIO_API_KEY_SECRET: '', TWILIO_ACCOUNT_SID: '', TWILIO_AUTH_TOKEN: '' },
+      env: { ...settings.environment, NODE_ENV: 'development', TEST_MODE: '1', SUPPORT_DESK_ENABLED: 'true', SUPPORT_CONVERSATIONS_ENABLED: 'true', TWILIO_VERIFY_SERVICE_SID: '', TWILIO_API_KEY_SID: '', TWILIO_API_KEY_SECRET: '', TWILIO_ACCOUNT_SID: '', TWILIO_AUTH_TOKEN: '' },
       stdio: 'inherit',
     })
     process.exitCode = result.status ?? 1

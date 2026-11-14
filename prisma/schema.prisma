@@ -44,6 +44,7 @@ model User {
   sessions           Session[]
   sessionCredits     SessionCredit[]
   supportTickets     SupportTicket[]
+  supportMessages    SupportMessage[]
   memberships        VIPMembership[]
   reviews            Review[]
   firstSource        String?
@@ -788,6 +789,7 @@ model SupportTicket {
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
   user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    SupportMessage[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Asc)])
@@ -797,6 +799,28 @@ enum SupportTicketStatus {
   OPEN
   IN_PROGRESS
   RESOLVED
+}
+
+model SupportMessage {
+  id          String              @id @default(cuid())
+  ticketId    String
+  authorId    String?
+  authorRole  SupportMessageRole
+  body        String              @db.Text
+  requestId   String              @db.VarChar(80)
+  statusAfter SupportTicketStatus
+  createdAt   DateTime            @default(now())
+  ticket      SupportTicket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author      User?               @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, requestId])
+  @@index([ticketId, createdAt, id])
+  @@index([authorId, createdAt])
+}
+
+enum SupportMessageRole {
+  MEMBER
+  STAFF
 }
 
 enum Role {

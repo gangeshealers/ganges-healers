@@ -9,7 +9,7 @@ import AdminSupportPage from '@/app/admin/support/page'
 jest.mock('@/lib/auth', () => ({ auth: jest.fn() }))
 jest.mock('@/lib/prisma', () => ({ prisma: { supportTicket: { count: jest.fn(), findMany: jest.fn() } } }))
 jest.mock('@/lib/admin/auth', () => ({ requireCurrentAdmin: jest.fn() }))
-jest.mock('@/lib/support/availability', () => ({ isSupportDeskEnabled: jest.fn() }))
+jest.mock('@/lib/support/availability', () => ({ isSupportConversationEnabled: jest.fn(() => false), isSupportDeskEnabled: jest.fn() }))
 jest.mock('@/lib/support/tickets', () => ({
   SupportTicketError: class SupportTicketError extends Error {},
   updateAdminSupportTicket: jest.fn(),

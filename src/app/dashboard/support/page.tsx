@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import SupportTicketForm from '@/components/support/SupportTicketForm'
-import { isSupportDeskEnabled } from '@/lib/support/availability'
+import { isSupportDeskEnabled, isSupportConversationEnabled } from '@/lib/support/availability'
 import { escapeSupportTextSearch, ADMIN_SUPPORT_MAX_QUERY } from '@/lib/support/admin-filters'
 import type { Prisma } from '@prisma/client'
 
@@ -39,6 +39,7 @@ export default async function MemberSupportPage({
   }
 
   const query = (await searchParams) ?? {}
+  const conversations = isSupportConversationEnabled()
   const requestedStatus = typeof query.status === 'string' ? query.status : ''
   const status = statusFilters.find(value => value === requestedStatus) ?? 'ALL'
   const q = (typeof query.q === 'string' ? query.q : '').trim().slice(0, ADMIN_SUPPORT_MAX_QUERY)
@@ -83,7 +84,7 @@ export default async function MemberSupportPage({
           Contact the Ganges Healers team about your account or purchases, and review replies securely in your account.
         </p>
       </div>
-      <SupportTicketForm />
+      <SupportTicketForm conversationsEnabled={conversations} />
       <section aria-labelledby="support-history" className="space-y-4">
         <h2 id="support-history" className="text-xl font-semibold">Your support requests</h2>
         <form action="/dashboard/support" method="get" role="search" className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
@@ -133,6 +134,7 @@ export default async function MemberSupportPage({
                 ) : (
                   <p className="text-xs text-muted-foreground">No response yet. Updates will appear here.</p>
                 )}
+                {conversations && <Link href={`/dashboard/support/${encodeURIComponent(ticket.id)}`} className="inline-flex rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted">Open conversation</Link>}
               </article>
             ))}
           </div>
